@@ -41,8 +41,6 @@ CREDS_PATH = "credentials.json"
 HEADER_ROW = 3
 DATA_START_ROW = 4
 
-SKIP_SHEETS = {"Dashboard"}
-
 ELEICAO_TEXT = os.getenv("ELEICAO_TEXT", "Eleições Gerais 2026")
 
 # Regras de recaptura
@@ -50,20 +48,40 @@ RECHECK_DAYS = int(os.getenv("RECHECK_DAYS", "3"))
 PER_SHEET_LIMIT = int(os.getenv("PER_SHEET_LIMIT", "0") or "0") or None
 
 # Drive
-DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "1AJMuqxwbKiRJxOZPS07SMZ_M-6222fK8")
+DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "")
 
 # PDF
 PDF_BUTTON_ID = "j_id_11:arquivoResultado"
-PDF_DIR = os.getenv("PDF_DIR", "pdfs_relatorios")  # só temporário no runner
+PDF_DIR = os.getenv("PDF_DIR", "pdfs_relatorios")  # temporário no runner
+
+
+# Apenas abas de estados e BRASIL (nome completo)
+UF_SHEETS_FULL = {
+    "BRASIL",
+    "ACRE", "ALAGOAS", "AMAPÁ", "AMAZONAS", "BAHIA", "CEARÁ", "DISTRITO FEDERAL",
+    "ESPÍRITO SANTO", "GOIÁS", "MARANHÃO", "MATO GROSSO", "MATO GROSSO DO SUL",
+    "MINAS GERAIS", "PARÁ", "PARAÍBA", "PARANÁ", "PERNAMBUCO", "PIAUÍ",
+    "RIO DE JANEIRO", "RIO GRANDE DO NORTE", "RIO GRANDE DO SUL", "RONDÔNIA",
+    "RORAIMA", "SANTA CATARINA", "SÃO PAULO", "SERGIPE", "TOCANTINS",
+}
+
+
+def _norm_title(t: str) -> str:
+    return (t or "").strip().upper()
+
+
+def is_state_or_brazil_sheet(title: str) -> bool:
+    return _norm_title(title) in UF_SHEETS_FULL
+
 
 # Colunas que esse enrichment garante na planilha
 NEEDED_COLS = [
     "numero_identificacao",
     "data_divulgacao",
     "uf_filtro",
-    "pdf_relatorio_completo_drive",       # link do Drive
-    "pdf_relatorio_completo_drive_id",    # id do arquivo no Drive
-    "pdf_relatorio_completo_checado_em",  # timestamp ISO
+    "pdf_relatorio_completo_drive",
+    "pdf_relatorio_completo_drive_id",
+    "pdf_relatorio_completo_checado_em",
 ]
 
 
@@ -283,7 +301,6 @@ def baixar_relatorio_completo_no_detalhe(
     out_dir: str = PDF_DIR,
     timeout: int = 60,
 ) -> Tuple[bool, str, str]:
-    # verifica se tem botão e se está habilitado
     try:
         btn = driver.find_element(By.ID, PDF_BUTTON_ID)
     except Exception:
@@ -292,7 +309,6 @@ def baixar_relatorio_completo_no_detalhe(
     if (btn.get_attribute("disabled") or "").strip() or (btn.get_attribute("aria-disabled") or "").strip().lower() == "true":
         return False, "", "botao_relatorio_desabilitado"
 
-    # viewstate + cookies da sessão JSF
     try:
         viewstate = _get_viewstate(driver)
     except Exception:
@@ -309,7 +325,6 @@ def baixar_relatorio_completo_no_detalhe(
         "Origin": "https://pesqele-divulgacao.tse.jus.br",
     }
 
-    # payload mínimo (JSF/PrimeFaces)
     data = {
         "javax.faces.partial.ajax": "false",
         "javax.faces.source": PDF_BUTTON_ID,
@@ -482,21 +497,17 @@ def parse_iso_dt_to_date(s: str) -> Optional[date]:
 def should_check(row: Dict[str, str]) -> bool:
     today = date.today()
 
-    # já tem link no drive: não reprocessa
     if (row.get("pdf_relatorio_completo_drive") or "").strip():
         return False
 
-    # throttle: se já checou recentemente, espera
     checked = parse_iso_dt_to_date(row.get("pdf_relatorio_completo_checado_em") or "")
     if checked and (today - checked).days < RECHECK_DAYS:
         return False
 
-    # se tem data_divulgacao, só tenta a partir dela
     data_div = parse_iso_date(row.get("data_divulgacao") or "")
     if data_div:
         return data_div <= today
 
-    # sem data_divulgacao: tenta mesmo assim (vai ser mais caro)
     return True
 
 
@@ -505,8 +516,6 @@ def should_check(row: Dict[str, str]) -> bool:
 # =========================
 def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
     title = ws.title
-    if title in SKIP_SHEETS:
-        return
 
     ensure_header_has(ws, NEEDED_COLS)
     header, rows = build_rows(ws)
@@ -525,7 +534,6 @@ def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
         print(f"{title}: nada pra checar")
         return
 
-    # prioriza quem tem data_divulgacao (mais provável ter PDF)
     def sort_key(r: Dict[str, str]) -> Tuple[int, str]:
         d = (r.get("data_divulgacao") or "").strip()
         return (0, d) if d else (1, "9999-99-99")
@@ -569,7 +577,7 @@ def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
                 ok_detail = False
 
             if ok_detail:
-                ok_pdf, local_path, msg = baixar_relatorio_completo_no_detalhe(driver, numero)
+                ok_pdf, local_path, _ = baixar_relatorio_completo_no_detalhe(driver, numero)
                 if ok_pdf and local_path:
                     desired_name = f"{numero}.pdf"
                     try:
@@ -582,9 +590,6 @@ def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
                         )
                     except Exception as e:
                         print(f"{title}: upload falhou para {numero}: {str(e)[:160]}")
-                else:
-                    # msg pode ser: desabilitado / não veio pdf / etc
-                    pass
 
                 driver.back()
                 wait_dom_ready(driver)
@@ -611,15 +616,13 @@ def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
 
 
 def run_all() -> None:
-    # Sheets
     gc = gspread_client(CREDS_PATH)
     ss = get_spreadsheet(gc)
 
-    # Drive
     drv = drive_service(CREDS_PATH)
 
     for ws in ss.worksheets():
-        if ws.title in SKIP_SHEETS:
+        if not is_state_or_brazil_sheet(ws.title):
             continue
         try:
             enrich_worksheet(ws, drv)
@@ -630,7 +633,6 @@ def run_all() -> None:
 
 if __name__ == "__main__":
     if not DRIVE_FOLDER_ID:
-        raise SystemExit("DRIVE_FOLDER_ID não definido (coloque no Secret/env).")
-
+        raise SystemExit("DRIVE_FOLDER_ID não definido (use Secret/env).")
     run_all()
     print("Enrichment de relatório completo finalizado.")
