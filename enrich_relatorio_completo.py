@@ -8,7 +8,6 @@ from typing import Dict, List, Optional, Tuple
 import gspread
 import requests
 from google.oauth2.service_account import Credentials
-
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
@@ -47,13 +46,16 @@ ELEICAO_TEXT = os.getenv("ELEICAO_TEXT", "Eleições Gerais 2026")
 RECHECK_DAYS = int(os.getenv("RECHECK_DAYS", "3"))
 PER_SHEET_LIMIT = int(os.getenv("PER_SHEET_LIMIT", "0") or "0") or None
 
+# Sleeps (pra reduzir chance de quota e dar estabilidade)
+SHEETS_SLEEP_SEC = float(os.getenv("SHEETS_SLEEP_SEC", "1.2"))
+BETWEEN_ROWS_SLEEP_SEC = float(os.getenv("BETWEEN_ROWS_SLEEP_SEC", "0.35"))
+
 # Drive
 DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "")
 
 # PDF
 PDF_BUTTON_ID = "j_id_11:arquivoResultado"
-PDF_DIR = os.getenv("PDF_DIR", "pdfs_relatorios")  # temporário no runner
-
+PDF_DIR = os.getenv("PDF_DIR", "pdfs_relatorios")
 
 # Apenas abas de estados e BRASIL (nome completo)
 UF_SHEETS_FULL = {
@@ -83,6 +85,30 @@ NEEDED_COLS = [
     "pdf_relatorio_completo_drive_id",
     "pdf_relatorio_completo_checado_em",
 ]
+
+
+# =========================
+# Backoff p/ Google APIs (429)
+# =========================
+def is_quota_429(err: Exception) -> bool:
+    s = str(err).lower()
+    return (" 429" in s) or ("quota exceeded" in s) or ("read requests per minute" in s) or ("rate limit" in s)
+
+
+def with_backoff(fn, *args, max_tries: int = 6, base_sleep: float = 2.0, **kwargs):
+    last = None
+    for i in range(max_tries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            last = e
+            if not is_quota_429(e):
+                raise
+            sleep = base_sleep * (2 ** i)
+            sleep = min(sleep, 60.0)
+            print(f"Sheets quota/429: tentando de novo em {sleep:.1f}s...")
+            time.sleep(sleep)
+    raise last
 
 
 # =========================
@@ -273,8 +299,19 @@ def open_detail_by_numero(driver: webdriver.Chrome, wait: WebDriverWait, numero:
     return False
 
 
+def reload_list_and_apply_filters(driver: webdriver.Chrome, wait: WebDriverWait, uf_text: str) -> None:
+    driver.get(URL_LISTAR)
+    wait_dom_ready(driver)
+    select_one_menu_by_text(driver, wait, ID_ELEICAO_LABEL, ID_ELEICAO_PANEL, ELEICAO_TEXT)
+    time.sleep(0.25)
+    select_one_menu_by_text(driver, wait, ID_UF_LABEL, ID_UF_PANEL, uf_text)
+    time.sleep(0.25)
+    click_and_wait_table_refresh(driver, wait, ID_BTN_PESQUISAR, ID_TBODY)
+    wait_list_page_ready(driver, wait)
+
+
 # =========================
-# Relatório (sem URL): POST JSF e salva bytes
+# Relatório: POST JSF (sem URL pública) e salva bytes
 # =========================
 def _slug(s: str) -> str:
     s = (s or "").strip()
@@ -339,7 +376,6 @@ def baixar_relatorio_completo_no_detalhe(
 
     ct = (resp.headers.get("Content-Type") or "").lower()
     is_pdf = ("application/pdf" in ct) or (resp.content[:4] == b"%PDF")
-
     if not is_pdf:
         return False, "", f"nao_veio_pdf: ct={ct[:60]}"
 
@@ -368,13 +404,7 @@ def drive_service(creds_path: str = CREDS_PATH):
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
-def upload_pdf_to_drive(
-    service,
-    file_path: str,
-    folder_id: str,
-    desired_name: Optional[str] = None,
-    replace_if_exists: bool = True,
-) -> Tuple[str, str]:
+def upload_pdf_to_drive(service, file_path: str, folder_id: str, desired_name: Optional[str] = None, replace_if_exists: bool = True) -> Tuple[str, str]:
     file_path = os.path.abspath(file_path)
     name = desired_name or os.path.basename(file_path)
 
@@ -386,24 +416,20 @@ def upload_pdf_to_drive(
         files = res.get("files", [])
         if files:
             fid = files[0]["id"]
-            updated = service.files().update(
-                fileId=fid,
-                media_body=media,
-                fields="id, webViewLink"
-            ).execute()
+            updated = service.files().update(fileId=fid, media_body=media, fields="id, webViewLink").execute()
             return updated["id"], updated.get("webViewLink", "")
 
     created = service.files().create(
         body={"name": name, "parents": [folder_id], "mimeType": "application/pdf"},
         media_body=media,
-        fields="id, webViewLink"
+        fields="id, webViewLink",
     ).execute()
 
     return created["id"], created.get("webViewLink", "")
 
 
 # =========================
-# Sheets I/O
+# Sheets I/O (1 read por aba + backoff)
 # =========================
 def gspread_client(creds_path: str) -> gspread.Client:
     scopes = [
@@ -421,17 +447,15 @@ def get_spreadsheet(gc: gspread.Client) -> gspread.Spreadsheet:
     return gc.open_by_key(sid)
 
 
-def ensure_header_has(ws: gspread.Worksheet, needed: List[str]) -> List[str]:
-    header = ws.row_values(HEADER_ROW)
-    header = [h.strip() for h in header if h is not None]
-
+def ensure_header_has_from_existing(ws: gspread.Worksheet, header: List[str], needed: List[str]) -> List[str]:
+    header = [h.strip() for h in (header or []) if h is not None and str(h).strip()]
     if not header:
-        ws.update(f"A{HEADER_ROW}", [needed])
+        with_backoff(ws.update, values=[needed], range_name=f"A{HEADER_ROW}")
         return needed
 
     missing = [c for c in needed if c not in header]
     if missing:
-        ws.update(f"A{HEADER_ROW}", [header + missing])
+        with_backoff(ws.update, values=[header + missing], range_name=f"A{HEADER_ROW}")
         return header + missing
 
     return header
@@ -444,13 +468,16 @@ def col_idx(header: List[str], name: str) -> Optional[int]:
         return None
 
 
-def build_rows(ws: gspread.Worksheet) -> Tuple[List[str], List[Dict[str, str]]]:
-    values = ws.get_all_values()
+def read_sheet_once(ws: gspread.Worksheet) -> List[List[str]]:
+    return with_backoff(ws.get_all_values)
+
+
+def build_rows_from_values(values: List[List[str]]) -> Tuple[List[str], List[Dict[str, str]]]:
     if len(values) < HEADER_ROW:
         return [], []
 
     header = [h.strip() for h in values[HEADER_ROW - 1]]
-    rows = []
+    rows: List[Dict[str, str]] = []
 
     for i in range(DATA_START_ROW - 1, len(values)):
         row_vals = values[i]
@@ -471,11 +498,11 @@ def update_cells_batch(ws: gspread.Worksheet, header: List[str], updates: List[T
             continue
         cells.append(gspread.Cell(row_number, idx, value))
     if cells:
-        ws.update_cells(cells, value_input_option="USER_ENTERED")
+        with_backoff(ws.update_cells, cells, value_input_option="USER_ENTERED")
 
 
 # =========================
-# Regras de seleção (data_divulgacao + recaptura)
+# Regras de seleção
 # =========================
 def parse_iso_date(s: str) -> Optional[date]:
     s = (s or "").strip()
@@ -516,11 +543,14 @@ def should_check(row: Dict[str, str]) -> bool:
 # =========================
 def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
     title = ws.title
+    uf_text = (title or "").strip()
 
-    ensure_header_has(ws, NEEDED_COLS)
-    header, rows = build_rows(ws)
-    if not header:
-        print(f"{title}: sem header")
+    values = read_sheet_once(ws)
+    header, rows = build_rows_from_values(values)
+    header = ensure_header_has_from_existing(ws, header, NEEDED_COLS)
+
+    if not rows:
+        print(f"{title}: nada na aba")
         return
 
     candidates = []
@@ -534,7 +564,7 @@ def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
         print(f"{title}: nada pra checar")
         return
 
-    def sort_key(r: Dict[str, str]) -> Tuple[int, str]:
+    def sort_key(r: Dict[str, str]):
         d = (r.get("data_divulgacao") or "").strip()
         return (0, d) if d else (1, "9999-99-99")
 
@@ -544,22 +574,10 @@ def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
 
     driver = make_driver(headless=(os.getenv("CI") or os.getenv("HEADLESS") == "1"))
     wait = WebDriverWait(driver, 30)
-
     updates: List[Tuple[int, str, str]] = []
 
     try:
-        driver.get(URL_LISTAR)
-        wait_dom_ready(driver)
-
-        uf_text = (title or "").strip()
-
-        select_one_menu_by_text(driver, wait, ID_ELEICAO_LABEL, ID_ELEICAO_PANEL, ELEICAO_TEXT)
-        time.sleep(0.3)
-        select_one_menu_by_text(driver, wait, ID_UF_LABEL, ID_UF_PANEL, uf_text)
-        time.sleep(0.3)
-
-        click_and_wait_table_refresh(driver, wait, ID_BTN_PESQUISAR, ID_TBODY)
-        wait_list_page_ready(driver, wait)
+        reload_list_and_apply_filters(driver, wait, uf_text)
 
         for i, r in enumerate(candidates, 1):
             numero = (r.get("numero_identificacao") or "").strip()
@@ -570,11 +588,19 @@ def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
             drive_link = ""
             drive_id = ""
 
+            # retry anti-stale pra cada item
             ok_detail = False
-            try:
-                ok_detail = open_detail_by_numero(driver, wait, numero)
-            except Exception:
-                ok_detail = False
+            for attempt in range(3):
+                try:
+                    ok_detail = open_detail_by_numero(driver, wait, numero)
+                    break
+                except StaleElementReferenceException:
+                    print(f"{title}: stale ao abrir {numero}, recarregando lista...")
+                    reload_list_and_apply_filters(driver, wait, uf_text)
+                    ok_detail = False
+                except Exception:
+                    ok_detail = False
+                    break
 
             if ok_detail:
                 ok_pdf, local_path, _ = baixar_relatorio_completo_no_detalhe(driver, numero)
@@ -586,10 +612,10 @@ def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
                             file_path=local_path,
                             folder_id=DRIVE_FOLDER_ID,
                             desired_name=desired_name,
-                            replace_if_exists=True
+                            replace_if_exists=True,
                         )
                     except Exception as e:
-                        print(f"{title}: upload falhou para {numero}: {str(e)[:160]}")
+                        print(f"{title}: upload falhou {numero}: {str(e)[:160]}")
 
                 driver.back()
                 wait_dom_ready(driver)
@@ -602,11 +628,11 @@ def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
 
             updates.append((row_number, "pdf_relatorio_completo_checado_em", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
 
-            if len(updates) >= 150:
+            if len(updates) >= 120:
                 update_cells_batch(ws, header, updates)
                 updates = []
 
-            time.sleep(0.35)
+            time.sleep(BETWEEN_ROWS_SLEEP_SEC)
 
         if updates:
             update_cells_batch(ws, header, updates)
@@ -618,17 +644,18 @@ def enrich_worksheet(ws: gspread.Worksheet, drv) -> None:
 def run_all() -> None:
     gc = gspread_client(CREDS_PATH)
     ss = get_spreadsheet(gc)
-
     drv = drive_service(CREDS_PATH)
 
     for ws in ss.worksheets():
         if not is_state_or_brazil_sheet(ws.title):
             continue
+
         try:
             enrich_worksheet(ws, drv)
         except Exception as e:
             print(f"Erro em {ws.title}: {str(e)[:200]}")
-            continue
+        finally:
+            time.sleep(SHEETS_SLEEP_SEC)
 
 
 if __name__ == "__main__":
