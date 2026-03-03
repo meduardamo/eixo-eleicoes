@@ -19,8 +19,8 @@ jobs:
 
       # flags do scraper_polling.py (env-driven)
       INCLUIR_GOVERNADOR: "true"
-      INCLUIR_SENADO: "true"
-      INCLUIR_PRESIDENTE: "true"
+      INCLUIR_SENADO: "false"
+      INCLUIR_PRESIDENTE: "false"
 
       # secrets
       SPREADSHEET_ID_POLLING: ${{ secrets.SPREADSHEET_ID_POLLING }}
