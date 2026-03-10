@@ -3,11 +3,11 @@ name: pollingdata-daily
 on:
   workflow_dispatch:
   schedule:
-    # Horários sorteados diariamente (UTC). GitHub roda em UTC.
-    # Recife (UTC-3): subtrai 3h (ex.: 03:17 UTC = 00:17 Recife).
-    - cron: "17 3 * * *"
-    - cron: "41 8 * * *"
-    - cron: "09 14 * * *"
+    # GitHub Actions roda em UTC.
+    # Horários em Recife (UTC-3): 08:23, 14:47 e 20:12.
+    - cron: "23 11 * * *"
+    - cron: "47 17 * * *"
+    - cron: "12 23 * * *"
 
 jobs:
   run:
