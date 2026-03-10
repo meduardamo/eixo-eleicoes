@@ -56,6 +56,13 @@ def _sha1_short(s: str, n=10) -> str:
     return hashlib.sha1(str(s).encode("utf-8", errors="ignore")).hexdigest()[:n]
 
 
+def _formatar_data(data_str: str) -> str:
+    try:
+        return datetime.strptime(data_str, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return data_str
+
+
 def parse_url_meta(url: str):
     u = url.strip()
 
@@ -156,7 +163,6 @@ def inferir_margem_erro(erro_conf):
 
 def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_block_hash):
     uf = uf.upper()
-    data_campo = _norm_ws(data_campo)
     instituto_slug = _slug(instituto)
 
     if id_pesquisa and id_pesquisa.lower() not in ("sem registro", "sem_registro", "semregistro", "nan"):
@@ -315,7 +321,7 @@ def scrape_url(driver, url: str, horario_raspagem: str):
     for _, row in df_raw.iterrows():
         instituto = _norm_ws(row.get("instituto", ""))
         registro_tse = _norm_ws(row.get("registro_tse", ""))
-        data_campo = _norm_ws(row.get("data_campo", ""))
+        data_campo = _formatar_data(_norm_ws(row.get("data_campo", "")))
         modo = _norm_ws(row.get("Modo Pesquisa", ""))
         entrevistas_raw = _norm_ws(row.get("Entrevistas", ""))
         erro_conf = _norm_ws(row.get("Erro (Confiança)", ""))
