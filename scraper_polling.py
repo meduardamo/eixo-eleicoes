@@ -475,11 +475,12 @@ def dedup_e_salvar_por_chave(aba, df_novo: pd.DataFrame, key_col: str):
             print(f"  [schema] {len(colunas_novas)} coluna(s) nova(s) adicionada(s) ao header: {colunas_novas}")
         else:
             header_final = header_existente
-
         df_add = df_add.reindex(columns=header_final, fill_value="")
 
-    rows_to_append = df_add.fillna("").astype(str).values.tolist()
-    aba.append_rows(rows_to_append, value_input_option="RAW", insert_data_option="INSERT_ROWS")
+    rows_to_insert = df_add.fillna("").astype(str).values.tolist()
+
+    # insere após o header (linha 2), empurrando os dados existentes pra baixo
+    aba.insert_rows(rows_to_insert, row=2)
 
     print(f"  [insert] {len(df_add)} linha(s) nova(s) | {len(existing_keys)} já existiam")
     return len(df_add), len(existing_keys)
