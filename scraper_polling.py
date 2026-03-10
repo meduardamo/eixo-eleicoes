@@ -4,6 +4,7 @@ import time
 import json
 import hashlib
 from datetime import datetime
+import zoneinfo
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
@@ -265,7 +266,7 @@ def scrape_url(driver, url: str, horario_raspagem: str):
     print(f"[+] {cargo.upper()} {uf} {turno} -> {url}")
     driver.get(url)
 
-    time.sleep(10)  # aguarda carregamento inicial
+    time.sleep(10)
 
     try:
         wait = WebDriverWait(driver, 40)
@@ -351,7 +352,7 @@ def scrape_url(driver, url: str, horario_raspagem: str):
             "scenario_label": scenario_label,
             "fonte_url": url,
             "horario_raspagem": horario_raspagem,
-            "conferida": "",  # coluna para marcação manual
+            "conferida": "",
         })
 
         for col in cols_cand:
