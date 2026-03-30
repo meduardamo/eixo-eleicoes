@@ -358,17 +358,19 @@ def parse_url_meta(url: str):
             "turno": m.group("turno").lower(),
         }
 
+    # Senado: /2026/senador/to/2026_senador_to_t1.html  OU  /2026/senador/to/t1/
     m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>senador)/(?P<uf>[a-z]{2})/(?P<turno>t\d)/?$",
+        r"/(?P<ano>\d{4})/(?P<cargo>senador)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)\.html|(?P<turno2>t\d)/?$)",
         u,
         re.I
     )
     if m:
+        turno = m.group("turno") or m.group("turno2")
         return {
             "ano": int(m.group("ano")),
             "cargo": "senador",
             "uf": m.group("uf").upper(),
-            "turno": m.group("turno").lower(),
+            "turno": turno.lower(),
         }
 
     return {"ano": None, "cargo": None, "uf": None, "turno": None}
@@ -450,11 +452,17 @@ def gerar_scenario_id(poll_id, scenario_label):
 
 
 def urls_governador_2026_t1(ufs):
-    return [f"https://www.pollingdata.com.br/2026/governador/{uf}/2026_governador_{uf}_t1.html" for uf in ufs]
+    return [
+        f"https://www.pollingdata.com.br/2026/governador/{uf}/2026_governador_{uf}_t1.html"
+        for uf in ufs
+    ]
 
 
 def urls_senado_2026_t1(ufs):
-    return [f"https://www.pollingdata.com.br/2026/senador/{uf}/t1/" for uf in ufs]
+    return [
+        f"https://www.pollingdata.com.br/2026/senador/{uf}/2026_senador_{uf}_t1.html"
+        for uf in ufs
+    ]
 
 
 def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool):
@@ -788,47 +796,37 @@ def dedup_e_salvar_por_chave(aba, df_novo: pd.DataFrame, key_col: str):
     return len(df_add), len(existing_keys)
 
 
-def obter_sheet_id_por_cargo(cargo: str) -> str:
-    if cargo == "governador":
-        return (os.getenv("SPREADSHEET_ID_GOVERNADOR", "") or "").strip()
-
-    if cargo == "presidente":
-        return (os.getenv("SPREADSHEET_ID_PRESIDENTE", "") or "").strip()
-
-    return ""
+def obter_spreadsheet_id() -> str:
+    # Planilha única centralizada para todos os cargos
+    sheet_id = (os.getenv("SPREADSHEET_ID_POLLINGDATA", "") or "").strip()
+    if not sheet_id:
+        raise RuntimeError("SPREADSHEET_ID_POLLINGDATA não definido.")
+    return sheet_id
 
 
-def validar_configuracao_planilhas(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool):
-    if incluir_governador and not obter_sheet_id_por_cargo("governador"):
-        raise RuntimeError("SPREADSHEET_ID_GOVERNADOR não definido.")
-
-    if incluir_presidente and not obter_sheet_id_por_cargo("presidente"):
-        raise RuntimeError("SPREADSHEET_ID_PRESIDENTE não definido.")
-
-    if incluir_senado:
-        raise RuntimeError("Senado ainda não está configurado para salvamento em planilha separada.")
+def validar_configuracao_planilhas():
+    # Valida que a planilha única está configurada
+    obter_spreadsheet_id()
 
 
-def salvar_bloco_em_planilha(gc, cargo: str, df_p: pd.DataFrame, df_r: pd.DataFrame):
+def salvar_tudo_em_planilha(gc, df_p: pd.DataFrame, df_r: pd.DataFrame):
     if (df_p is None or df_p.empty) and (df_r is None or df_r.empty):
-        print(f"[-] {cargo}: nada para salvar")
+        print("[-] nada para salvar")
         return
 
-    sheet_id = obter_sheet_id_por_cargo(cargo)
-    if not sheet_id:
-        raise RuntimeError(f"Planilha do cargo '{cargo}' não configurada.")
-
-    print(f"[+] Salvando {cargo} na planilha correta...")
+    sheet_id = obter_spreadsheet_id()
+    print(f"[+] Salvando tudo na planilha central (SPREADSHEET_ID_POLLINGDATA)...")
     sh = gc.open_by_key(sheet_id)
 
-    aba_pesquisas = garantir_aba(sh, "pesquisas", rows=5000, cols=25)
-    aba_resultados = garantir_aba(sh, "resultados", rows=20000, cols=25)
+    # Abas únicas para todos os cargos: pesquisas e resultados
+    aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=25)
+    aba_resultados = garantir_aba(sh, "resultados", rows=200000, cols=25)
 
     if df_p is not None and not df_p.empty:
         novos, exist = dedup_e_salvar_por_chave(aba_pesquisas, df_p, key_col="scenario_id")
-        print(f"[+] {cargo} | pesquisas: {novos} novas linhas | {exist} já existiam")
+        print(f"[+] pesquisas: {novos} novas linhas | {exist} já existiam")
     else:
-        print(f"[-] {cargo} | pesquisas: nada coletado")
+        print("[-] pesquisas: nada coletado")
 
     if df_r is not None and not df_r.empty:
         df_r = df_r.copy()
@@ -838,17 +836,17 @@ def salvar_bloco_em_planilha(gc, cargo: str, df_p: pd.DataFrame, df_r: pd.DataFr
             + "|" + df_r["candidato"].astype(str)
         )
         novos, exist = dedup_e_salvar_por_chave(aba_resultados, df_r, key_col="_dedup_key")
-        print(f"[+] {cargo} | resultados: {novos} novas linhas | {exist} já existiam")
+        print(f"[+] resultados: {novos} novas linhas | {exist} já existiam")
     else:
-        print(f"[-] {cargo} | resultados: nada coletado")
+        print("[-] resultados: nada coletado")
 
 
 def main():
     incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
-    incluir_senado = env_bool("INCLUIR_SENADO", False)
+    incluir_senado = env_bool("INCLUIR_SENADO", True)
     incluir_presidente = env_bool("INCLUIR_PRESIDENTE", True)
 
-    validar_configuracao_planilhas(incluir_governador, incluir_senado, incluir_presidente)
+    validar_configuracao_planilhas()
 
     urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente)
     if not urls:
@@ -880,20 +878,10 @@ def main():
     finally:
         driver.quit()
 
-    print("[+] Organizando resultados por cargo...")
-
     df_p_all = pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame()
     df_r_all = pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame()
 
-    if incluir_governador:
-        df_p_gov = df_p_all[df_p_all["cargo"] == "governador"].copy() if not df_p_all.empty else pd.DataFrame()
-        df_r_gov = df_r_all[df_r_all["cargo"] == "governador"].copy() if not df_r_all.empty else pd.DataFrame()
-        salvar_bloco_em_planilha(gc, "governador", df_p_gov, df_r_gov)
-
-    if incluir_presidente:
-        df_p_pres = df_p_all[df_p_all["cargo"] == "presidente"].copy() if not df_p_all.empty else pd.DataFrame()
-        df_r_pres = df_r_all[df_r_all["cargo"] == "presidente"].copy() if not df_r_all.empty else pd.DataFrame()
-        salvar_bloco_em_planilha(gc, "presidente", df_p_pres, df_r_pres)
+    salvar_tudo_em_planilha(gc, df_p_all, df_r_all)
 
     print("[+] OK")
 
