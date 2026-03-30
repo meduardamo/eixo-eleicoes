@@ -1,5 +1,4 @@
 name: pollingdata-daily
-
 on:
   workflow_dispatch:
   schedule:
@@ -8,37 +7,28 @@ on:
     - cron: "23 11 * * *"
     - cron: "47 17 * * *"
     - cron: "12 23 * * *"
-
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 90
     env:
       TZ: "America/Recife"
-
       INCLUIR_GOVERNADOR: "true"
-      INCLUIR_SENADO: "false"
+      INCLUIR_SENADO: "true"
       INCLUIR_PRESIDENTE: "true"
-
-      SPREADSHEET_ID_GOVERNADOR: ${{ secrets.SPREADSHEET_ID_GOVERNADOR }}
-      SPREADSHEET_ID_PRESIDENTE: ${{ secrets.SPREADSHEET_ID_PRESIDENTE }}
+      SPREADSHEET_ID_POLLINGDATA: ${{ secrets.SPREADSHEET_ID_POLLINGDATA }}
       GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
       - name: Run scraper
         run: |
           python scraper_polling.py
