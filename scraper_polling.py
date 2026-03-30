@@ -35,14 +35,12 @@ PRESIDENTE_URLS_DEFAULT = [
 WAIT_CSS = "div#dados-das-pesquisas"
 
 CLASSIFICACAO_INSTITUTOS = {
-    # A+
     "Datafolha": "A+",
     "AtlasIntel": "A+",
     "Jornal Girassol": "A+",
     "Gazeta Dados": "A+",
     "Jornal Stylo": "A+",
     "MDA": "A+",
-    # A
     "MAS Opinião": "A",
     "Badra Comunicação": "A",
     "Ibope": "A",
@@ -50,7 +48,6 @@ CLASSIFICACAO_INSTITUTOS = {
     "Paraná Pesquisas": "A",
     "Real Time Big Data": "A",
     "Grupo M": "A",
-    # A-
     "Futura": "A-",
     "Instituto Amostragem": "A-",
     "Instituto Gasparetto de Pesquisas": "A-",
@@ -58,7 +55,6 @@ CLASSIFICACAO_INSTITUTOS = {
     "Perfil Pesquisas Técnicas (RN)": "A-",
     "Voice Pesquisas (MT)": "A-",
     "Govnet/Instituto Opinião (SP)": "A-",
-    # B+
     "Instituto Econométrica": "B+",
     "MT Dados": "B+",
     "Instituto de Pesquisa Resultado (MS)": "B+",
@@ -66,7 +62,6 @@ CLASSIFICACAO_INSTITUTOS = {
     "6 Sigma": "B+",
     "Prever Pesquisas": "B+",
     "Solução Treinamento": "B+",
-    # B
     "Ágora Pesquisa (RJ)": "B",
     "EPP": "B",
     "Exata Pesquisa (MA)": "B",
@@ -81,7 +76,6 @@ CLASSIFICACAO_INSTITUTOS = {
     "Dataform": "B",
     "Real Dados": "B",
     "Incope": "B",
-    # B-
     "Instituto Datailha": "B-",
     "Tendência Pesquisa (SC)": "B-",
     "Certifica Consultoria": "B-",
@@ -93,8 +87,8 @@ CLASSIFICACAO_INSTITUTOS = {
     "Pontual Pesquisas (AM)": "B-",
     "ABC Dados": "B-",
     "Mapa Marketing": "B-",
-    "Múltipla Pesquisa (PE)": "B-",   # nome antigo
-    "Instituto Múltipla": "B-",        # nome novo
+    "Múltipla Pesquisa (PE)": "B-",
+    "Instituto Múltipla": "B-",
     "Instituto Haverroth": "B-",
     "IPPEC (PR)": "B-",
     "IABR": "B-",
@@ -107,17 +101,16 @@ CLASSIFICACAO_INSTITUTOS = {
     "Agorasei Pesquisa": "B-",
     "BMO": "B-",
     "Opinião Pesquisas (PB)": "B-",
-    "Ipespe": "B-",   # nome antigo
-    "IPESPE": "B-",   # nome novo
+    "Ipespe": "B-",
+    "IPESPE": "B-",
     "Quaest": "B-",
     "W J Mendes": "B-",
     "Instituto Qualitativa": "B-",
-    # C+
     "Folha Capital": "C+",
     "AR7 Pesquisa": "C+",
     "Veritá": "C+",
-    "Instituto Methodus": "C+",   # nome antigo
-    "Methodus": "C+",              # nome novo
+    "Instituto Methodus": "C+",
+    "Methodus": "C+",
     "Estimativa": "C+",
     "Camminus Marketing": "C+",
     "Doxa": "C+",
@@ -125,11 +118,10 @@ CLASSIFICACAO_INSTITUTOS = {
     "Equação Pesquisas": "C+",
     "Instituto Seta": "C+",
     "Polo Pesquisas": "C+",
-    "Ranking Pesquisa": "C+",           # nome antigo
-    "Ranking Brasil Inteligência": "C+", # nome novo
+    "Ranking Pesquisa": "C+",
+    "Ranking Brasil Inteligência": "C+",
     "Index Pesquisas": "C+",
     "Potencial": "C+",
-    # C
     "F5 Atualiza Dados": "C",
     "Jornal Correio Continental": "C",
     "MBO": "C",
@@ -144,10 +136,9 @@ CLASSIFICACAO_INSTITUTOS = {
     "Instituto Vope": "C",
     "Vox Opinião Pública (SP)": "C",
     "Surgiu Pesquisas": "C",
-    # C-
     "Alternativa Dados": "C-",
-    "Seculus Consultoria": "C-",   # nome antigo
-    "Seculus": "C-",                # nome novo
+    "Seculus Consultoria": "C-",
+    "Seculus": "C-",
     "Datavox (PB)": "C-",
     "Instituto Credibilidade": "C-",
     "Multidados": "C-",
@@ -160,14 +151,13 @@ CLASSIFICACAO_INSTITUTOS = {
     "Infornews": "C-",
     "Zaytec Brasil": "C-",
     "Access": "C-",
-    # N
     "Brasmarket": "N",
     "DataPoder360": "N",
     "FSB Pesquisa": "N",
     "Gerp": "N",
     "Ideia Big Data": "N",
-    "Ipec (antigo Ibope)": "N",   # nome antigo
-    "Ipsos Ipec": "N",             # nome novo
+    "Ipec (antigo Ibope)": "N",
+    "Ipsos Ipec": "N",
     "Sensus": "N",
     "121 Labs": "N",
     "A.R. Akakia": "N",
@@ -313,6 +303,7 @@ CLASSIFICACAO_INSTITUTOS = {
     "Grupo Jet": "N",
 }
 
+
 def classificar_instituto(nome: str) -> str:
     return CLASSIFICACAO_INSTITUTOS.get(_norm_ws(nome), "Ainda não foi avaliado")
 
@@ -343,7 +334,8 @@ def parse_url_meta(url: str):
 
     m = re.search(
         r"/(?P<ano>\d{4})/(?P<cargo>governador)/(?P<uf>[a-z]{2})/.*?_t(?P<turno>\d)\.html",
-        u, re.I
+        u,
+        re.I
     )
     if m:
         return {
@@ -355,7 +347,8 @@ def parse_url_meta(url: str):
 
     m = re.search(
         r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>br)/(?P<turno>t\d)",
-        u, re.I
+        u,
+        re.I
     )
     if m:
         return {
@@ -367,7 +360,8 @@ def parse_url_meta(url: str):
 
     m = re.search(
         r"/(?P<ano>\d{4})/(?P<cargo>senador)/(?P<uf>[a-z]{2})/(?P<turno>t\d)/?$",
-        u, re.I
+        u,
+        re.I
     )
     if m:
         return {
@@ -383,9 +377,11 @@ def parse_url_meta(url: str):
 def parsear_pesquisa(texto):
     nome, id_pesquisa, data = "", "", ""
     linhas = [l.strip() for l in str(texto).strip().split("\n") if l.strip()]
+
     for linha in linhas:
         if re.match(r"^\(\d+\)$", linha):
             continue
+
         match_data = re.search(r"(\d{4}-\d{2}-\d{2})", linha)
         if match_data:
             data = match_data.group(1)
@@ -394,6 +390,7 @@ def parsear_pesquisa(texto):
                 id_pesquisa = antes
         else:
             nome = re.sub(r"\s*\(\d+\)\s*$", "", linha).strip()
+
     return _norm_ws(nome), _norm_ws(id_pesquisa), _norm_ws(data)
 
 
@@ -401,6 +398,7 @@ def parsear_pct(valor):
     v = str(valor).strip()
     if not v or v in ("-", "NaN%", "nan%", "NaN", "nan", ""):
         return None
+
     try:
         return float(v.replace("%", "").replace(",", ".").strip())
     except Exception:
@@ -461,12 +459,16 @@ def urls_senado_2026_t1(ufs):
 
 def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool):
     urls = []
+
     if incluir_governador:
         urls += urls_governador_2026_t1(UFS)
+
     if incluir_senado:
         urls += urls_senado_2026_t1(UFS)
+
     if incluir_presidente:
         urls += list(PRESIDENTE_URLS_DEFAULT)
+
     return urls
 
 
@@ -492,33 +494,41 @@ def criar_driver():
 
 def expandir_todos(driver, secao, max_clicks=120):
     i = 0
+
     while True:
         btns = secao.find_elements(By.CSS_SELECTOR, "button.rt-expander-button")
         fechados = [b for b in btns if b.get_attribute("aria-expanded") == "false"]
+
         if not fechados:
             break
+
         driver.execute_script("arguments[0].click();", fechados[0])
         time.sleep(0.8)
         i += 1
+
         if i >= max_clicks:
             break
 
 
 def extrair_tabela_react(secao):
     headers = []
+
     for el in secao.find_elements(By.CSS_SELECTOR, "div.rt-thead .rt-th"):
         inner = el.find_elements(By.CSS_SELECTOR, ".rt-text-content, .rt-sort-header")
         text = inner[0].text.strip() if inner else el.text.strip()
         text = text.replace("\n", " ").strip()
+
         if text:
             headers.append(text)
 
     rows_data = []
+
     for group in secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group"):
         for row in group.find_elements(By.CSS_SELECTOR, "div.rt-tr"):
             cells = row.find_elements(By.CSS_SELECTOR, "div.rt-td")
             if not cells:
                 continue
+
             vals = [c.text.strip() for c in cells]
             if any(vals):
                 rows_data.append(vals)
@@ -527,10 +537,11 @@ def extrair_tabela_react(secao):
         return None
 
     n_cols = max(len(r) for r in rows_data)
+
     if len(headers) < n_cols:
         headers += [f"Col_{i}" for i in range(len(headers), n_cols)]
-    headers = headers[:n_cols]
 
+    headers = headers[:n_cols]
     return pd.DataFrame(rows_data, columns=headers)
 
 
@@ -554,7 +565,7 @@ def scrape_url(driver, url: str, horario_raspagem: str):
         wait = WebDriverWait(driver, 40)
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS)))
     except Exception:
-        print(f"  [-] timeout (sem container)")
+        print("  [-] timeout (sem container)")
         return None, None
 
     time.sleep(2)
@@ -565,7 +576,7 @@ def scrape_url(driver, url: str, horario_raspagem: str):
 
     df_raw = extrair_tabela_react(secao)
     if df_raw is None or df_raw.empty:
-        print(f"  [-] sem tabela")
+        print("  [-] sem tabela")
         return None, None
 
     col_pesquisa = df_raw.columns.tolist()[0]
@@ -582,7 +593,9 @@ def scrape_url(driver, url: str, horario_raspagem: str):
         df_raw["Cenários"] = ""
 
     meta_expected = {"Modo Pesquisa", "Entrevistas", "Erro (Confiança)", "Cenários"}
-    cols_meta = [c for c in df_raw.columns if c in meta_expected] + ["instituto", "registro_tse", "data_campo", "_block_hash"]
+    cols_meta = [c for c in df_raw.columns if c in meta_expected] + [
+        "instituto", "registro_tse", "data_campo", "_block_hash"
+    ]
     cols_meta = [c for c in cols_meta if c in df_raw.columns]
 
     cols_cand = [c for c in df_raw.columns if c not in cols_meta]
@@ -684,7 +697,7 @@ def scrape_url(driver, url: str, horario_raspagem: str):
 def gs_client_from_env():
     raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
     if not raw:
-        raise RuntimeError("GOOGLE_CREDENTIALS_JSON não definido (GitHub secret).")
+        raise RuntimeError("GOOGLE_CREDENTIALS_JSON não definido.")
 
     creds_dict = json.loads(raw)
     scopes = [
@@ -705,10 +718,13 @@ def garantir_aba(spreadsheet, nome_aba, rows=2000, cols=25):
 def _aba_vazia(values):
     if not values:
         return True
+
     if len(values) == 1 and (not values[0] or all(str(x).strip() == "" for x in values[0])):
         return True
+
     if len(values) == 1 and len(values[0]) == 1 and str(values[0][0]).strip() == "":
         return True
+
     return False
 
 
@@ -718,6 +734,7 @@ def dedup_e_salvar_por_chave(aba, df_novo: pd.DataFrame, key_col: str):
 
     antes = len(df_novo)
     df_novo = df_novo.drop_duplicates(subset=[key_col], keep="first").reset_index(drop=True)
+
     if len(df_novo) < antes:
         print(f"  [dedup interno] removidas {antes - len(df_novo)} linhas duplicadas na coleta")
 
@@ -754,45 +771,96 @@ def dedup_e_salvar_por_chave(aba, df_novo: pd.DataFrame, key_col: str):
 
     if header_existente != df_add.columns.tolist():
         colunas_novas = [c for c in df_add.columns if c not in header_existente]
+
         if colunas_novas:
             header_final = header_existente + colunas_novas
             aba.update([header_final], range_name="A1")
             print(f"  [schema] {len(colunas_novas)} coluna(s) nova(s) adicionada(s) ao header: {colunas_novas}")
         else:
             header_final = header_existente
+
         df_add = df_add.reindex(columns=header_final, fill_value="")
 
     rows_to_insert = df_add.fillna("").astype(str).values.tolist()
-
-    # insere após o header (linha 2), empurrando os dados existentes pra baixo
     aba.insert_rows(rows_to_insert, row=2)
 
     print(f"  [insert] {len(df_add)} linha(s) nova(s) | {len(existing_keys)} já existiam")
     return len(df_add), len(existing_keys)
 
 
-def main():
-    sheet_id = (os.getenv("SPREADSHEET_ID_POLLING", "") or "").strip()
-    if not sheet_id:
-        raise RuntimeError("SPREADSHEET_ID_POLLING não definido (GitHub secret).")
+def obter_sheet_id_por_cargo(cargo: str) -> str:
+    if cargo == "governador":
+        return (os.getenv("SPREADSHEET_ID_GOVERNADOR", "") or "").strip()
 
-    incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
-    incluir_senado = env_bool("INCLUIR_SENADO", False)
-    incluir_presidente = env_bool("INCLUIR_PRESIDENTE", False)
+    if cargo == "presidente":
+        return (os.getenv("SPREADSHEET_ID_PRESIDENTE", "") or "").strip()
 
-    urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente)
-    if not urls:
-        print("[-] Nenhuma URL selecionada. Ajuste INCLUDE_*.")
+    return ""
+
+
+def validar_configuracao_planilhas(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool):
+    if incluir_governador and not obter_sheet_id_por_cargo("governador"):
+        raise RuntimeError("SPREADSHEET_ID_GOVERNADOR não definido.")
+
+    if incluir_presidente and not obter_sheet_id_por_cargo("presidente"):
+        raise RuntimeError("SPREADSHEET_ID_PRESIDENTE não definido.")
+
+    if incluir_senado:
+        raise RuntimeError("Senado ainda não está configurado para salvamento em planilha separada.")
+
+
+def salvar_bloco_em_planilha(gc, cargo: str, df_p: pd.DataFrame, df_r: pd.DataFrame):
+    if (df_p is None or df_p.empty) and (df_r is None or df_r.empty):
+        print(f"[-] {cargo}: nada para salvar")
         return
 
-    horario_raspagem = datetime.now(zoneinfo.ZoneInfo("America/Recife")).strftime("%Y-%m-%d %H:%M:%S")
+    sheet_id = obter_sheet_id_por_cargo(cargo)
+    if not sheet_id:
+        raise RuntimeError(f"Planilha do cargo '{cargo}' não configurada.")
 
-    print("[+] Conectando ao Google Sheets...")
-    gc = gs_client_from_env()
+    print(f"[+] Salvando {cargo} na planilha correta...")
     sh = gc.open_by_key(sheet_id)
 
     aba_pesquisas = garantir_aba(sh, "pesquisas", rows=5000, cols=25)
     aba_resultados = garantir_aba(sh, "resultados", rows=20000, cols=25)
+
+    if df_p is not None and not df_p.empty:
+        novos, exist = dedup_e_salvar_por_chave(aba_pesquisas, df_p, key_col="scenario_id")
+        print(f"[+] {cargo} | pesquisas: {novos} novas linhas | {exist} já existiam")
+    else:
+        print(f"[-] {cargo} | pesquisas: nada coletado")
+
+    if df_r is not None and not df_r.empty:
+        df_r = df_r.copy()
+        df_r["_dedup_key"] = (
+            df_r["scenario_id"].astype(str)
+            + "|" + df_r["tipo"].astype(str)
+            + "|" + df_r["candidato"].astype(str)
+        )
+        novos, exist = dedup_e_salvar_por_chave(aba_resultados, df_r, key_col="_dedup_key")
+        print(f"[+] {cargo} | resultados: {novos} novas linhas | {exist} já existiam")
+    else:
+        print(f"[-] {cargo} | resultados: nada coletado")
+
+
+def main():
+    incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
+    incluir_senado = env_bool("INCLUIR_SENADO", False)
+    incluir_presidente = env_bool("INCLUIR_PRESIDENTE", True)
+
+    validar_configuracao_planilhas(incluir_governador, incluir_senado, incluir_presidente)
+
+    urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente)
+    if not urls:
+        print("[-] Nenhuma URL selecionada. Ajuste INCLUIR_*.")
+        return
+
+    horario_raspagem = datetime.now(
+        zoneinfo.ZoneInfo("America/Recife")
+    ).strftime("%Y-%m-%d %H:%M:%S")
+
+    print("[+] Conectando ao Google Sheets...")
+    gc = gs_client_from_env()
 
     print("[+] Iniciando Chrome...")
     driver = criar_driver()
@@ -803,33 +871,29 @@ def main():
     try:
         for url in urls:
             df_p, df_r = scrape_url(driver, url, horario_raspagem)
+
             if df_p is not None and not df_p.empty:
                 all_p.append(df_p)
+
             if df_r is not None and not df_r.empty:
                 all_r.append(df_r)
     finally:
         driver.quit()
 
-    print("[+] Salvando...")
+    print("[+] Organizando resultados por cargo...")
 
-    if all_p:
-        df_p_all = pd.concat(all_p, ignore_index=True)
-        novos, exist = dedup_e_salvar_por_chave(aba_pesquisas, df_p_all, key_col="scenario_id")
-        print(f"[+] pesquisas: {novos} novas linhas | {exist} já existiam")
-    else:
-        print("[-] pesquisas: nada coletado")
+    df_p_all = pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame()
+    df_r_all = pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame()
 
-    if all_r:
-        df_r_all = pd.concat(all_r, ignore_index=True)
-        df_r_all["_dedup_key"] = (
-            df_r_all["scenario_id"].astype(str)
-            + "|" + df_r_all["tipo"].astype(str)
-            + "|" + df_r_all["candidato"].astype(str)
-        )
-        novos, exist = dedup_e_salvar_por_chave(aba_resultados, df_r_all, key_col="_dedup_key")
-        print(f"[+] resultados: {novos} novas linhas | {exist} já existiam")
-    else:
-        print("[-] resultados: nada coletado")
+    if incluir_governador:
+        df_p_gov = df_p_all[df_p_all["cargo"] == "governador"].copy() if not df_p_all.empty else pd.DataFrame()
+        df_r_gov = df_r_all[df_r_all["cargo"] == "governador"].copy() if not df_r_all.empty else pd.DataFrame()
+        salvar_bloco_em_planilha(gc, "governador", df_p_gov, df_r_gov)
+
+    if incluir_presidente:
+        df_p_pres = df_p_all[df_p_all["cargo"] == "presidente"].copy() if not df_p_all.empty else pd.DataFrame()
+        df_r_pres = df_r_all[df_r_all["cargo"] == "presidente"].copy() if not df_r_all.empty else pd.DataFrame()
+        salvar_bloco_em_planilha(gc, "presidente", df_p_pres, df_r_pres)
 
     print("[+] OK")
 
