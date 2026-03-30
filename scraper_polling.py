@@ -29,7 +29,7 @@ UFS = [
 ]
 
 PRESIDENTE_URLS_DEFAULT = [
-    "https://www.pollingdata.com.br/2026/presidente/br/t1_lula-flavio-sem-bolsonaros/"
+    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html"
 ]
 
 WAIT_CSS = "div#dados-das-pesquisas"
