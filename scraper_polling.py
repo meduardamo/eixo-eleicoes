@@ -346,7 +346,7 @@ def parse_url_meta(url: str):
         }
 
     m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>br)/(?P<turno>t\d)",
+        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>br)/\d{4}_presidente_br_(?P<turno>t\d)",
         u,
         re.I
     )
