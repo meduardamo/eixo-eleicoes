@@ -1,21 +1,10 @@
-"""
-backfill_colunas.py
--------------------
-Roda UMA VEZ para preencher retroativamente:
-  - candidato_partido  → aba RESULTADOS
-  - fonte_url_original → aba PESQUISAS
-
-Variáveis de ambiente necessárias:
-  GOOGLE_CREDENTIALS_JSON
-  SPREADSHEET_ID_POLLINGDATA
-"""
-
 import os
 import re
 import time
 import json
 import hashlib
-
+from datetime import datetime
+import zoneinfo
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
@@ -32,14 +21,302 @@ try:
 except Exception:
     _HAS_WDM = False
 
+
+UFS = [
+    "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go",
+    "ma", "mg", "ms", "mt", "pa", "pb", "pe", "pi", "pr",
+    "rj", "rn", "ro", "rr", "rs", "sc", "se", "sp", "to"
+]
+
+PRESIDENTE_URLS_DEFAULT = [
+    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html"
+]
+
 WAIT_CSS = "div#dados-das-pesquisas"
 
+CLASSIFICACAO_INSTITUTOS = {
+    "Datafolha": "A+",
+    "AtlasIntel": "A+",
+    "Jornal Girassol": "A+",
+    "Gazeta Dados": "A+",
+    "Jornal Stylo": "A+",
+    "MDA": "A+",
+    "MAS Opinião": "A",
+    "Badra Comunicação": "A",
+    "Ibope": "A",
+    "DMP": "A",
+    "Paraná Pesquisas": "A",
+    "Real Time Big Data": "A",
+    "Grupo M": "A",
+    "Futura": "A-",
+    "Instituto Amostragem": "A-",
+    "Instituto Gasparetto de Pesquisas": "A-",
+    "Serpes": "A-",
+    "Perfil Pesquisas Técnicas (RN)": "A-",
+    "Voice Pesquisas (MT)": "A-",
+    "Govnet/Instituto Opinião (SP)": "A-",
+    "Instituto Econométrica": "B+",
+    "MT Dados": "B+",
+    "Instituto de Pesquisa Resultado (MS)": "B+",
+    "Data M": "B+",
+    "6 Sigma": "B+",
+    "Prever Pesquisas": "B+",
+    "Solução Treinamento": "B+",
+    "Ágora Pesquisa (RJ)": "B",
+    "EPP": "B",
+    "Exata Pesquisa (MA)": "B",
+    "Instituto Jales": "B",
+    "Dataqualy": "B",
+    "Painel Brasil": "B",
+    "Brand Consultoria": "B",
+    "Instituto Opinião (PR)": "B",
+    "INOPE": "B",
+    "Vox Populi": "B",
+    "IPEMS": "B",
+    "Dataform": "B",
+    "Real Dados": "B",
+    "Incope": "B",
+    "Instituto Datailha": "B-",
+    "Tendência Pesquisa (SC)": "B-",
+    "Certifica Consultoria": "B-",
+    "Opinar Pesquisas": "B-",
+    "FLS Pesquisa": "B-",
+    "IPAT": "B-",
+    "Dados Pesquisa (GO)": "B-",
+    "Agora Pesquisa (BA)": "B-",
+    "Pontual Pesquisas (AM)": "B-",
+    "ABC Dados": "B-",
+    "Mapa Marketing": "B-",
+    "Múltipla Pesquisa (PE)": "B-",
+    "Instituto Múltipla": "B-",
+    "Instituto Haverroth": "B-",
+    "IPPEC (PR)": "B-",
+    "IABR": "B-",
+    "CP2 Pesquisa": "B-",
+    "RF Consultoria": "B-",
+    "IRG Consultoria": "B-",
+    "Fortiori": "B-",
+    "Colectta Consultoria": "B-",
+    "Consult Pesquisa (RN)": "B-",
+    "Agorasei Pesquisa": "B-",
+    "BMO": "B-",
+    "Opinião Pesquisas (PB)": "B-",
+    "Ipespe": "B-",
+    "IPESPE": "B-",
+    "Quaest": "B-",
+    "W J Mendes": "B-",
+    "Instituto Qualitativa": "B-",
+    "Folha Capital": "C+",
+    "AR7 Pesquisa": "C+",
+    "Veritá": "C+",
+    "Instituto Methodus": "C+",
+    "Methodus": "C+",
+    "Estimativa": "C+",
+    "Camminus Marketing": "C+",
+    "Doxa": "C+",
+    "R M Mariath": "C+",
+    "Equação Pesquisas": "C+",
+    "Instituto Seta": "C+",
+    "Polo Pesquisas": "C+",
+    "Ranking Pesquisa": "C+",
+    "Ranking Brasil Inteligência": "C+",
+    "Index Pesquisas": "C+",
+    "Potencial": "C+",
+    "F5 Atualiza Dados": "C",
+    "Jornal Correio Continental": "C",
+    "MBO": "C",
+    "Comunicare": "C",
+    "Naipes Marketing": "C",
+    "Instituto Exatta (PE)": "C",
+    "Escutec": "C",
+    "Instituto França": "C",
+    "Ibrape": "C",
+    "Instituto Datasensus": "C",
+    "INOP": "C",
+    "Instituto Vope": "C",
+    "Vox Opinião Pública (SP)": "C",
+    "Surgiu Pesquisas": "C",
+    "Alternativa Dados": "C-",
+    "Seculus Consultoria": "C-",
+    "Seculus": "C-",
+    "Datavox (PB)": "C-",
+    "Instituto Credibilidade": "C-",
+    "Multidados": "C-",
+    "Voga Pesquisas": "C-",
+    "Jornal O+Positivo": "C-",
+    "Studio Pesquisas": "C-",
+    "Brasil Dados": "C-",
+    "Census Pesquisas": "C-",
+    "Exatus Consultoria (RN)": "C-",
+    "Infornews": "C-",
+    "Zaytec Brasil": "C-",
+    "Access": "C-",
+    "Brasmarket": "N",
+    "DataPoder360": "N",
+    "FSB Pesquisa": "N",
+    "Gerp": "N",
+    "Ideia Big Data": "N",
+    "Ipec (antigo Ibope)": "N",
+    "Ipsos Ipec": "N",
+    "Sensus": "N",
+    "121 Labs": "N",
+    "A.R. Akakia": "N",
+    "A.S. Instituto de Planejamento": "N",
+    "Acertar": "N",
+    "Action Marketing": "N",
+    "Adans Estatística": "N",
+    "Agência Mind": "N",
+    "AGESP": "N",
+    "Agili Pesquisas": "N",
+    "Agilize Marketing": "N",
+    "AGRJPEL": "N",
+    "Alencar Consultoria": "N",
+    "Alexandre Sócrates Naviskas": "N",
+    "Aliança Imóveis": "N",
+    "All4 Innovation": "N",
+    "Alô Brasil": "N",
+    "Alô Sergipe": "N",
+    "Alvo Marketing (PA)": "N",
+    "Amaral dos Santos & Pimentel": "N",
+    "American Analytics": "N",
+    "Ampla Consultoria (BA)": "N",
+    "Ampla Pesquisa (CE)": "N",
+    "Ampla Serviços (MG)": "N",
+    "Âncora Pesquisa (Irecê/BA)": "N",
+    "Andreia Rafael Publicidade": "N",
+    "Ângulo Pesquisas": "N",
+    "Apraico Pesquisas": "N",
+    "Arbeit Pesquisas": "N",
+    "Arpel IPEC (PE)": "N",
+    "Ascensão Tecnologia": "N",
+    "Associação do Comércio e Indústria de Franca": "N",
+    "Atlas Assessoria (MS)": "N",
+    "Attitude Consultoria": "N",
+    "Atual Pesquisas": "N",
+    "Avaliar Pesquisa": "N",
+    "Axio Inteligência": "N",
+    "Axioma": "N",
+    "BABESP": "N",
+    "Bis Comunicação": "N",
+    "Boas e Boas": "N",
+    "Brasília Dados": "N",
+    "Braslopes Pesquisa": "N",
+    "Bureau Pesquisas": "N",
+    "BZN Pesquisa": "N",
+    "C. R. Carraro": "N",
+    "CBP Pesquisa e Hotelaria": "N",
+    "Centro Oeste Pesquisa": "N",
+    "Cerrado Pesquisa": "N",
+    "Certus": "N",
+    "Cipec": "N",
+    "Civita Inteligência": "N",
+    "Compasso Consultoria": "N",
+    "Compope": "N",
+    "Conpar": "N",
+    "Conpeom": "N",
+    "Consulte Inteligência (PI)": "N",
+    "Contatus Comunicações": "N",
+    "Correio do Povo Tocantinense": "N",
+    "Criattiva Pesquisa": "N",
+    "Cruz Consulting": "N",
+    "CTAS Tecnologia": "N",
+    "D M Duarte": "N",
+    "Dado Pesquisa": "N",
+    "Dados Folha (GO)": "N",
+    "Data AZ": "N",
+    "Data Center Pesquisas": "N",
+    "Data Control": "N",
+    "Data Dados": "N",
+    "Data Fato": "N",
+    "Data Índice": "N",
+    "Data Populi": "N",
+    "Data Qualyt": "N",
+    "Data Verus Pesquisa": "N",
+    "Data Vox": "N",
+    "Data X": "N",
+    "Datacerto": "N",
+    "Datacidad Consultoria": "N",
+    "Dataconsulte": "N",
+    "Dataeco": "N",
+    "Datamétrica": "N",
+    "Datamob": "N",
+    "Dataplan": "N",
+    "Datasonda": "N",
+    "Dattamarketing": "N",
+    "Decisão Pesquisa": "N",
+    "Delta Agência de Pesquisa": "N",
+    "Destak Publicidade": "N",
+    "Destake Pesquisas": "N",
+    "Desttaq": "N",
+    "Diagnóstico Pesquisas": "N",
+    "Dimensão Pesquisa": "N",
+    "Disan Empreendimentos": "N",
+    "Dominiun Filmes": "N",
+    "E. M. Produções": "N",
+    "E. Tormes & Cia.": "N",
+    "Ebrap": "N",
+    "Ecodatta": "N",
+    "Economic Cat": "N",
+    "Ecos Pesquisa": "N",
+    "Editora Ana Cássia": "N",
+    "Editora Azul": "N",
+    "Editora Cidades": "N",
+    "Editora Zen": "N",
+    "Efetiva Pesquisas": "N",
+    "Eficaz Pesquisas": "N",
+    "EGS Comunicação": "N",
+    "Eleva": "N",
+    "Empresa de Pesquisas Técnicas": "N",
+    "Enfoque Assessoria": "N",
+    "Enquet Pesquisas": "N",
+    "EPB Consultoria": "N",
+    "Equatorial Pesquisa": "N",
+    "Erica Regina Análise": "N",
+    "Ética Pesquisa": "N",
+    "Exata Op (DF)": "N",
+    "Excelência Pesquisa": "N",
+    "Exitus Comunicação": "N",
+    "Farias Imóveis e Pesquisas": "N",
+    "FC Pesquisas": "N",
+    "Fernandes Consultoria": "N",
+    "Flemming Pesquisas": "N",
+    "Flex Consultoria e Pesquisas": "N",
+    "Foca Comunicação (RS)": "N",
+    "Foccus": "N",
+    "Foco Consultoria (PI)": "N",
+    "Foco Pesquisa (BA)": "N",
+    "Folha de Caiaponia": "N",
+    "Folha Regional (Livramento)": "N",
+    "G3 Soluções": "N",
+    "Gazeta de Alagoas": "N",
+    "Giga Consultoria": "N",
+    "Global Consulting (GO)": "N",
+    "Global Consultoria (PR)": "N",
+    "Global Service Pesquisas": "N",
+    "Globo Pesquisa (PR)": "N",
+    "Goiás Pesquisas": "N",
+    "Gold Solution": "N",
+    "Gomes Comunicação": "N",
+    "GPP": "N",
+    "Gradux": "N",
+    "Grupo Carlos Duarte": "N",
+    "Grupo Jet": "N",
+}
 
-# ---------------------------------------------------------------------------
-# Utilitários
-# ---------------------------------------------------------------------------
 
-def _norm_ws(s) -> str:
+def classificar_instituto(nome: str) -> str:
+    return CLASSIFICACAO_INSTITUTOS.get(_norm_ws(nome), "Ainda não foi avaliado")
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    v = (os.getenv(name, "") or "").strip().lower()
+    if v == "":
+        return default
+    return v in ("1", "true", "t", "yes", "y", "sim", "on")
+
+
+def _norm_ws(s: str) -> str:
+    # FIX: uso de `s or ""` causava TypeError com pd.NA.
     try:
         if pd.isna(s):
             s = ""
@@ -58,12 +335,60 @@ def _sha1_short(s: str, n=10) -> str:
     return hashlib.sha1(str(s).encode("utf-8", errors="ignore")).hexdigest()[:n]
 
 
+def parse_url_meta(url: str):
+    u = url.strip()
+
+    m = re.search(
+        r"/(?P<ano>\d{4})/(?P<cargo>governador)/(?P<uf>[a-z]{2})/.*?_t(?P<turno>\d)\.html",
+        u,
+        re.I
+    )
+    if m:
+        return {
+            "ano": int(m.group("ano")),
+            "cargo": "governador",
+            "uf": m.group("uf").upper(),
+            "turno": f"t{m.group('turno')}",
+        }
+
+    m = re.search(
+        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>br)/\d{4}_presidente_br_(?P<turno>t\d)",
+        u,
+        re.I
+    )
+    if m:
+        return {
+            "ano": int(m.group("ano")),
+            "cargo": "presidente",
+            "uf": "BR",
+            "turno": m.group("turno").lower(),
+        }
+
+    m = re.search(
+        r"/(?P<ano>\d{4})/(?P<cargo>senador)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)\.html|(?P<turno2>t\d)/?$)",
+        u,
+        re.I
+    )
+    if m:
+        turno = m.group("turno") or m.group("turno2")
+        return {
+            "ano": int(m.group("ano")),
+            "cargo": "senador",
+            "uf": m.group("uf").upper(),
+            "turno": turno.lower(),
+        }
+
+    return {"ano": None, "cargo": None, "uf": None, "turno": None}
+
+
 def parsear_pesquisa(texto):
     nome, id_pesquisa, data = "", "", ""
     linhas = [l.strip() for l in str(texto).strip().split("\n") if l.strip()]
+
     for linha in linhas:
         if re.match(r"^\(\d+\)$", linha):
             continue
+
         match_data = re.search(r"(\d{4}-\d{2}-\d{2})", linha)
         if match_data:
             data = match_data.group(1)
@@ -72,91 +397,93 @@ def parsear_pesquisa(texto):
                 id_pesquisa = antes
         else:
             nome = re.sub(r"\s*\(\d+\)\s*$", "", linha).strip()
+
     return _norm_ws(nome), _norm_ws(id_pesquisa), _norm_ws(data)
+
+
+def parsear_pct(valor):
+    v = str(valor).strip()
+    if not v or v in ("-", "NaN%", "nan%", "NaN", "nan", ""):
+        return None
+
+    try:
+        return float(v.replace("%", "").replace(",", ".").strip())
+    except Exception:
+        return None
+
+
+def parsear_candidato_partido(col_header):
+    m = re.match(r"^(.+?)\s*\(([^)]+)\)\s*$", str(col_header).strip())
+    if m:
+        return _norm_ws(m.group(1)), _norm_ws(m.group(2))
+    return _norm_ws(col_header), ""
+
+
+def inferir_confianca(erro_conf):
+    s = str(erro_conf or "")
+    m = re.search(r"(\d{2,3})\s*%\s*\)", s)
+    if m:
+        try:
+            return int(m.group(1))
+        except Exception:
+            return None
+    return None
+
+
+def inferir_margem_erro(erro_conf):
+    s = str(erro_conf or "").replace(",", ".")
+    m = re.search(r"(\d+(?:\.\d+)?)\s*%", s)
+    if m:
+        try:
+            return float(m.group(1))
+        except Exception:
+            return None
+    return None
 
 
 def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_block_hash):
     uf = uf.upper()
     data_campo = _norm_ws(data_campo)
     instituto_slug = _slug(instituto)
+
     if id_pesquisa and id_pesquisa.lower() not in ("sem registro", "sem_registro", "semregistro", "nan"):
         return f"{uf}|{cargo}|{turno}|{id_pesquisa}|{data_campo}"
+
     return f"{uf}|{cargo}|{turno}|{instituto_slug}|{data_campo}|{raw_block_hash}"
 
 
-def parse_url_meta(url: str):
-    u = url.strip()
-    m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>governador)/(?P<uf>[a-z]{2})/.*?_t(?P<turno>\d)\.html", u, re.I)
-    if m:
-        return {"cargo": "governador", "uf": m.group("uf").upper(), "turno": f"t{m.group('turno')}"}
-    m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>br)/\d{4}_presidente_br_(?P<turno>t\d)", u, re.I)
-    if m:
-        return {"cargo": "presidente", "uf": "BR", "turno": m.group("turno").lower()}
-    m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>senador)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)\.html|(?P<turno2>t\d)/?$)",
-        u, re.I)
-    if m:
-        turno = m.group("turno") or m.group("turno2")
-        return {"cargo": "senador", "uf": m.group("uf").upper(), "turno": turno.lower()}
-    return {"cargo": None, "uf": None, "turno": None}
+def gerar_scenario_id(poll_id, scenario_label):
+    return f"{poll_id}|{_norm_ws(scenario_label)}"
 
 
-# ---------------------------------------------------------------------------
-# Google Sheets
-# ---------------------------------------------------------------------------
-
-def gs_client_from_env():
-    raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
-    if not raw:
-        raise RuntimeError("GOOGLE_CREDENTIALS_JSON não definido.")
-    creds_dict = json.loads(raw)
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
+def urls_governador_2026_t1(ufs):
+    return [
+        f"https://www.pollingdata.com.br/2026/governador/{uf}/2026_governador_{uf}_t1.html"
+        for uf in ufs
     ]
-    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    return gspread.authorize(credentials)
 
 
-def col_index(headers: list, name: str) -> int:
-    try:
-        return headers.index(name)
-    except ValueError:
-        return -1
+def urls_senado_2026_t1(ufs):
+    return [
+        f"https://www.pollingdata.com.br/2026/senador/{uf}/2026_senador_{uf}_t1.html"
+        for uf in ufs
+    ]
 
 
-def garantir_coluna(aba, headers: list, nome_col: str) -> int:
-    """Garante que a coluna existe no header; adiciona ao final se não existir."""
-    idx = col_index(headers, nome_col)
-    if idx >= 0:
-        return idx
-    novo_idx = len(headers)
-    col_letra = gspread.utils.rowcol_to_a1(1, novo_idx + 1)[:-1]
-    aba.update([[nome_col]], range_name=f"{col_letra}1")
-    headers.append(nome_col)
-    print(f"  [schema] coluna '{nome_col}' adicionada na posição {novo_idx + 1}")
-    return novo_idx
+def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool):
+    urls = []
 
+    if incluir_governador:
+        urls += urls_governador_2026_t1(UFS)
 
-def expandir_aba_se_necessario(aba, n_linhas_dados: int):
-    """
-    Garante que a aba tem linhas suficientes para receber os dados.
-    n_linhas_dados = número de linhas de dados (sem contar o header).
-    """
-    n_necessario = n_linhas_dados + 1  # +1 pelo header
-    props = aba.spreadsheet.get_worksheet_by_id(aba.id)
-    atual = aba.row_count
-    if n_necessario > atual:
-        extra = n_necessario - atual + 1000  # margem de 1000
-        aba.add_rows(extra)
-        print(f"  [resize] aba '{aba.title}' expandida: {atual} → {atual + extra} linhas")
+    if incluir_senado:
+        urls += urls_senado_2026_t1(UFS)
 
+    if incluir_presidente:
+        urls += list(PRESIDENTE_URLS_DEFAULT)
 
-# ---------------------------------------------------------------------------
-# Selenium
-# ---------------------------------------------------------------------------
+    return urls
+
 
 def criar_driver():
     options = webdriver.ChromeOptions()
@@ -167,10 +494,12 @@ def criar_driver():
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
+
     if _HAS_WDM:
         service = Service(ChromeDriverManager().install())
     else:
         service = Service()
+
     driver = webdriver.Chrome(service=service, options=options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
@@ -178,19 +507,29 @@ def criar_driver():
 
 def expandir_todos(driver, secao, max_clicks=120):
     i = 0
+
     while True:
         btns = secao.find_elements(By.CSS_SELECTOR, "button.rt-expander-button")
         fechados = [b for b in btns if b.get_attribute("aria-expanded") == "false"]
+
         if not fechados:
             break
+
         driver.execute_script("arguments[0].click();", fechados[0])
         time.sleep(0.8)
         i += 1
+
         if i >= max_clicks:
             break
 
 
-def extrair_link_fonte_do_grupo(group) -> str:
+def extrair_link_fonte_do_grupo(group):
+    """
+    Tenta extrair o link original da pesquisa dentro de um grupo expandido.
+    O pollingdata coloca um <a href> dentro de table#tab_instituto na linha expandida.
+    Retorna string vazia se não encontrar.
+    """
+    # Seletores em ordem de preferência — ajuste se o site mudar
     seletores = [
         "table#tab_instituto a[href]",
         "div.rt-td-inner table a[href]",
@@ -208,27 +547,75 @@ def extrair_link_fonte_do_grupo(group) -> str:
     return ""
 
 
-def raspar_links_por_poll_id(driver, url: str) -> dict:
+def extrair_tabela_react(secao):
+    """
+    Extrai a tabela React em um DataFrame.
+    Captura também o link da fonte original (href dentro da linha expandida)
+    na coluna '_link_fonte', propagado para todas as linhas do mesmo grupo.
+    """
+    headers = []
+
+    for el in secao.find_elements(By.CSS_SELECTOR, "div.rt-thead .rt-th"):
+        inner = el.find_elements(By.CSS_SELECTOR, ".rt-text-content, .rt-sort-header")
+        text = inner[0].text.strip() if inner else el.text.strip()
+        text = text.replace("\n", " ").strip()
+        if text:
+            headers.append(text)
+
+    rows_data = []
+
+    for group in secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group"):
+        # Captura o link uma vez por grupo (pesquisa)
+        link_fonte = extrair_link_fonte_do_grupo(group)
+
+        for row in group.find_elements(By.CSS_SELECTOR, "div.rt-tr"):
+            cells = row.find_elements(By.CSS_SELECTOR, "div.rt-td")
+            if not cells:
+                continue
+            vals = [c.text.strip() for c in cells]
+            if any(vals):
+                rows_data.append(vals + [link_fonte])
+
+    if not rows_data:
+        return None
+
+    n_cols = max(len(r) for r in rows_data)
+
+    # n_cols - 1 colunas de dados + 1 coluna _link_fonte
+    if len(headers) < n_cols - 1:
+        headers += [f"Col_{i}" for i in range(len(headers), n_cols - 1)]
+    headers = headers[: n_cols - 1] + ["_link_fonte"]
+
+    # Garante largura uniforme
+    for r in rows_data:
+        while len(r) < n_cols:
+            r.append("")
+
+    return pd.DataFrame(rows_data, columns=headers)
+
+
+def scrape_url(driver, url: str, horario_raspagem: str):
     meta = parse_url_meta(url)
+    ano = meta["ano"]
     cargo = meta["cargo"]
-    uf    = meta["uf"]
+    uf = meta["uf"]
     turno = meta["turno"]
 
-    if not cargo:
-        print(f"  [-] URL não reconhecida: {url}")
-        return {}
+    if not cargo or not uf or not turno:
+        print(f"[-] URL não reconhecida: {url}")
+        return None, None
 
-    print(f"  [backfill] {cargo.upper()} {uf} {turno} -> {url}")
+    print(f"[+] {cargo.upper()} {uf} {turno} -> {url}")
     driver.get(url)
+
     time.sleep(10)
 
     try:
-        WebDriverWait(driver, 40).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
-        )
+        wait = WebDriverWait(driver, 40)
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS)))
     except Exception:
-        print("    [-] timeout")
-        return {}
+        print("  [-] timeout (sem container)")
+        return None, None
 
     time.sleep(2)
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
@@ -236,230 +623,319 @@ def raspar_links_por_poll_id(driver, url: str) -> dict:
     time.sleep(2)
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
 
-    resultado = {}
-    for group in secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group"):
-        link_fonte = extrair_link_fonte_do_grupo(group)
+    df_raw = extrair_tabela_react(secao)
+    if df_raw is None or df_raw.empty:
+        print("  [-] sem tabela")
+        return None, None
 
-        texto_pesquisa = ""
-        for row in group.find_elements(By.CSS_SELECTOR, "div.rt-tr"):
-            cells = row.find_elements(By.CSS_SELECTOR, "div.rt-td")
-            if cells and cells[0].text.strip():
-                texto_pesquisa = cells[0].text.strip()
-                break
+    col_pesquisa = df_raw.columns.tolist()[0]
+    df_raw[col_pesquisa] = df_raw[col_pesquisa].replace("", pd.NA).ffill()
 
-        if not texto_pesquisa:
-            continue
+    # Propaga o link para todas as linhas do mesmo grupo (ffill já cuida disso
+    # pois o link vem na primeira linha de cada grupo)
+    df_raw["_link_fonte"] = df_raw["_link_fonte"].replace("", pd.NA).ffill().fillna("")
 
-        nome, id_pesquisa, data_campo = parsear_pesquisa(texto_pesquisa)
-        block_hash = _sha1_short(_norm_ws(texto_pesquisa), 10)
-        poll_id = gerar_poll_id(uf, nome, id_pesquisa, data_campo, cargo, turno, block_hash)
+    parsed = df_raw[col_pesquisa].apply(parsear_pesquisa)
+    df_raw["instituto"] = parsed.apply(lambda x: x[0])
+    df_raw["registro_tse"] = parsed.apply(lambda x: x[1])
+    df_raw["data_campo"] = parsed.apply(lambda x: x[2])
+    df_raw["_block_hash"] = df_raw[col_pesquisa].apply(lambda x: _sha1_short(_norm_ws(x), 10))
+    df_raw = df_raw.drop(columns=[col_pesquisa])
 
-        if poll_id and link_fonte:
-            resultado[poll_id] = link_fonte
+    if "Cenários" not in df_raw.columns:
+        df_raw["Cenários"] = ""
 
-    print(f"    [+] {len(resultado)} poll_ids com link capturado")
-    return resultado
+    meta_expected = {"Modo Pesquisa", "Entrevistas", "Erro (Confiança)", "Cenários"}
+    cols_meta = [c for c in df_raw.columns if c in meta_expected] + [
+        "instituto", "registro_tse", "data_campo", "_block_hash", "_link_fonte"
+    ]
+    cols_meta = [c for c in cols_meta if c in df_raw.columns]
 
+    cols_cand = [c for c in df_raw.columns if c not in cols_meta]
+    cols_cand = [
+        c for c in cols_cand
+        if re.search(r"\([A-Za-z]{2,}\)", str(c)) or str(c).lower().strip() in ("não válido", "nao valido")
+    ]
 
-# ---------------------------------------------------------------------------
-# Envio em lotes — range qualificado com nome da aba
-# ---------------------------------------------------------------------------
+    pesquisas_rows = []
+    resultados_rows = []
 
-def _aplicar_updates(aba, updates: list, batch_size: int = 500):
-    """
-    updates: lista de (row_1based, col_1based, valor)
-    O range é qualificado com o nome da aba ('NomeAba'!A1) para que a API
-    do Sheets nunca confunda com outra aba.
-    """
-    if not updates:
-        print("  [skip] nenhum update necessário")
-        return
+    for _, row in df_raw.iterrows():
+        instituto = _norm_ws(row.get("instituto", ""))
+        registro_tse = _norm_ws(row.get("registro_tse", ""))
+        data_campo = _norm_ws(row.get("data_campo", ""))
+        modo = _norm_ws(row.get("Modo Pesquisa", ""))
+        entrevistas_raw = _norm_ws(row.get("Entrevistas", ""))
+        erro_conf = _norm_ws(row.get("Erro (Confiança)", ""))
+        scenario_label = _norm_ws(row.get("Cenários", "")) or "NA"
+        block_hash = _norm_ws(row.get("_block_hash", ""))
+        link_fonte_original = _norm_ws(row.get("_link_fonte", ""))
 
-    # Garante que a aba tem linhas suficientes para o maior índice de linha
-    max_row = max(r for r, c, v in updates)
-    if max_row > aba.row_count:
-        extra = max_row - aba.row_count + 1000
-        aba.add_rows(extra)
-        print(f"  [resize] aba '{aba.title}' expandida para {aba.row_count + extra} linhas")
+        poll_id = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
+        scenario_id = gerar_scenario_id(poll_id, scenario_label)
 
-    nome_aba = aba.title  # ex: "resultados" ou "pesquisas"
-    total = 0
+        amostra = None
+        try:
+            if entrevistas_raw and str(entrevistas_raw).strip().isdigit():
+                amostra = int(str(entrevistas_raw).strip())
+        except Exception:
+            amostra = None
 
-    for i in range(0, len(updates), batch_size):
-        lote = updates[i: i + batch_size]
-        data = []
-        for r, c, v in lote:
-            celula = gspread.utils.rowcol_to_a1(r, c)
-            # Qualifica com o nome da aba: 'resultados'!T6993
-            range_qualificado = f"'{nome_aba}'!{celula}"
-            data.append({"range": range_qualificado, "values": [[v]]})
+        margem = inferir_margem_erro(erro_conf)
+        confianca = inferir_confianca(erro_conf)
+        classificacao = classificar_instituto(instituto)
 
-        aba.spreadsheet.values_batch_update({
-            "valueInputOption": "RAW",
-            "data": data,
+        pesquisas_rows.append({
+            "scenario_id": scenario_id,
+            "poll_id": poll_id,
+            "ano": ano,
+            "uf": uf,
+            "cargo": cargo,
+            "turno": turno,
+            "instituto": instituto,
+            "classificacao_instituto": classificacao,
+            "registro_tse": registro_tse,
+            "data_campo": data_campo,
+            "modo": modo,
+            "amostra": amostra,
+            "margem_erro": margem,
+            "confianca": confianca,
+            "scenario_label": scenario_label,
+            "fonte_url": url,
+            # NOVO: link direto para a publicação original da pesquisa
+            "fonte_url_original": link_fonte_original,
+            "horario_raspagem": horario_raspagem,
+            "conferida": "",
         })
-        total += len(lote)
-        print(f"  [update] {total}/{len(updates)} células enviadas")
-        time.sleep(1)
 
-    print(f"  [ok] {total} células atualizadas em '{nome_aba}'")
+        for col in cols_cand:
+            colname = _norm_ws(col)
+            pct = parsear_pct(row.get(col, ""))
+
+            if pct is None:
+                continue
+
+            if colname.lower() in ("não válido", "nao valido"):
+                candidato = "Não válido"
+                partido = ""
+                tipo = "nao_valido"
+                candidato_partido = "Não válido"
+            else:
+                candidato, partido = parsear_candidato_partido(colname)
+                tipo = "candidato"
+                # NOVO: "Nome (PARTIDO)" — facilita filtros e exibição
+                candidato_partido = f"{candidato} ({partido})" if partido else candidato
+
+            resultados_rows.append({
+                "scenario_id": scenario_id,
+                "poll_id": poll_id,
+                "ano": ano,
+                "uf": uf,
+                "cargo": cargo,
+                "turno": turno,
+                "data_campo": data_campo,
+                "instituto": instituto,
+                "classificacao_instituto": classificacao,
+                "registro_tse": registro_tse,
+                "scenario_label": scenario_label,
+                "candidato": candidato,
+                "partido": partido,
+                # NOVO
+                "candidato_partido": candidato_partido,
+                "tipo": tipo,
+                "percentual": pct,
+                "fonte_url": url,
+                # NOVO
+                "fonte_url_original": link_fonte_original,
+                "horario_raspagem": horario_raspagem,
+            })
+
+    df_p = pd.DataFrame(pesquisas_rows)
+    df_r = pd.DataFrame(resultados_rows)
+
+    print(f"  [+] {len(df_p)} cenários | {len(df_r)} resultados")
+    return df_p, df_r
 
 
-# ---------------------------------------------------------------------------
-# Backfill: candidato_partido → aba RESULTADOS
-# ---------------------------------------------------------------------------
+def gs_client_from_env():
+    raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
+    if not raw:
+        raise RuntimeError("GOOGLE_CREDENTIALS_JSON não definido.")
 
-def backfill_candidato_partido(aba):
-    print("[resultados] lendo planilha...")
+    creds_dict = json.loads(raw)
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return gspread.authorize(credentials)
+
+
+def garantir_aba(spreadsheet, nome_aba, rows=2000, cols=25):
+    try:
+        return spreadsheet.worksheet(nome_aba)
+    except gspread.exceptions.WorksheetNotFound:
+        return spreadsheet.add_worksheet(title=nome_aba, rows=rows, cols=cols)
+
+
+def _aba_vazia(values):
+    if not values:
+        return True
+
+    if len(values) == 1 and (not values[0] or all(str(x).strip() == "" for x in values[0])):
+        return True
+
+    if len(values) == 1 and len(values[0]) == 1 and str(values[0][0]).strip() == "":
+        return True
+
+    return False
+
+
+def dedup_e_salvar_por_chave(aba, df_novo: pd.DataFrame, key_col: str):
+    if key_col not in df_novo.columns:
+        raise RuntimeError(f"df_novo não tem coluna de chave: '{key_col}'")
+
+    antes = len(df_novo)
+    df_novo = df_novo.drop_duplicates(subset=[key_col], keep="first").reset_index(drop=True)
+
+    if len(df_novo) < antes:
+        print(f"  [dedup interno] removidas {antes - len(df_novo)} linhas duplicadas na coleta")
+
     values = aba.get_all_values()
-    if not values or len(values) < 2:
-        print("  [-] aba vazia")
-        return
 
-    headers = values[0]
-    idx_cp = garantir_coluna(aba, headers, "candidato_partido")
+    if _aba_vazia(values):
+        data_to_write = [df_novo.columns.tolist()] + df_novo.fillna("").astype(str).values.tolist()
+        aba.clear()
+        aba.update(data_to_write)
+        print(f"  [aba vazia] {len(df_novo)} linhas gravadas")
+        return len(df_novo), 0
 
-    idx_candidato = col_index(headers, "candidato")
-    idx_partido   = col_index(headers, "partido")
-    idx_cp_exist  = col_index(headers, "candidato_partido")
+    header_existente = values[0]
 
-    if idx_candidato < 0 or idx_partido < 0:
-        print("  [-] colunas candidato/partido não encontradas — abortando")
-        return
+    if key_col not in header_existente:
+        print(f"  [AVISO] coluna '{key_col}' não encontrada no header existente. Reescrevendo aba.")
+        data_to_write = [df_novo.columns.tolist()] + df_novo.fillna("").astype(str).values.tolist()
+        aba.clear()
+        aba.update(data_to_write)
+        return len(df_novo), 0
 
-    updates = []
-    for i, row in enumerate(values[1:], start=2):
-        def get(idx):
-            return row[idx].strip() if 0 <= idx < len(row) else ""
+    idx_key = header_existente.index(key_col)
+    existing_keys = {
+        row[idx_key]
+        for row in values[1:]
+        if len(row) > idx_key and row[idx_key].strip()
+    }
 
-        candidato = get(idx_candidato)
-        partido   = get(idx_partido)
-        cp_atual  = get(idx_cp_exist)
+    df_add = df_novo[~df_novo[key_col].astype(str).isin(existing_keys)].reset_index(drop=True)
 
-        if cp_atual or not candidato:
-            continue
+    if df_add.empty:
+        print(f"  [sem novidades] todas as {len(existing_keys)} chaves já existem")
+        return 0, len(existing_keys)
 
-        if candidato.lower() in ("não válido", "nao valido"):
-            novo_cp = "Não válido"
+    if header_existente != df_add.columns.tolist():
+        colunas_novas = [c for c in df_add.columns if c not in header_existente]
+
+        if colunas_novas:
+            header_final = header_existente + colunas_novas
+            aba.update([header_final], range_name="A1")
+            print(f"  [schema] {len(colunas_novas)} coluna(s) nova(s) adicionada(s) ao header: {colunas_novas}")
         else:
-            novo_cp = f"{candidato} ({partido})" if partido else candidato
+            header_final = header_existente
 
-        updates.append((i, idx_cp + 1, novo_cp))
+        df_add = df_add.reindex(columns=header_final, fill_value="")
 
-    print(f"  [resultados] {len(updates)} células candidato_partido para preencher")
-    _aplicar_updates(aba, updates)
+    rows_to_insert = df_add.fillna("").astype(str).values.tolist()
+    aba.insert_rows(rows_to_insert, row=2)
 
-
-# ---------------------------------------------------------------------------
-# Backfill: fonte_url_original → aba PESQUISAS
-# ---------------------------------------------------------------------------
-
-def backfill_fonte_url_original(aba, poll_id_para_link: dict):
-    print("[pesquisas] lendo planilha...")
-    values = aba.get_all_values()
-    if not values or len(values) < 2:
-        print("  [-] aba vazia")
-        return
-
-    headers = values[0]
-    idx_fo = garantir_coluna(aba, headers, "fonte_url_original")
-
-    idx_poll_id  = col_index(headers, "poll_id")
-    idx_fo_exist = col_index(headers, "fonte_url_original")
-
-    if idx_poll_id < 0:
-        print("  [-] coluna poll_id não encontrada — abortando")
-        return
-
-    updates = []
-    for i, row in enumerate(values[1:], start=2):
-        def get(idx):
-            return row[idx].strip() if 0 <= idx < len(row) else ""
-
-        poll_id  = get(idx_poll_id)
-        fo_atual = get(idx_fo_exist)
-
-        if fo_atual or not poll_id:
-            continue
-
-        link = poll_id_para_link.get(poll_id, "")
-        if link:
-            updates.append((i, idx_fo + 1, link))
-
-    print(f"  [pesquisas] {len(updates)} células fonte_url_original para preencher")
-    _aplicar_updates(aba, updates)
+    print(f"  [insert] {len(df_add)} linha(s) nova(s) | {len(existing_keys)} já existiam")
+    return len(df_add), len(existing_keys)
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def main():
+def obter_spreadsheet_id() -> str:
     sheet_id = (os.getenv("SPREADSHEET_ID_POLLINGDATA", "") or "").strip()
     if not sheet_id:
         raise RuntimeError("SPREADSHEET_ID_POLLINGDATA não definido.")
+    return sheet_id
+
+
+def validar_configuracao_planilhas():
+    obter_spreadsheet_id()
+
+
+def salvar_tudo_em_planilha(gc, df_p: pd.DataFrame, df_r: pd.DataFrame):
+    if (df_p is None or df_p.empty) and (df_r is None or df_r.empty):
+        print("[-] nada para salvar")
+        return
+
+    sheet_id = obter_spreadsheet_id()
+    print(f"[+] Salvando tudo na planilha central (SPREADSHEET_ID_POLLINGDATA)...")
+    sh = gc.open_by_key(sheet_id)
+
+    aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=25)
+    aba_resultados = garantir_aba(sh, "resultados", rows=200000, cols=25)
+
+    if df_p is not None and not df_p.empty:
+        novos, exist = dedup_e_salvar_por_chave(aba_pesquisas, df_p, key_col="scenario_id")
+        print(f"[+] pesquisas: {novos} novas linhas | {exist} já existiam")
+    else:
+        print("[-] pesquisas: nada coletado")
+
+    if df_r is not None and not df_r.empty:
+        df_r = df_r.copy()
+        df_r["_dedup_key"] = (
+            df_r["scenario_id"].astype(str)
+            + "|" + df_r["tipo"].astype(str)
+            + "|" + df_r["candidato"].astype(str)
+        )
+        novos, exist = dedup_e_salvar_por_chave(aba_resultados, df_r, key_col="_dedup_key")
+        print(f"[+] resultados: {novos} novas linhas | {exist} já existiam")
+    else:
+        print("[-] resultados: nada coletado")
+
+
+def main():
+    incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
+    incluir_senado = env_bool("INCLUIR_SENADO", True)
+    incluir_presidente = env_bool("INCLUIR_PRESIDENTE", True)
+
+    validar_configuracao_planilhas()
+
+    urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente)
+    if not urls:
+        print("[-] Nenhuma URL selecionada. Ajuste INCLUIR_*.")
+        return
+
+    horario_raspagem = datetime.now(
+        zoneinfo.ZoneInfo("America/Recife")
+    ).strftime("%Y-%m-%d %H:%M:%S")
 
     print("[+] Conectando ao Google Sheets...")
     gc = gs_client_from_env()
-    sh = gc.open_by_key(sheet_id)
-
-    # --- candidato_partido na aba resultados (sem Chrome) ---
-    try:
-        aba_res = sh.worksheet("resultados")
-        backfill_candidato_partido(aba_res)
-    except gspread.exceptions.WorksheetNotFound:
-        print("[-] aba 'resultados' não encontrada, pulando.")
-
-    # --- fonte_url_original na aba pesquisas (precisa do Chrome) ---
-    try:
-        aba_pes = sh.worksheet("pesquisas")
-    except gspread.exceptions.WorksheetNotFound:
-        print("[-] aba 'pesquisas' não encontrada, encerrando.")
-        return
-
-    print("[+] Identificando URLs para raspar (aba pesquisas)...")
-    vals_pes = aba_pes.get_all_values()
-    headers_pes = vals_pes[0] if vals_pes else []
-    idx_fu = col_index(headers_pes, "fonte_url")
-    idx_fo = col_index(headers_pes, "fonte_url_original")
-
-    if idx_fu < 0:
-        print("[-] Coluna 'fonte_url' não encontrada na aba pesquisas. Encerrando.")
-        return
-
-    urls_sem_link = set()
-    for row in vals_pes[1:]:
-        fu = row[idx_fu].strip() if idx_fu < len(row) else ""
-        fo = row[idx_fo].strip() if 0 <= idx_fo < len(row) else ""
-        if fu and not fo and "pollingdata.com.br" in fu:
-            urls_sem_link.add(fu)
-
-    print(f"  [+] {len(urls_sem_link)} URLs do pollingdata com linhas sem fonte_url_original")
-
-    if not urls_sem_link:
-        print("[+] Nada para raspar — todas as linhas já têm fonte_url_original.")
-        return
 
     print("[+] Iniciando Chrome...")
     driver = criar_driver()
-    poll_id_para_link = {}
+
+    all_p = []
+    all_r = []
 
     try:
-        for url in sorted(urls_sem_link):
-            mapa = raspar_links_por_poll_id(driver, url)
-            poll_id_para_link.update(mapa)
+        for url in urls:
+            df_p, df_r = scrape_url(driver, url, horario_raspagem)
+
+            if df_p is not None and not df_p.empty:
+                all_p.append(df_p)
+
+            if df_r is not None and not df_r.empty:
+                all_r.append(df_r)
     finally:
         driver.quit()
 
-    print(f"[+] Total de poll_ids mapeados: {len(poll_id_para_link)}")
+    df_p_all = pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame()
+    df_r_all = pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame()
 
-    if not poll_id_para_link:
-        print("[-] Nenhum link capturado. Verifique os seletores CSS.")
-        return
+    salvar_tudo_em_planilha(gc, df_p_all, df_r_all)
 
-    backfill_fonte_url_original(aba_pes, poll_id_para_link)
-
-    print("[+] Backfill concluído.")
+    print("[+] OK")
 
 
 if __name__ == "__main__":
