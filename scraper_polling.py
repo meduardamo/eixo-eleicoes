@@ -316,7 +316,14 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 
 def _norm_ws(s: str) -> str:
-    return re.sub(r"\s+", " ", str(s or "")).strip()
+    # FIX: uso de `s or ""` causava TypeError com pd.NA.
+    # pd.isna() trata None, float("nan") e pd.NA de forma segura.
+    try:
+        if pd.isna(s):
+            s = ""
+    except (TypeError, ValueError):
+        pass
+    return re.sub(r"\s+", " ", str(s)).strip()
 
 
 def _slug(s: str) -> str:
