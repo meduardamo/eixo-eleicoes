@@ -5,7 +5,7 @@ Roda UMA VEZ para preencher retroativamente:
   - candidato_partido  → aba RESULTADOS
   - fonte_url_original → aba PESQUISAS
 
-Variáveis de ambiente necessárias (as mesmas do scraper principal):
+Variáveis de ambiente necessárias:
   GOOGLE_CREDENTIALS_JSON
   SPREADSHEET_ID_POLLINGDATA
 """
@@ -36,7 +36,7 @@ WAIT_CSS = "div#dados-das-pesquisas"
 
 
 # ---------------------------------------------------------------------------
-# Utilitários (mesmos do scraper principal)
+# Utilitários
 # ---------------------------------------------------------------------------
 
 def _norm_ws(s) -> str:
@@ -140,17 +140,18 @@ def garantir_coluna(aba, headers: list, nome_col: str) -> int:
     return novo_idx
 
 
-def garantir_linhas_suficientes(aba, n_linhas_necessarias: int):
-    """Expande a aba se o número de linhas for insuficiente."""
-    props = aba.spreadsheet.fetch_sheet_metadata()
-    for s in props["sheets"]:
-        if s["properties"]["sheetId"] == aba.id:
-            atual = s["properties"]["gridProperties"]["rowCount"]
-            if n_linhas_necessarias > atual:
-                needed = n_linhas_necessarias + 1000  # margem extra
-                aba.add_rows(needed - atual)
-                print(f"  [resize] aba expandida de {atual} para {needed} linhas")
-            return
+def expandir_aba_se_necessario(aba, n_linhas_dados: int):
+    """
+    Garante que a aba tem linhas suficientes para receber os dados.
+    n_linhas_dados = número de linhas de dados (sem contar o header).
+    """
+    n_necessario = n_linhas_dados + 1  # +1 pelo header
+    props = aba.spreadsheet.get_worksheet_by_id(aba.id)
+    atual = aba.row_count
+    if n_necessario > atual:
+        extra = n_necessario - atual + 1000  # margem de 1000
+        aba.add_rows(extra)
+        print(f"  [resize] aba '{aba.title}' expandida: {atual} → {atual + extra} linhas")
 
 
 # ---------------------------------------------------------------------------
@@ -208,10 +209,9 @@ def extrair_link_fonte_do_grupo(group) -> str:
 
 
 def raspar_links_por_poll_id(driver, url: str) -> dict:
-    """Retorna { poll_id: link_fonte_original } para uma URL do pollingdata."""
     meta = parse_url_meta(url)
     cargo = meta["cargo"]
-    uf = meta["uf"]
+    uf    = meta["uf"]
     turno = meta["turno"]
 
     if not cargo:
@@ -237,7 +237,6 @@ def raspar_links_por_poll_id(driver, url: str) -> dict:
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
 
     resultado = {}
-
     for group in secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group"):
         link_fonte = extrair_link_fonte_do_grupo(group)
 
@@ -263,15 +262,54 @@ def raspar_links_por_poll_id(driver, url: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Envio em lotes — range qualificado com nome da aba
+# ---------------------------------------------------------------------------
+
+def _aplicar_updates(aba, updates: list, batch_size: int = 500):
+    """
+    updates: lista de (row_1based, col_1based, valor)
+    O range é qualificado com o nome da aba ('NomeAba'!A1) para que a API
+    do Sheets nunca confunda com outra aba.
+    """
+    if not updates:
+        print("  [skip] nenhum update necessário")
+        return
+
+    # Garante que a aba tem linhas suficientes para o maior índice de linha
+    max_row = max(r for r, c, v in updates)
+    if max_row > aba.row_count:
+        extra = max_row - aba.row_count + 1000
+        aba.add_rows(extra)
+        print(f"  [resize] aba '{aba.title}' expandida para {aba.row_count + extra} linhas")
+
+    nome_aba = aba.title  # ex: "resultados" ou "pesquisas"
+    total = 0
+
+    for i in range(0, len(updates), batch_size):
+        lote = updates[i: i + batch_size]
+        data = []
+        for r, c, v in lote:
+            celula = gspread.utils.rowcol_to_a1(r, c)
+            # Qualifica com o nome da aba: 'resultados'!T6993
+            range_qualificado = f"'{nome_aba}'!{celula}"
+            data.append({"range": range_qualificado, "values": [[v]]})
+
+        aba.spreadsheet.values_batch_update({
+            "valueInputOption": "RAW",
+            "data": data,
+        })
+        total += len(lote)
+        print(f"  [update] {total}/{len(updates)} células enviadas")
+        time.sleep(1)
+
+    print(f"  [ok] {total} células atualizadas em '{nome_aba}'")
+
+
+# ---------------------------------------------------------------------------
 # Backfill: candidato_partido → aba RESULTADOS
 # ---------------------------------------------------------------------------
 
 def backfill_candidato_partido(aba):
-    """
-    Preenche a coluna 'candidato_partido' na aba resultados
-    a partir de 'candidato' e 'partido' que já estão lá.
-    Não precisa do Chrome — tudo calculado localmente.
-    """
     print("[resultados] lendo planilha...")
     values = aba.get_all_values()
     if not values or len(values) < 2:
@@ -279,7 +317,6 @@ def backfill_candidato_partido(aba):
         return
 
     headers = values[0]
-    garantir_linhas_suficientes(aba, len(values))
     idx_cp = garantir_coluna(aba, headers, "candidato_partido")
 
     idx_candidato = col_index(headers, "candidato")
@@ -318,10 +355,6 @@ def backfill_candidato_partido(aba):
 # ---------------------------------------------------------------------------
 
 def backfill_fonte_url_original(aba, poll_id_para_link: dict):
-    """
-    Preenche a coluna 'fonte_url_original' na aba pesquisas
-    usando o mapa poll_id → link capturado pelo Chrome.
-    """
     print("[pesquisas] lendo planilha...")
     values = aba.get_all_values()
     if not values or len(values) < 2:
@@ -329,7 +362,6 @@ def backfill_fonte_url_original(aba, poll_id_para_link: dict):
         return
 
     headers = values[0]
-    garantir_linhas_suficientes(aba, len(values))
     idx_fo = garantir_coluna(aba, headers, "fonte_url_original")
 
     idx_poll_id  = col_index(headers, "poll_id")
@@ -359,33 +391,6 @@ def backfill_fonte_url_original(aba, poll_id_para_link: dict):
 
 
 # ---------------------------------------------------------------------------
-# Envio em lotes
-# ---------------------------------------------------------------------------
-
-def _aplicar_updates(aba, updates: list, batch_size: int = 500):
-    if not updates:
-        print("  [skip] nenhum update necessário")
-        return
-
-    total = 0
-    for i in range(0, len(updates), batch_size):
-        lote = updates[i: i + batch_size]
-        data = [
-            {"range": gspread.utils.rowcol_to_a1(r, c), "values": [[v]]}
-            for r, c, v in lote
-        ]
-        aba.spreadsheet.values_batch_update({
-            "valueInputOption": "RAW",
-            "data": data,
-        })
-        total += len(lote)
-        print(f"  [update] {total}/{len(updates)} células enviadas")
-        time.sleep(1)
-
-    print(f"  [ok] {total} células atualizadas")
-
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -398,25 +403,20 @@ def main():
     gc = gs_client_from_env()
     sh = gc.open_by_key(sheet_id)
 
-    # -----------------------------------------------------------------------
-    # Parte 1: candidato_partido na aba resultados (sem Chrome)
-    # -----------------------------------------------------------------------
+    # --- candidato_partido na aba resultados (sem Chrome) ---
     try:
         aba_res = sh.worksheet("resultados")
         backfill_candidato_partido(aba_res)
     except gspread.exceptions.WorksheetNotFound:
         print("[-] aba 'resultados' não encontrada, pulando.")
 
-    # -----------------------------------------------------------------------
-    # Parte 2: fonte_url_original na aba pesquisas (precisa do Chrome)
-    # -----------------------------------------------------------------------
+    # --- fonte_url_original na aba pesquisas (precisa do Chrome) ---
     try:
         aba_pes = sh.worksheet("pesquisas")
     except gspread.exceptions.WorksheetNotFound:
         print("[-] aba 'pesquisas' não encontrada, encerrando.")
         return
 
-    # Descobre quais URLs do pollingdata ainda têm linhas sem fonte_url_original
     print("[+] Identificando URLs para raspar (aba pesquisas)...")
     vals_pes = aba_pes.get_all_values()
     headers_pes = vals_pes[0] if vals_pes else []
@@ -431,7 +431,6 @@ def main():
     for row in vals_pes[1:]:
         fu = row[idx_fu].strip() if idx_fu < len(row) else ""
         fo = row[idx_fo].strip() if 0 <= idx_fo < len(row) else ""
-        # Só processa URLs do pollingdata (as externas como gazetadopovo não têm dados)
         if fu and not fo and "pollingdata.com.br" in fu:
             urls_sem_link.add(fu)
 
