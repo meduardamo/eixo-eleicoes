@@ -1,7 +1,6 @@
-name: percentual
+name: percentual 
 
 on:
-  workflow_dispatch:
   schedule:
     # GitHub Actions roda em UTC.
     # Horários em Brasília (UTC-3): 08:53, 15:17 e 20:42.
@@ -17,7 +16,7 @@ on:
 jobs:
   corrigir-percentual:
     name: Corrigir Percentual na Planilha
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'schedule' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
