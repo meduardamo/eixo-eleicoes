@@ -22,8 +22,6 @@ except Exception:
     _HAS_WDM = False
 
 
-# Config
-
 UFS = [
     "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go",
     "ma", "mg", "ms", "mt", "pa", "pb", "pe", "pi", "pr",
@@ -35,9 +33,6 @@ PRESIDENTE_URLS_DEFAULT = [
 ]
 
 WAIT_CSS = "div#dados-das-pesquisas"
-
-
-# Classificação de institutos
 
 CLASSIFICACAO_INSTITUTOS = {
     "Datafolha": "A+",
@@ -163,153 +158,9 @@ CLASSIFICACAO_INSTITUTOS = {
     "Ideia Big Data": "N",
     "Ipec (antigo Ibope)": "N",
     "Ipsos Ipec": "N",
-    "Sensus": "N",
-    "121 Labs": "N",
-    "A.R. Akakia": "N",
-    "A.S. Instituto de Planejamento": "N",
-    "Acertar": "N",
-    "Action Marketing": "N",
-    "Adans Estatística": "N",
-    "Agência Mind": "N",
-    "AGESP": "N",
-    "Agili Pesquisas": "N",
-    "Agilize Marketing": "N",
-    "AGRJPEL": "N",
-    "Alencar Consultoria": "N",
-    "Alexandre Sócrates Naviskas": "N",
-    "Aliança Imóveis": "N",
-    "All4 Innovation": "N",
-    "Alô Brasil": "N",
-    "Alô Sergipe": "N",
-    "Alvo Marketing (PA)": "N",
-    "Amaral dos Santos & Pimentel": "N",
-    "American Analytics": "N",
-    "Ampla Consultoria (BA)": "N",
-    "Ampla Pesquisa (CE)": "N",
-    "Ampla Serviços (MG)": "N",
-    "Âncora Pesquisa (Irecê/BA)": "N",
-    "Andreia Rafael Publicidade": "N",
-    "Ângulo Pesquisas": "N",
-    "Apraico Pesquisas": "N",
-    "Arbeit Pesquisas": "N",
-    "Arpel IPEC (PE)": "N",
-    "Ascensão Tecnologia": "N",
-    "Associação do Comércio e Indústria de Franca": "N",
-    "Atlas Assessoria (MS)": "N",
-    "Attitude Consultoria": "N",
-    "Atual Pesquisas": "N",
-    "Avaliar Pesquisa": "N",
-    "Axio Inteligência": "N",
-    "Axioma": "N",
-    "BABESP": "N",
-    "Bis Comunicação": "N",
-    "Boas e Boas": "N",
-    "Brasília Dados": "N",
-    "Braslopes Pesquisa": "N",
-    "Bureau Pesquisas": "N",
-    "BZN Pesquisa": "N",
-    "C. R. Carraro": "N",
-    "CBP Pesquisa e Hotelaria": "N",
-    "Centro Oeste Pesquisa": "N",
-    "Cerrado Pesquisa": "N",
-    "Certus": "N",
-    "Cipec": "N",
-    "Civita Inteligência": "N",
-    "Compasso Consultoria": "N",
-    "Compope": "N",
-    "Conpar": "N",
-    "Conpeom": "N",
-    "Consulte Inteligência (PI)": "N",
-    "Contatus Comunicações": "N",
-    "Correio do Povo Tocantinense": "N",
-    "Criattiva Pesquisa": "N",
-    "Cruz Consulting": "N",
-    "CTAS Tecnologia": "N",
-    "D M Duarte": "N",
-    "Dado Pesquisa": "N",
-    "Dados Folha (GO)": "N",
-    "Data AZ": "N",
-    "Data Center Pesquisas": "N",
-    "Data Control": "N",
-    "Data Dados": "N",
-    "Data Fato": "N",
-    "Data Índice": "N",
-    "Data Populi": "N",
-    "Data Qualyt": "N",
-    "Data Verus Pesquisa": "N",
-    "Data Vox": "N",
-    "Data X": "N",
-    "Datacerto": "N",
-    "Datacidad Consultoria": "N",
-    "Dataconsulte": "N",
-    "Dataeco": "N",
-    "Datamétrica": "N",
-    "Datamob": "N",
-    "Dataplan": "N",
-    "Datasonda": "N",
-    "Dattamarketing": "N",
-    "Decisão Pesquisa": "N",
-    "Delta Agência de Pesquisa": "N",
-    "Destak Publicidade": "N",
-    "Destake Pesquisas": "N",
-    "Desttaq": "N",
-    "Diagnóstico Pesquisas": "N",
-    "Dimensão Pesquisa": "N",
-    "Disan Empreendimentos": "N",
-    "Dominiun Filmes": "N",
-    "E. M. Produções": "N",
-    "E. Tormes & Cia.": "N",
-    "Ebrap": "N",
-    "Ecodatta": "N",
-    "Economic Cat": "N",
-    "Ecos Pesquisa": "N",
-    "Editora Ana Cássia": "N",
-    "Editora Azul": "N",
-    "Editora Cidades": "N",
-    "Editora Zen": "N",
-    "Efetiva Pesquisas": "N",
-    "Eficaz Pesquisas": "N",
-    "EGS Comunicação": "N",
-    "Eleva": "N",
-    "Empresa de Pesquisas Técnicas": "N",
-    "Enfoque Assessoria": "N",
-    "Enquet Pesquisas": "N",
-    "EPB Consultoria": "N",
-    "Equatorial Pesquisa": "N",
-    "Erica Regina Análise": "N",
-    "Ética Pesquisa": "N",
-    "Exata Op (DF)": "N",
-    "Excelência Pesquisa": "N",
-    "Exitus Comunicação": "N",
-    "Farias Imóveis e Pesquisas": "N",
-    "FC Pesquisas": "N",
-    "Fernandes Consultoria": "N",
-    "Flemming Pesquisas": "N",
-    "Flex Consultoria e Pesquisas": "N",
-    "Foca Comunicação (RS)": "N",
-    "Foccus": "N",
-    "Foco Consultoria (PI)": "N",
-    "Foco Pesquisa (BA)": "N",
-    "Folha de Caiaponia": "N",
-    "Folha Regional (Livramento)": "N",
-    "G3 Soluções": "N",
-    "Gazeta de Alagoas": "N",
-    "Giga Consultoria": "N",
-    "Global Consulting (GO)": "N",
-    "Global Consultoria (PR)": "N",
-    "Global Service Pesquisas": "N",
-    "Globo Pesquisa (PR)": "N",
-    "Goiás Pesquisas": "N",
-    "Gold Solution": "N",
-    "Gomes Comunicação": "N",
-    "GPP": "N",
-    "Gradux": "N",
-    "Grupo Carlos Duarte": "N",
-    "Grupo Jet": "N",
+    "Sensus": "N"
 }
 
-
-# Utilitários
 
 def classificar_instituto(nome: str) -> str:
     return CLASSIFICACAO_INSTITUTOS.get(_norm_ws(nome), "Ainda não foi avaliado")
@@ -479,8 +330,6 @@ def obter_spreadsheet_id():
     raise RuntimeError("Nenhum spreadsheet id foi definido. Use SPREADSHEET_ID_POLLINGDATA ou SPREADSHEET_ID.")
 
 
-# URLs
-
 def urls_governador_2026_t1(ufs):
     return [
         f"https://www.pollingdata.com.br/2026/governador/{uf}/2026_governador_{uf}_t1.html"
@@ -510,8 +359,6 @@ def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presiden
     return urls
 
 
-# Selenium
-
 def criar_driver():
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
@@ -532,68 +379,251 @@ def criar_driver():
     return driver
 
 
-# Detecção de layout
-
-
-# ---------------------------------------------------------------------------
-# Detecção de layout
-# ---------------------------------------------------------------------------
-
 def detectar_layout_novo(driver) -> bool:
-    """
-    Retorna True se a página usa o novo layout —
-    detectado pela presença do JSON embutido em <script data-for='tab_pesquisas'>.
-    """
     try:
         scripts = driver.find_elements(
-            By.CSS_SELECTOR, "script[type='application/json'][data-for='tab_pesquisas']"
+            By.CSS_SELECTOR,
+            "script[type='application/json'][data-for='tab_pesquisas']"
         )
-        return len(scripts) > 0
+        if scripts:
+            return True
+    except Exception:
+        pass
+
+    try:
+        secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+        texto = secao.text.lower()
+
+        if "cnpj instituto" in texto or "cnpj contratante" in texto:
+            return True
+
+        headers = secao.find_elements(By.CSS_SELECTOR, "thead th")
+        textos = [h.text.strip().lower() for h in headers]
+        if any("cnpj" in t for t in textos):
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
+def expandir_todos_antigo(driver, secao, max_clicks=120):
+    i = 0
+
+    while True:
+        btns = secao.find_elements(By.CSS_SELECTOR, "button.rt-expander-button")
+        fechados = [b for b in btns if (b.get_attribute("aria-expanded") or "").lower() == "false"]
+
+        if not fechados:
+            break
+
+        driver.execute_script("arguments[0].click();", fechados[0])
+        time.sleep(0.8)
+
+        i += 1
+        if i >= max_clicks:
+            break
+
+
+def _linha_principal_novo(tr):
+    try:
+        return len(tr.find_elements(By.CSS_SELECTOR, "td")) >= 6
     except Exception:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Layout novo — extração via JSON embutido (sem precisar expandir o DOM)
-# ---------------------------------------------------------------------------
+def _linha_tem_subtabela(tr):
+    try:
+        return len(tr.find_elements(By.CSS_SELECTOR, "table")) > 0
+    except Exception:
+        return False
 
-def scrape_novo_layout(driver, url, horario_raspagem, meta):
-    ano   = meta["ano"]
+
+def _clicar_expansor_novo(driver, linha):
+    tds = linha.find_elements(By.CSS_SELECTOR, "td")
+    if not tds:
+        return False
+
+    cel = tds[0]
+
+    for sel in ["button[aria-expanded='false']", "button", "[role='button']", "svg", "span", "div"]:
+        try:
+            elementos = cel.find_elements(By.CSS_SELECTOR, sel)
+            for el in elementos:
+                try:
+                    if el.is_displayed() and el.is_enabled():
+                        driver.execute_script("arguments[0].click();", el)
+                        return True
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    try:
+        driver.execute_script("arguments[0].click();", cel)
+        return True
+    except Exception:
+        return False
+
+
+def expandir_todos_novo(driver, secao, max_clicks=200):
+    clicks = 0
+
+    while clicks < max_clicks:
+        linhas = secao.find_elements(By.CSS_SELECTOR, "tbody > tr")
+        mudou = False
+
+        i = 0
+        while i < len(linhas):
+            linha = linhas[i]
+
+            if not _linha_principal_novo(linha):
+                i += 1
+                continue
+
+            proxima = linhas[i + 1] if i + 1 < len(linhas) else None
+            ja_expandida = proxima is not None and _linha_tem_subtabela(proxima)
+
+            if not ja_expandida:
+                clicou = _clicar_expansor_novo(driver, linha)
+                if clicou:
+                    time.sleep(1.0)
+                    secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+                    clicks += 1
+                    mudou = True
+                    break
+
+            i += 1
+
+        if not mudou:
+            break
+
+
+def _extrair_blocos_novo_layout(secao):
+    blocos = []
+    linhas = secao.find_elements(By.CSS_SELECTOR, "tbody > tr")
+    i = 0
+
+    while i < len(linhas):
+        linha = linhas[i]
+        tds = linha.find_elements(By.CSS_SELECTOR, "td")
+
+        if len(tds) < 6:
+            i += 1
+            continue
+
+        instituto_cel = tds[1]
+        modo_raw = tds[2].text.strip() if len(tds) > 2 else ""
+        entrev_erro_raw = tds[3].text.strip() if len(tds) > 3 else ""
+
+        instituto_nome = ""
+        registro = ""
+        data_campo_raw = ""
+        link_fonte = ""
+
+        texto_inst = instituto_cel.text.strip()
+        linhas_inst = [l.strip() for l in texto_inst.split("\n") if l.strip()]
+
+        if linhas_inst:
+            instituto_nome = linhas_inst[0]
+
+        for linha_inst in linhas_inst[1:]:
+            reg_m = re.match(r"([A-Z]{2}-[\d]+/\d+)", linha_inst)
+            if reg_m:
+                registro = reg_m.group(1)
+
+            if re.search(r"\d{4}-\d{2}-\d{2}", linha_inst):
+                data_campo_raw = linha_inst
+
+        try:
+            a = instituto_cel.find_element(By.CSS_SELECTOR, "a[href]")
+            link_fonte = (a.get_attribute("href") or "").strip()
+        except Exception:
+            pass
+
+        bloco = {
+            "instituto": _norm_ws(instituto_nome),
+            "registro_tse": _norm_ws(registro),
+            "data_campo": extrair_ultima_data(data_campo_raw),
+            "modo": _norm_ws(_strip_html(modo_raw)),
+            "entrev_erro_raw": entrev_erro_raw,
+            "link_fonte": link_fonte,
+            "cenarios": [],
+        }
+
+        j = i + 1
+        while j < len(linhas):
+            sub = linhas[j]
+            sub_tds = sub.find_elements(By.CSS_SELECTOR, "td")
+
+            if len(sub_tds) >= 6:
+                break
+
+            try:
+                tabelas = sub.find_elements(By.CSS_SELECTOR, "table")
+                for sub_table in tabelas:
+                    cand_headers = [
+                        _norm_ws(th.text)
+                        for th in sub_table.find_elements(By.CSS_SELECTOR, "thead th")
+                    ]
+
+                    if not cand_headers:
+                        continue
+
+                    for tr_cen in sub_table.find_elements(By.CSS_SELECTOR, "tbody tr"):
+                        cels = tr_cen.find_elements(By.CSS_SELECTOR, "td")
+                        vals = [c.text.strip() for c in cels]
+
+                        if vals and len(vals) == len(cand_headers):
+                            bloco["cenarios"].append(dict(zip(cand_headers, vals)))
+            except Exception:
+                pass
+
+            j += 1
+
+        blocos.append(bloco)
+        i = j
+
+    return blocos
+
+
+def scrape_novo_layout_json(driver, url, horario_raspagem, meta):
+    ano = meta["ano"]
     cargo = meta["cargo"]
-    uf    = meta["uf"]
+    uf = meta["uf"]
     turno = meta["turno"]
 
     try:
         el = driver.find_element(
-            By.CSS_SELECTOR, "script[type='application/json'][data-for='tab_pesquisas']"
+            By.CSS_SELECTOR,
+            "script[type='application/json'][data-for='tab_pesquisas']"
         )
         raw = el.get_attribute("innerHTML") or el.text
         data_json = json.loads(raw)
         d = data_json["x"]["tag"]["attribs"]["data"]
-    except Exception as e:
-        print(f"    [-] Erro ao extrair JSON novo: {e}")
+    except Exception:
         return None, None
 
-    institutos   = d.get("Instituto", [])
-    urls_fonte   = d.get("url", [])
-    modos        = d.get("Modo", [])
-    entrevistas  = d.get("Entrevistas", [])
-    registros    = d.get("registro", [])
-    erros        = d.get("erro", [])
-    ranges       = d.get("range", [])
+    institutos = d.get("Instituto", [])
+    urls_fonte = d.get("url", [])
+    modos = d.get("Modo", [])
+    entrevistas = d.get("Entrevistas", [])
+    registros = d.get("registro", [])
+    erros = d.get("erro", [])
+    ranges = d.get("range", [])
     cenarios_lst = d.get("cenarios", [])
 
     pesquisas_rows = []
     resultados_rows = []
 
     for i in range(len(institutos)):
-        instituto    = _norm_ws(institutos[i])
-        link_fonte   = _norm_ws(urls_fonte[i]) if i < len(urls_fonte) else ""
-        modo         = _norm_ws(_strip_html(modos[i])) if i < len(modos) else ""
-        amostra_raw  = entrevistas[i] if i < len(entrevistas) else None
-        registro     = _norm_ws(registros[i]) if i < len(registros) else ""
-        erro_conf    = _strip_html(erros[i]) if i < len(erros) else ""
-        data_campo   = extrair_ultima_data(ranges[i]) if i < len(ranges) else ""
+        instituto = _norm_ws(institutos[i])
+        link_fonte = _norm_ws(urls_fonte[i]) if i < len(urls_fonte) else ""
+        modo = _norm_ws(_strip_html(modos[i])) if i < len(modos) else ""
+        amostra_raw = entrevistas[i] if i < len(entrevistas) else None
+        registro = _norm_ws(registros[i]) if i < len(registros) else ""
+        erro_conf = _strip_html(erros[i]) if i < len(erros) else ""
+        data_campo = extrair_ultima_data(ranges[i]) if i < len(ranges) else ""
 
         registro_norm = "" if registro.lower().startswith("sem") else registro
 
@@ -603,86 +633,292 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
         except Exception:
             pass
 
-        margem        = inferir_margem_erro(erro_conf)
-        confianca     = inferir_confianca(erro_conf)
+        margem = inferir_margem_erro(erro_conf)
+        confianca = inferir_confianca(erro_conf)
         classificacao = classificar_instituto(instituto)
 
         block_hash = _sha1_short(f"{instituto}|{registro}|{data_campo}", 10)
-        poll_id    = gerar_poll_id(uf, instituto, registro_norm, data_campo, cargo, turno, block_hash)
+        poll_id = gerar_poll_id(uf, instituto, registro_norm, data_campo, cargo, turno, block_hash)
 
         cenarios_dict = cenarios_lst[i] if i < len(cenarios_lst) else {}
-        cenario_nums  = cenarios_dict.get("cenario", [1])
+        cenario_nums = cenarios_dict.get("cenario", [1])
 
         for c_idx, c_num in enumerate(cenario_nums):
             scenario_label = str(c_num)
-            scenario_id    = gerar_scenario_id(poll_id, scenario_label)
+            scenario_id = gerar_scenario_id(poll_id, scenario_label)
 
             pesquisas_rows.append({
-                "scenario_id":             scenario_id,
-                "poll_id":                 poll_id,
-                "ano":                     ano,
-                "uf":                      uf,
-                "cargo":                   cargo,
-                "turno":                   turno,
-                "instituto":               instituto,
+                "scenario_id": scenario_id,
+                "poll_id": poll_id,
+                "ano": ano,
+                "uf": uf,
+                "cargo": cargo,
+                "turno": turno,
+                "instituto": instituto,
                 "classificacao_instituto": classificacao,
-                "registro_tse":            registro,
-                "data_campo":              data_campo,
-                "modo":                    modo,
-                "amostra":                 amostra,
-                "margem_erro":             margem,
-                "confianca":               confianca,
-                "scenario_label":          scenario_label,
-                "fonte_url":               url,
-                "fonte_url_original":      link_fonte,
-                "horario_raspagem":        horario_raspagem,
-                "conferida":               "",
+                "registro_tse": registro,
+                "data_campo": data_campo,
+                "modo": modo,
+                "amostra": amostra,
+                "margem_erro": margem,
+                "confianca": confianca,
+                "scenario_label": scenario_label,
+                "fonte_url": url,
+                "fonte_url_original": link_fonte,
+                "horario_raspagem": horario_raspagem,
+                "conferida": "",
             })
 
             for col_key, col_vals in cenarios_dict.items():
                 if col_key == "cenario":
                     continue
+
                 val = col_vals[c_idx] if c_idx < len(col_vals) else None
                 pct = parsear_pct(val)
                 if pct is None:
                     continue
 
                 col_clean = _strip_html(col_key.replace("<br>", " "))
+
                 if col_clean.lower() in ("não válido", "nao valido", "não valido"):
-                    candidato         = "Não válido"
-                    partido           = ""
-                    tipo              = "nao_valido"
+                    candidato = "Não válido"
+                    partido = ""
+                    tipo = "nao_valido"
                     candidato_partido = "Não válido"
                 else:
                     candidato, partido = parsear_candidato_partido(col_key)
-                    tipo               = "candidato"
-                    candidato_partido  = f"{candidato} ({partido})" if partido else candidato
+                    tipo = "candidato"
+                    candidato_partido = f"{candidato} ({partido})" if partido else candidato
 
                 resultados_rows.append({
-                    "scenario_id":             scenario_id,
-                    "poll_id":                 poll_id,
-                    "ano":                     ano,
-                    "uf":                      uf,
-                    "cargo":                   cargo,
-                    "turno":                   turno,
-                    "data_campo":              data_campo,
-                    "instituto":               instituto,
+                    "scenario_id": scenario_id,
+                    "poll_id": poll_id,
+                    "ano": ano,
+                    "uf": uf,
+                    "cargo": cargo,
+                    "turno": turno,
+                    "data_campo": data_campo,
+                    "instituto": instituto,
                     "classificacao_instituto": classificacao,
-                    "registro_tse":            registro,
-                    "scenario_label":          scenario_label,
-                    "candidato":               candidato,
-                    "partido":                 partido,
-                    "candidato_partido":       candidato_partido,
-                    "tipo":                    tipo,
-                    "percentual":              pct,
-                    "fonte_url":               url,
-                    "horario_raspagem":        horario_raspagem,
+                    "registro_tse": registro,
+                    "scenario_label": scenario_label,
+                    "candidato": candidato,
+                    "partido": partido,
+                    "candidato_partido": candidato_partido,
+                    "tipo": tipo,
+                    "percentual": pct,
+                    "fonte_url": url,
+                    "horario_raspagem": horario_raspagem,
                 })
 
     df_p = pd.DataFrame(pesquisas_rows)
     df_r = pd.DataFrame(resultados_rows)
-    print(f"  [novo] {len(df_p)} cenários | {len(df_r)} resultados")
+
+    if df_p.empty and df_r.empty:
+        return None, None
+
+    print(f"  [novo/json] {len(df_p)} cenários | {len(df_r)} resultados")
     return df_p, df_r
+
+
+def scrape_novo_layout_dom(driver, url, horario_raspagem, meta):
+    ano = meta["ano"]
+    cargo = meta["cargo"]
+    uf = meta["uf"]
+    turno = meta["turno"]
+
+    secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+    expandir_todos_novo(driver, secao)
+    time.sleep(2)
+    secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+
+    blocos = _extrair_blocos_novo_layout(secao)
+    if not blocos:
+        return None, None
+
+    pesquisas_rows = []
+    resultados_rows = []
+
+    for bloco in blocos:
+        instituto = bloco["instituto"]
+        registro_tse = bloco["registro_tse"]
+        data_campo = bloco["data_campo"]
+        modo = bloco["modo"]
+        link_fonte = bloco["link_fonte"]
+        entrev_erro = bloco["entrev_erro_raw"]
+
+        amostra = None
+        erro_conf = ""
+
+        for le in [l.strip() for l in entrev_erro.split("\n") if l.strip()]:
+            if re.match(r"^\d+$", le):
+                try:
+                    amostra = int(le)
+                except Exception:
+                    pass
+            elif "%" in le:
+                erro_conf = le
+
+        margem = inferir_margem_erro(erro_conf)
+        confianca = inferir_confianca(erro_conf)
+        classificacao = classificar_instituto(instituto)
+        block_hash = _sha1_short(f"{instituto}|{registro_tse}|{data_campo}", 10)
+        poll_id = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
+
+        cenarios = bloco["cenarios"] or [{}]
+
+        for c_idx, cenario_dict in enumerate(cenarios):
+            scenario_label = (
+                _norm_ws(cenario_dict.get("Cenário", ""))
+                or _norm_ws(cenario_dict.get("cenario", ""))
+                or str(c_idx + 1)
+            )
+
+            scenario_id = gerar_scenario_id(poll_id, scenario_label)
+
+            pesquisas_rows.append({
+                "scenario_id": scenario_id,
+                "poll_id": poll_id,
+                "ano": ano,
+                "uf": uf,
+                "cargo": cargo,
+                "turno": turno,
+                "instituto": instituto,
+                "classificacao_instituto": classificacao,
+                "registro_tse": registro_tse,
+                "data_campo": data_campo,
+                "modo": modo,
+                "amostra": amostra,
+                "margem_erro": margem,
+                "confianca": confianca,
+                "scenario_label": scenario_label,
+                "fonte_url": url,
+                "fonte_url_original": link_fonte,
+                "horario_raspagem": horario_raspagem,
+                "conferida": "",
+            })
+
+            for col_key, val in cenario_dict.items():
+                if col_key.lower() in ("cenário", "cenario"):
+                    continue
+
+                pct = parsear_pct(val)
+                if pct is None:
+                    continue
+
+                col_clean = _norm_ws(_strip_html(col_key.replace("<br>", " ")))
+
+                if col_clean.lower() in ("não válido", "nao valido", "não valido"):
+                    candidato = "Não válido"
+                    partido = ""
+                    tipo = "nao_valido"
+                    candidato_partido = "Não válido"
+                else:
+                    candidato, partido = parsear_candidato_partido(col_clean)
+                    tipo = "candidato"
+                    candidato_partido = f"{candidato} ({partido})" if partido else candidato
+
+                resultados_rows.append({
+                    "scenario_id": scenario_id,
+                    "poll_id": poll_id,
+                    "ano": ano,
+                    "uf": uf,
+                    "cargo": cargo,
+                    "turno": turno,
+                    "data_campo": data_campo,
+                    "instituto": instituto,
+                    "classificacao_instituto": classificacao,
+                    "registro_tse": registro_tse,
+                    "scenario_label": scenario_label,
+                    "candidato": candidato,
+                    "partido": partido,
+                    "candidato_partido": candidato_partido,
+                    "tipo": tipo,
+                    "percentual": pct,
+                    "fonte_url": url,
+                    "horario_raspagem": horario_raspagem,
+                })
+
+    df_p = pd.DataFrame(pesquisas_rows)
+    df_r = pd.DataFrame(resultados_rows)
+
+    if df_p.empty and df_r.empty:
+        return None, None
+
+    print(f"  [novo/dom] {len(df_p)} cenários | {len(df_r)} resultados")
+    return df_p, df_r
+
+
+def scrape_novo_layout(driver, url, horario_raspagem, meta):
+    df_p, df_r = scrape_novo_layout_json(driver, url, horario_raspagem, meta)
+    if df_p is not None and not df_p.empty:
+        return df_p, df_r
+
+    print("  [novo] fallback para extração pelo DOM")
+    return scrape_novo_layout_dom(driver, url, horario_raspagem, meta)
+
+
+def extrair_link_fonte_do_grupo(group) -> str:
+    for sel in [
+        "table#tab_instituto a[href]",
+        "div.rt-td-inner table a[href]",
+        "div[id^='tab_'] a[href]",
+        ".rt-expandable-content a[href]",
+    ]:
+        try:
+            el = group.find_element(By.CSS_SELECTOR, sel)
+            href = (el.get_attribute("href") or "").strip()
+            if href and href.startswith("http"):
+                return href
+        except Exception:
+            continue
+
+    return ""
+
+
+def extrair_tabela_react(secao):
+    headers = []
+
+    for el in secao.find_elements(By.CSS_SELECTOR, "div.rt-thead .rt-th"):
+        inner = el.find_elements(By.CSS_SELECTOR, ".rt-text-content, .rt-sort-header")
+        text = (inner[0].text.strip() if inner else el.text.strip()).replace("\n", " ").strip()
+        if text:
+            headers.append(text)
+
+    rows_data = []
+    row_group_idx = []
+    links_por_grupo = []
+
+    for g_idx, group in enumerate(secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group")):
+        links_por_grupo.append(extrair_link_fonte_do_grupo(group))
+
+        for row in group.find_elements(By.CSS_SELECTOR, "div.rt-tr"):
+            cells = row.find_elements(By.CSS_SELECTOR, "div.rt-td")
+            if not cells:
+                continue
+
+            vals = [c.text.strip() for c in cells]
+            if any(vals):
+                rows_data.append(vals)
+                row_group_idx.append(g_idx)
+
+    if not rows_data:
+        return None, []
+
+    n_cols = max(len(r) for r in rows_data)
+    if len(headers) < n_cols:
+        headers += [f"Col_{i}" for i in range(len(headers), n_cols)]
+
+    headers = headers[:n_cols]
+
+    for r in rows_data:
+        while len(r) < n_cols:
+            r.append("")
+
+    df = pd.DataFrame(rows_data, columns=headers)
+    df["_link_fonte"] = [links_por_grupo[g] for g in row_group_idx]
+
+    return df, links_por_grupo
 
 
 def scrape_antigo_layout(driver, url, horario_raspagem, meta):
@@ -778,7 +1014,9 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
 
             colname = _norm_ws(col)
             if colname.lower() in ("não válido", "nao valido"):
-                candidato, partido, tipo = "Não válido", "", "nao_valido"
+                candidato = "Não válido"
+                partido = ""
+                tipo = "nao_valido"
                 candidato_partido = "Não válido"
             else:
                 candidato, partido = parsear_candidato_partido(colname)
@@ -813,8 +1051,6 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
     return df_p, df_r
 
 
-# Dispatcher
-
 def scrape_url(driver, url: str, horario_raspagem: str):
     meta = parse_url_meta(url)
 
@@ -837,14 +1073,12 @@ def scrape_url(driver, url: str, horario_raspagem: str):
     time.sleep(2)
 
     if detectar_layout_novo(driver):
-        print("  [layout] NOVO (CNPJ detectado)")
+        print("  [layout] NOVO")
         return scrape_novo_layout(driver, url, horario_raspagem, meta)
 
-    print("  [layout] ANTIGO (ReactTable)")
+    print("  [layout] ANTIGO")
     return scrape_antigo_layout(driver, url, horario_raspagem, meta)
 
-
-# Google Sheets
 
 def gs_client_from_env():
     raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
@@ -948,8 +1182,6 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
         novos, exist = dedup_e_salvar(aba_resultados, df_r, key_col="_dedup_key")
         print(f"[+] resultados: {novos} novas | {exist} já existiam")
 
-
-# Main
 
 def main():
     incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
