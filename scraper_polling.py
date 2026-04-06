@@ -532,7 +532,13 @@ def criar_driver():
     return driver
 
 
+# Detecção de layout
+
 def detectar_layout_novo(driver) -> bool:
+    """
+    Retorna True se a tabela contém colunas CNPJ — sinal do layout novo.
+    Usa tanto o texto visível quanto os headers <th> para maior robustez.
+    """
     try:
         secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
         texto = secao.text.lower()
@@ -549,6 +555,8 @@ def detectar_layout_novo(driver) -> bool:
     except Exception:
         return False
 
+
+# Expansão layout antigo (ReactTable)
 
 def expandir_todos_antigo(driver, secao, max_clicks=120):
     i = 0
@@ -568,7 +576,12 @@ def expandir_todos_antigo(driver, secao, max_clicks=120):
             break
 
 
+# Expansão layout novo (tabela HTML nativa)
+# Cada linha de instituto tem um botão de expandir na primeira célula.
+# O layout novo NÃO usa .rt-expander-button — por isso a versão antiga não funciona aqui.
+
 def _linha_principal_novo(tr):
+    """Linha de instituto: tem >= 6 colunas (Nº Cenários, Instituto, Modo, Entrevistas/Erro, CNPJ x2)."""
     try:
         return len(tr.find_elements(By.CSS_SELECTOR, "td")) >= 6
     except Exception:
@@ -576,6 +589,7 @@ def _linha_principal_novo(tr):
 
 
 def _linha_tem_subtabela(tr):
+    """Verifica se a linha já tem sub-tabela de cenários expandida."""
     try:
         return len(tr.find_elements(By.CSS_SELECTOR, "table")) > 0
     except Exception:
@@ -583,22 +597,17 @@ def _linha_tem_subtabela(tr):
 
 
 def _clicar_expansor_novo(driver, linha):
+    """
+    Tenta clicar no expansor da primeira célula da linha de instituto.
+    Percorre vários seletores até encontrar algo clicável.
+    """
     tds = linha.find_elements(By.CSS_SELECTOR, "td")
     if not tds:
         return False
 
     cel = tds[0]
 
-    seletores = [
-        "button[aria-expanded='false']",
-        "button",
-        "[role='button']",
-        "svg",
-        "span",
-        "div",
-    ]
-
-    for sel in seletores:
+    for sel in ["button[aria-expanded='false']", "button", "[role='button']", "svg", "span", "div"]:
         try:
             elementos = cel.find_elements(By.CSS_SELECTOR, sel)
             for el in elementos:
@@ -619,6 +628,10 @@ def _clicar_expansor_novo(driver, linha):
 
 
 def expandir_todos_novo(driver, secao, max_clicks=200):
+    """
+    Expande todas as linhas de instituto do layout novo.
+    Re-busca a seção a cada clique pois o DOM muda após expansão.
+    """
     clicks = 0
 
     while clicks < max_clicks:
@@ -640,10 +653,11 @@ def expandir_todos_novo(driver, secao, max_clicks=200):
                 clicou = _clicar_expansor_novo(driver, linha)
                 if clicou:
                     time.sleep(1.0)
+                    # Re-busca a seção pois o DOM foi alterado
                     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
                     clicks += 1
                     mudou = True
-                    break
+                    break  # reinicia o loop com o DOM atualizado
 
             i += 1
 
@@ -651,7 +665,7 @@ def expandir_todos_novo(driver, secao, max_clicks=200):
             break
 
 
-# Layout novo
+# Layout novo — extração de blocos
 
 def _extrair_blocos_novo_layout(secao):
     blocos = []
@@ -710,6 +724,7 @@ def _extrair_blocos_novo_layout(secao):
             sub = linhas[j]
             sub_tds = sub.find_elements(By.CSS_SELECTOR, "td")
 
+            # Próxima linha de instituto → encerra bloco atual
             if len(sub_tds) >= 6:
                 break
 
@@ -789,6 +804,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
         cenarios = bloco["cenarios"] or [{}]
 
         for c_idx, cenario_dict in enumerate(cenarios):
+            # Tenta chave "Cenário" (com acento, layout novo) e "cenario" (sem acento)
             scenario_label = (
                 _norm_ws(cenario_dict.get("Cenário", ""))
                 or _norm_ws(cenario_dict.get("cenario", ""))
