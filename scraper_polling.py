@@ -316,6 +316,8 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 
 def _norm_ws(s: str) -> str:
+    # FIX: uso de `s or ""` causava TypeError com pd.NA.
+    # pd.isna() trata None, float("nan") e pd.NA de forma segura.
     try:
         if pd.isna(s):
             s = ""
@@ -339,7 +341,8 @@ def parse_url_meta(url: str):
 
     m = re.search(
         r"/(?P<ano>\d{4})/(?P<cargo>governador)/(?P<uf>[a-z]{2})/.*?_t(?P<turno>\d)\.html",
-        u, re.I
+        u,
+        re.I
     )
     if m:
         return {
@@ -351,7 +354,8 @@ def parse_url_meta(url: str):
 
     m = re.search(
         r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>br)/\d{4}_presidente_br_(?P<turno>t\d)",
-        u, re.I
+        u,
+        re.I
     )
     if m:
         return {
@@ -361,9 +365,11 @@ def parse_url_meta(url: str):
             "turno": m.group("turno").lower(),
         }
 
+    # Senado: /2026/senador/to/2026_senador_to_t1.html  OU  /2026/senador/to/t1/
     m = re.search(
         r"/(?P<ano>\d{4})/(?P<cargo>senador)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)\.html|(?P<turno2>t\d)/?$)",
-        u, re.I
+        u,
+        re.I
     )
     if m:
         turno = m.group("turno") or m.group("turno2")
@@ -519,94 +525,46 @@ def expandir_todos(driver, secao, max_clicks=120):
             break
 
 
-def extrair_link_fonte_do_grupo(group) -> str:
-    """
-    Extrai o link original da pesquisa dentro de um grupo expandido.
-    Completamente separado da extração da tabela para não desalinhar colunas.
-    """
-    seletores = [
-        "table#tab_instituto a[href]",
-        "div.rt-td-inner table a[href]",
-        "div[id^='tab_'] a[href]",
-        ".rt-expandable-content a[href]",
-    ]
-    for sel in seletores:
-        try:
-            el = group.find_element(By.CSS_SELECTOR, sel)
-            href = (el.get_attribute("href") or "").strip()
-            if href and href.startswith("http"):
-                return href
-        except Exception:
-            continue
-    return ""
-
-
 def extrair_tabela_react(secao):
-    """
-    Extrai a tabela React original sem modificação de colunas.
-    Retorna (df, links_por_grupo) onde links_por_grupo é uma lista
-    paralela aos grupos com o link de fonte de cada um.
-
-    Mantém a extração de links SEPARADA do DataFrame para não
-    desalinhar headers/colunas.
-    """
     headers = []
 
     for el in secao.find_elements(By.CSS_SELECTOR, "div.rt-thead .rt-th"):
         inner = el.find_elements(By.CSS_SELECTOR, ".rt-text-content, .rt-sort-header")
         text = inner[0].text.strip() if inner else el.text.strip()
         text = text.replace("\n", " ").strip()
+
         if text:
             headers.append(text)
 
     rows_data = []
-    # Índice do grupo ao qual cada linha pertence (para mapear o link depois)
-    row_group_idx = []
 
-    groups = secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group")
-    links_por_grupo = []
-
-    for g_idx, group in enumerate(groups):
-        # Captura link separadamente — não toca nas células
-        links_por_grupo.append(extrair_link_fonte_do_grupo(group))
-
+    for group in secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group"):
         for row in group.find_elements(By.CSS_SELECTOR, "div.rt-tr"):
             cells = row.find_elements(By.CSS_SELECTOR, "div.rt-td")
             if not cells:
                 continue
+
             vals = [c.text.strip() for c in cells]
             if any(vals):
                 rows_data.append(vals)
-                row_group_idx.append(g_idx)
 
     if not rows_data:
-        return None, []
+        return None
 
     n_cols = max(len(r) for r in rows_data)
 
     if len(headers) < n_cols:
         headers += [f"Col_{i}" for i in range(len(headers), n_cols)]
+
     headers = headers[:n_cols]
-
-    for r in rows_data:
-        while len(r) < n_cols:
-            r.append("")
-
-    df = pd.DataFrame(rows_data, columns=headers)
-
-    # Adiciona _link_fonte mapeando pelo índice do grupo
-    df["_link_fonte"] = [
-        links_por_grupo[g_idx] for g_idx in row_group_idx
-    ]
-
-    return df, links_por_grupo
+    return pd.DataFrame(rows_data, columns=headers)
 
 
 def scrape_url(driver, url: str, horario_raspagem: str):
     meta = parse_url_meta(url)
-    ano   = meta["ano"]
+    ano = meta["ano"]
     cargo = meta["cargo"]
-    uf    = meta["uf"]
+    uf = meta["uf"]
     turno = meta["turno"]
 
     if not cargo or not uf or not turno:
@@ -631,24 +589,19 @@ def scrape_url(driver, url: str, horario_raspagem: str):
     time.sleep(2)
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
 
-    df_raw, _ = extrair_tabela_react(secao)
+    df_raw = extrair_tabela_react(secao)
     if df_raw is None or df_raw.empty:
         print("  [-] sem tabela")
         return None, None
 
     col_pesquisa = df_raw.columns.tolist()[0]
-
-    # ffill na coluna de pesquisa para preencher linhas filhas
     df_raw[col_pesquisa] = df_raw[col_pesquisa].replace("", pd.NA).ffill()
 
-    # ffill no link de fonte (já vem por grupo, mas garante propagação)
-    df_raw["_link_fonte"] = df_raw["_link_fonte"].replace("", pd.NA).ffill().fillna("")
-
     parsed = df_raw[col_pesquisa].apply(parsear_pesquisa)
-    df_raw["instituto"]    = parsed.apply(lambda x: x[0])
+    df_raw["instituto"] = parsed.apply(lambda x: x[0])
     df_raw["registro_tse"] = parsed.apply(lambda x: x[1])
-    df_raw["data_campo"]   = parsed.apply(lambda x: x[2])
-    df_raw["_block_hash"]  = df_raw[col_pesquisa].apply(lambda x: _sha1_short(_norm_ws(x), 10))
+    df_raw["data_campo"] = parsed.apply(lambda x: x[2])
+    df_raw["_block_hash"] = df_raw[col_pesquisa].apply(lambda x: _sha1_short(_norm_ws(x), 10))
     df_raw = df_raw.drop(columns=[col_pesquisa])
 
     if "Cenários" not in df_raw.columns:
@@ -656,7 +609,7 @@ def scrape_url(driver, url: str, horario_raspagem: str):
 
     meta_expected = {"Modo Pesquisa", "Entrevistas", "Erro (Confiança)", "Cenários"}
     cols_meta = [c for c in df_raw.columns if c in meta_expected] + [
-        "instituto", "registro_tse", "data_campo", "_block_hash", "_link_fonte"
+        "instituto", "registro_tse", "data_campo", "_block_hash"
     ]
     cols_meta = [c for c in cols_meta if c in df_raw.columns]
 
@@ -670,17 +623,16 @@ def scrape_url(driver, url: str, horario_raspagem: str):
     resultados_rows = []
 
     for _, row in df_raw.iterrows():
-        instituto           = _norm_ws(row.get("instituto", ""))
-        registro_tse        = _norm_ws(row.get("registro_tse", ""))
-        data_campo          = _norm_ws(row.get("data_campo", ""))
-        modo                = _norm_ws(row.get("Modo Pesquisa", ""))
-        entrevistas_raw     = _norm_ws(row.get("Entrevistas", ""))
-        erro_conf           = _norm_ws(row.get("Erro (Confiança)", ""))
-        scenario_label      = _norm_ws(row.get("Cenários", "")) or "NA"
-        block_hash          = _norm_ws(row.get("_block_hash", ""))
-        link_fonte_original = _norm_ws(row.get("_link_fonte", ""))
+        instituto = _norm_ws(row.get("instituto", ""))
+        registro_tse = _norm_ws(row.get("registro_tse", ""))
+        data_campo = _norm_ws(row.get("data_campo", ""))
+        modo = _norm_ws(row.get("Modo Pesquisa", ""))
+        entrevistas_raw = _norm_ws(row.get("Entrevistas", ""))
+        erro_conf = _norm_ws(row.get("Erro (Confiança)", ""))
+        scenario_label = _norm_ws(row.get("Cenários", "")) or "NA"
+        block_hash = _norm_ws(row.get("_block_hash", ""))
 
-        poll_id     = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
+        poll_id = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
         scenario_id = gerar_scenario_id(poll_id, scenario_label)
 
         amostra = None
@@ -690,31 +642,29 @@ def scrape_url(driver, url: str, horario_raspagem: str):
         except Exception:
             amostra = None
 
-        margem        = inferir_margem_erro(erro_conf)
-        confianca     = inferir_confianca(erro_conf)
+        margem = inferir_margem_erro(erro_conf)
+        confianca = inferir_confianca(erro_conf)
         classificacao = classificar_instituto(instituto)
 
-        # aba PESQUISAS: tem fonte_url_original, NÃO tem candidato_partido
         pesquisas_rows.append({
-            "scenario_id":             scenario_id,
-            "poll_id":                 poll_id,
-            "ano":                     ano,
-            "uf":                      uf,
-            "cargo":                   cargo,
-            "turno":                   turno,
-            "instituto":               instituto,
+            "scenario_id": scenario_id,
+            "poll_id": poll_id,
+            "ano": ano,
+            "uf": uf,
+            "cargo": cargo,
+            "turno": turno,
+            "instituto": instituto,
             "classificacao_instituto": classificacao,
-            "registro_tse":            registro_tse,
-            "data_campo":              data_campo,
-            "modo":                    modo,
-            "amostra":                 amostra,
-            "margem_erro":             margem,
-            "confianca":               confianca,
-            "scenario_label":          scenario_label,
-            "fonte_url":               url,
-            "fonte_url_original":      link_fonte_original,
-            "horario_raspagem":        horario_raspagem,
-            "conferida":               "",
+            "registro_tse": registro_tse,
+            "data_campo": data_campo,
+            "modo": modo,
+            "amostra": amostra,
+            "margem_erro": margem,
+            "confianca": confianca,
+            "scenario_label": scenario_label,
+            "fonte_url": url,
+            "horario_raspagem": horario_raspagem,
+            "conferida": "",
         })
 
         for col in cols_cand:
@@ -725,35 +675,31 @@ def scrape_url(driver, url: str, horario_raspagem: str):
                 continue
 
             if colname.lower() in ("não válido", "nao valido"):
-                candidato         = "Não válido"
-                partido           = ""
-                tipo              = "nao_valido"
-                candidato_partido = "Não válido"
+                candidato = "Não válido"
+                partido = ""
+                tipo = "nao_valido"
             else:
                 candidato, partido = parsear_candidato_partido(colname)
-                tipo               = "candidato"
-                candidato_partido  = f"{candidato} ({partido})" if partido else candidato
+                tipo = "candidato"
 
-            # aba RESULTADOS: tem candidato_partido, NÃO tem fonte_url_original
             resultados_rows.append({
-                "scenario_id":             scenario_id,
-                "poll_id":                 poll_id,
-                "ano":                     ano,
-                "uf":                      uf,
-                "cargo":                   cargo,
-                "turno":                   turno,
-                "data_campo":              data_campo,
-                "instituto":               instituto,
+                "scenario_id": scenario_id,
+                "poll_id": poll_id,
+                "ano": ano,
+                "uf": uf,
+                "cargo": cargo,
+                "turno": turno,
+                "data_campo": data_campo,
+                "instituto": instituto,
                 "classificacao_instituto": classificacao,
-                "registro_tse":            registro_tse,
-                "scenario_label":          scenario_label,
-                "candidato":               candidato,
-                "partido":                 partido,
-                "candidato_partido":       candidato_partido,
-                "tipo":                    tipo,
-                "percentual":              pct,
-                "fonte_url":               url,
-                "horario_raspagem":        horario_raspagem,
+                "registro_tse": registro_tse,
+                "scenario_label": scenario_label,
+                "candidato": candidato,
+                "partido": partido,
+                "tipo": tipo,
+                "percentual": pct,
+                "fonte_url": url,
+                "horario_raspagem": horario_raspagem,
             })
 
     df_p = pd.DataFrame(pesquisas_rows)
@@ -787,10 +733,13 @@ def garantir_aba(spreadsheet, nome_aba, rows=2000, cols=25):
 def _aba_vazia(values):
     if not values:
         return True
+
     if len(values) == 1 and (not values[0] or all(str(x).strip() == "" for x in values[0])):
         return True
+
     if len(values) == 1 and len(values[0]) == 1 and str(values[0][0]).strip() == "":
         return True
+
     return False
 
 
@@ -855,6 +804,7 @@ def dedup_e_salvar_por_chave(aba, df_novo: pd.DataFrame, key_col: str):
 
 
 def obter_spreadsheet_id() -> str:
+    # Planilha única centralizada para todos os cargos
     sheet_id = (os.getenv("SPREADSHEET_ID_POLLINGDATA", "") or "").strip()
     if not sheet_id:
         raise RuntimeError("SPREADSHEET_ID_POLLINGDATA não definido.")
@@ -862,6 +812,7 @@ def obter_spreadsheet_id() -> str:
 
 
 def validar_configuracao_planilhas():
+    # Valida que a planilha única está configurada
     obter_spreadsheet_id()
 
 
@@ -874,7 +825,8 @@ def salvar_tudo_em_planilha(gc, df_p: pd.DataFrame, df_r: pd.DataFrame):
     print(f"[+] Salvando tudo na planilha central (SPREADSHEET_ID_POLLINGDATA)...")
     sh = gc.open_by_key(sheet_id)
 
-    aba_pesquisas  = garantir_aba(sh, "pesquisas",  rows=50000,  cols=25)
+    # Abas únicas para todos os cargos: pesquisas e resultados
+    aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=25)
     aba_resultados = garantir_aba(sh, "resultados", rows=200000, cols=25)
 
     if df_p is not None and not df_p.empty:
@@ -898,7 +850,7 @@ def salvar_tudo_em_planilha(gc, df_p: pd.DataFrame, df_r: pd.DataFrame):
 
 def main():
     incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
-    incluir_senado     = env_bool("INCLUIR_SENADO",     True)
+    incluir_senado = env_bool("INCLUIR_SENADO", True)
     incluir_presidente = env_bool("INCLUIR_PRESIDENTE", True)
 
     validar_configuracao_planilhas()
