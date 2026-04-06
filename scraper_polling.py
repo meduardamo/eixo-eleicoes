@@ -316,7 +316,6 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 
 def _norm_ws(s: str) -> str:
-    # Seguro para None, float("nan") e pd.NA
     try:
         if pd.isna(s):
             s = ""
@@ -523,7 +522,7 @@ def expandir_todos(driver, secao, max_clicks=120):
 def extrair_link_fonte_do_grupo(group) -> str:
     """
     Extrai o link original da pesquisa dentro de um grupo expandido.
-    Tenta vários seletores CSS em ordem de preferência.
+    Completamente separado da extração da tabela para não desalinhar colunas.
     """
     seletores = [
         "table#tab_instituto a[href]",
@@ -544,8 +543,12 @@ def extrair_link_fonte_do_grupo(group) -> str:
 
 def extrair_tabela_react(secao):
     """
-    Extrai a tabela React em um DataFrame.
-    Captura o link da fonte original por grupo na coluna '_link_fonte'.
+    Extrai a tabela React original sem modificação de colunas.
+    Retorna (df, links_por_grupo) onde links_por_grupo é uma lista
+    paralela aos grupos com o link de fonte de cada um.
+
+    Mantém a extração de links SEPARADA do DataFrame para não
+    desalinhar headers/colunas.
     """
     headers = []
 
@@ -557,9 +560,15 @@ def extrair_tabela_react(secao):
             headers.append(text)
 
     rows_data = []
+    # Índice do grupo ao qual cada linha pertence (para mapear o link depois)
+    row_group_idx = []
 
-    for group in secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group"):
-        link_fonte = extrair_link_fonte_do_grupo(group)
+    groups = secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group")
+    links_por_grupo = []
+
+    for g_idx, group in enumerate(groups):
+        # Captura link separadamente — não toca nas células
+        links_por_grupo.append(extrair_link_fonte_do_grupo(group))
 
         for row in group.find_elements(By.CSS_SELECTOR, "div.rt-tr"):
             cells = row.find_elements(By.CSS_SELECTOR, "div.rt-td")
@@ -567,29 +576,37 @@ def extrair_tabela_react(secao):
                 continue
             vals = [c.text.strip() for c in cells]
             if any(vals):
-                rows_data.append(vals + [link_fonte])
+                rows_data.append(vals)
+                row_group_idx.append(g_idx)
 
     if not rows_data:
-        return None
+        return None, []
 
     n_cols = max(len(r) for r in rows_data)
 
-    if len(headers) < n_cols - 1:
-        headers += [f"Col_{i}" for i in range(len(headers), n_cols - 1)]
-    headers = headers[: n_cols - 1] + ["_link_fonte"]
+    if len(headers) < n_cols:
+        headers += [f"Col_{i}" for i in range(len(headers), n_cols)]
+    headers = headers[:n_cols]
 
     for r in rows_data:
         while len(r) < n_cols:
             r.append("")
 
-    return pd.DataFrame(rows_data, columns=headers)
+    df = pd.DataFrame(rows_data, columns=headers)
+
+    # Adiciona _link_fonte mapeando pelo índice do grupo
+    df["_link_fonte"] = [
+        links_por_grupo[g_idx] for g_idx in row_group_idx
+    ]
+
+    return df, links_por_grupo
 
 
 def scrape_url(driver, url: str, horario_raspagem: str):
     meta = parse_url_meta(url)
-    ano = meta["ano"]
+    ano   = meta["ano"]
     cargo = meta["cargo"]
-    uf = meta["uf"]
+    uf    = meta["uf"]
     turno = meta["turno"]
 
     if not cargo or not uf or not turno:
@@ -614,20 +631,24 @@ def scrape_url(driver, url: str, horario_raspagem: str):
     time.sleep(2)
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
 
-    df_raw = extrair_tabela_react(secao)
+    df_raw, _ = extrair_tabela_react(secao)
     if df_raw is None or df_raw.empty:
         print("  [-] sem tabela")
         return None, None
 
     col_pesquisa = df_raw.columns.tolist()[0]
+
+    # ffill na coluna de pesquisa para preencher linhas filhas
     df_raw[col_pesquisa] = df_raw[col_pesquisa].replace("", pd.NA).ffill()
+
+    # ffill no link de fonte (já vem por grupo, mas garante propagação)
     df_raw["_link_fonte"] = df_raw["_link_fonte"].replace("", pd.NA).ffill().fillna("")
 
     parsed = df_raw[col_pesquisa].apply(parsear_pesquisa)
-    df_raw["instituto"] = parsed.apply(lambda x: x[0])
+    df_raw["instituto"]    = parsed.apply(lambda x: x[0])
     df_raw["registro_tse"] = parsed.apply(lambda x: x[1])
-    df_raw["data_campo"] = parsed.apply(lambda x: x[2])
-    df_raw["_block_hash"] = df_raw[col_pesquisa].apply(lambda x: _sha1_short(_norm_ws(x), 10))
+    df_raw["data_campo"]   = parsed.apply(lambda x: x[2])
+    df_raw["_block_hash"]  = df_raw[col_pesquisa].apply(lambda x: _sha1_short(_norm_ws(x), 10))
     df_raw = df_raw.drop(columns=[col_pesquisa])
 
     if "Cenários" not in df_raw.columns:
@@ -649,14 +670,14 @@ def scrape_url(driver, url: str, horario_raspagem: str):
     resultados_rows = []
 
     for _, row in df_raw.iterrows():
-        instituto          = _norm_ws(row.get("instituto", ""))
-        registro_tse       = _norm_ws(row.get("registro_tse", ""))
-        data_campo         = _norm_ws(row.get("data_campo", ""))
-        modo               = _norm_ws(row.get("Modo Pesquisa", ""))
-        entrevistas_raw    = _norm_ws(row.get("Entrevistas", ""))
-        erro_conf          = _norm_ws(row.get("Erro (Confiança)", ""))
-        scenario_label     = _norm_ws(row.get("Cenários", "")) or "NA"
-        block_hash         = _norm_ws(row.get("_block_hash", ""))
+        instituto           = _norm_ws(row.get("instituto", ""))
+        registro_tse        = _norm_ws(row.get("registro_tse", ""))
+        data_campo          = _norm_ws(row.get("data_campo", ""))
+        modo                = _norm_ws(row.get("Modo Pesquisa", ""))
+        entrevistas_raw     = _norm_ws(row.get("Entrevistas", ""))
+        erro_conf           = _norm_ws(row.get("Erro (Confiança)", ""))
+        scenario_label      = _norm_ws(row.get("Cenários", "")) or "NA"
+        block_hash          = _norm_ws(row.get("_block_hash", ""))
         link_fonte_original = _norm_ws(row.get("_link_fonte", ""))
 
         poll_id     = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
@@ -673,27 +694,27 @@ def scrape_url(driver, url: str, horario_raspagem: str):
         confianca     = inferir_confianca(erro_conf)
         classificacao = classificar_instituto(instituto)
 
-        # aba PESQUISAS — tem fonte_url_original, NÃO tem candidato_partido
+        # aba PESQUISAS: tem fonte_url_original, NÃO tem candidato_partido
         pesquisas_rows.append({
-            "scenario_id":            scenario_id,
-            "poll_id":                poll_id,
-            "ano":                    ano,
-            "uf":                     uf,
-            "cargo":                  cargo,
-            "turno":                  turno,
-            "instituto":              instituto,
+            "scenario_id":             scenario_id,
+            "poll_id":                 poll_id,
+            "ano":                     ano,
+            "uf":                      uf,
+            "cargo":                   cargo,
+            "turno":                   turno,
+            "instituto":               instituto,
             "classificacao_instituto": classificacao,
-            "registro_tse":           registro_tse,
-            "data_campo":             data_campo,
-            "modo":                   modo,
-            "amostra":                amostra,
-            "margem_erro":            margem,
-            "confianca":              confianca,
-            "scenario_label":         scenario_label,
-            "fonte_url":              url,
-            "fonte_url_original":     link_fonte_original,  # link direto da publicação
-            "horario_raspagem":       horario_raspagem,
-            "conferida":              "",
+            "registro_tse":            registro_tse,
+            "data_campo":              data_campo,
+            "modo":                    modo,
+            "amostra":                 amostra,
+            "margem_erro":             margem,
+            "confianca":               confianca,
+            "scenario_label":          scenario_label,
+            "fonte_url":               url,
+            "fonte_url_original":      link_fonte_original,
+            "horario_raspagem":        horario_raspagem,
+            "conferida":               "",
         })
 
         for col in cols_cand:
@@ -704,35 +725,35 @@ def scrape_url(driver, url: str, horario_raspagem: str):
                 continue
 
             if colname.lower() in ("não válido", "nao valido"):
-                candidato        = "Não válido"
-                partido          = ""
-                tipo             = "nao_valido"
+                candidato         = "Não válido"
+                partido           = ""
+                tipo              = "nao_valido"
                 candidato_partido = "Não válido"
             else:
                 candidato, partido = parsear_candidato_partido(colname)
                 tipo               = "candidato"
                 candidato_partido  = f"{candidato} ({partido})" if partido else candidato
 
-            # aba RESULTADOS — tem candidato_partido, NÃO tem fonte_url_original
+            # aba RESULTADOS: tem candidato_partido, NÃO tem fonte_url_original
             resultados_rows.append({
-                "scenario_id":            scenario_id,
-                "poll_id":                poll_id,
-                "ano":                    ano,
-                "uf":                     uf,
-                "cargo":                  cargo,
-                "turno":                  turno,
-                "data_campo":             data_campo,
-                "instituto":              instituto,
+                "scenario_id":             scenario_id,
+                "poll_id":                 poll_id,
+                "ano":                     ano,
+                "uf":                      uf,
+                "cargo":                   cargo,
+                "turno":                   turno,
+                "data_campo":              data_campo,
+                "instituto":               instituto,
                 "classificacao_instituto": classificacao,
-                "registro_tse":           registro_tse,
-                "scenario_label":         scenario_label,
-                "candidato":              candidato,
-                "partido":                partido,
-                "candidato_partido":      candidato_partido,  # "Nome (PARTIDO)"
-                "tipo":                   tipo,
-                "percentual":             pct,
-                "fonte_url":              url,
-                "horario_raspagem":       horario_raspagem,
+                "registro_tse":            registro_tse,
+                "scenario_label":          scenario_label,
+                "candidato":               candidato,
+                "partido":                 partido,
+                "candidato_partido":       candidato_partido,
+                "tipo":                    tipo,
+                "percentual":              pct,
+                "fonte_url":               url,
+                "horario_raspagem":        horario_raspagem,
             })
 
     df_p = pd.DataFrame(pesquisas_rows)
