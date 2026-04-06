@@ -22,9 +22,7 @@ except Exception:
     _HAS_WDM = False
 
 
-# ---------------------------------------------------------------------------
-# CONFIG
-# ---------------------------------------------------------------------------
+# Config geral
 
 UFS = [
     "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go",
@@ -38,9 +36,8 @@ PRESIDENTE_URLS_DEFAULT = [
 
 WAIT_CSS = "div#dados-das-pesquisas"
 
-# ---------------------------------------------------------------------------
-# CLASSIFICAÇÃO DE INSTITUTOS
-# ---------------------------------------------------------------------------
+
+# Classificação de institutos
 
 CLASSIFICACAO_INSTITUTOS = {
     "Datafolha": "A+",
@@ -312,9 +309,7 @@ CLASSIFICACAO_INSTITUTOS = {
 }
 
 
-# ---------------------------------------------------------------------------
-# UTILITÁRIOS
-# ---------------------------------------------------------------------------
+# Utilitários
 
 def classificar_instituto(nome: str) -> str:
     return CLASSIFICACAO_INSTITUTOS.get(_norm_ws(nome), "Ainda não foi avaliado")
@@ -351,7 +346,6 @@ def _sha1_short(s: str, n=10) -> str:
 
 
 def extrair_ultima_data(s: str) -> str:
-    """Se s contém um intervalo 'YYYY-MM-DD a YYYY-MM-DD', retorna apenas a última data."""
     datas = re.findall(r"\d{4}-\d{2}-\d{2}", str(s))
     return datas[-1] if datas else _norm_ws(s)
 
@@ -364,16 +358,24 @@ def parse_url_meta(url: str):
         u, re.I
     )
     if m:
-        return {"ano": int(m.group("ano")), "cargo": "governador",
-                "uf": m.group("uf").upper(), "turno": f"t{m.group('turno')}"}
+        return {
+            "ano": int(m.group("ano")),
+            "cargo": "governador",
+            "uf": m.group("uf").upper(),
+            "turno": f"t{m.group('turno')}"
+        }
 
     m = re.search(
         r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>br)/\d{4}_presidente_br_(?P<turno>t\d)",
         u, re.I
     )
     if m:
-        return {"ano": int(m.group("ano")), "cargo": "presidente",
-                "uf": "BR", "turno": m.group("turno").lower()}
+        return {
+            "ano": int(m.group("ano")),
+            "cargo": "presidente",
+            "uf": "BR",
+            "turno": m.group("turno").lower()
+        }
 
     m = re.search(
         r"/(?P<ano>\d{4})/(?P<cargo>senador)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)\.html|(?P<turno2>t\d)/?$)",
@@ -381,18 +383,23 @@ def parse_url_meta(url: str):
     )
     if m:
         turno = m.group("turno") or m.group("turno2")
-        return {"ano": int(m.group("ano")), "cargo": "senador",
-                "uf": m.group("uf").upper(), "turno": turno.lower()}
+        return {
+            "ano": int(m.group("ano")),
+            "cargo": "senador",
+            "uf": m.group("uf").upper(),
+            "turno": turno.lower()
+        }
 
     return {"ano": None, "cargo": None, "uf": None, "turno": None}
 
 
 def parsear_pesquisa(texto):
-    """Usado pelo layout antigo: extrai nome, registro e data de uma célula composta."""
     nome, id_pesquisa, data = "", "", ""
+
     for linha in [l.strip() for l in str(texto).strip().split("\n") if l.strip()]:
         if re.match(r"^\(\d+\)$", linha):
             continue
+
         m = re.search(r"(\d{4}-\d{2}-\d{2})", linha)
         if m:
             data = m.group(1)
@@ -401,6 +408,7 @@ def parsear_pesquisa(texto):
                 id_pesquisa = antes
         else:
             nome = re.sub(r"\s*\(\d+\)\s*$", "", linha).strip()
+
     return _norm_ws(nome), _norm_ws(id_pesquisa), _norm_ws(data)
 
 
@@ -408,6 +416,7 @@ def parsear_pct(valor):
     v = str(valor).strip()
     if not v or v in ("-", "NaN%", "nan%", "NaN", "nan", "NA", ""):
         return None
+
     try:
         return float(v.replace("%", "").replace(",", ".").strip())
     except Exception:
@@ -446,8 +455,10 @@ def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_bloc
     uf = uf.upper()
     data_campo = _norm_ws(data_campo)
     instituto_slug = _slug(instituto)
+
     if id_pesquisa and id_pesquisa.lower() not in ("sem registro", "sem_registro", "semregistro", "nan", ""):
         return f"{uf}|{cargo}|{turno}|{id_pesquisa}|{data_campo}"
+
     return f"{uf}|{cargo}|{turno}|{instituto_slug}|{data_campo}|{raw_block_hash}"
 
 
@@ -455,9 +466,20 @@ def gerar_scenario_id(poll_id, scenario_label):
     return f"{poll_id}|{_norm_ws(scenario_label)}"
 
 
-# ---------------------------------------------------------------------------
-# URL BUILDERS
-# ---------------------------------------------------------------------------
+def obter_spreadsheet_id():
+    spreadsheet_id_pollingdata = (os.getenv("SPREADSHEET_ID_POLLINGDATA", "") or "").strip()
+    spreadsheet_id_padrao = (os.getenv("SPREADSHEET_ID", "") or "").strip()
+
+    if spreadsheet_id_pollingdata:
+        return spreadsheet_id_pollingdata
+
+    if spreadsheet_id_padrao:
+        return spreadsheet_id_padrao
+
+    raise RuntimeError("Nenhum spreadsheet id foi definido. Use SPREADSHEET_ID_POLLINGDATA ou SPREADSHEET_ID.")
+
+
+# Builders de URL
 
 def urls_governador_2026_t1(ufs):
     return [
@@ -475,18 +497,20 @@ def urls_senado_2026_t1(ufs):
 
 def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool):
     urls = []
+
     if incluir_governador:
         urls += urls_governador_2026_t1(UFS)
+
     if incluir_senado:
         urls += urls_senado_2026_t1(UFS)
+
     if incluir_presidente:
         urls += list(PRESIDENTE_URLS_DEFAULT)
+
     return urls
 
 
-# ---------------------------------------------------------------------------
-# SELENIUM — utilitários comuns
-# ---------------------------------------------------------------------------
+# Selenium
 
 def criar_driver():
     options = webdriver.ChromeOptions()
@@ -497,10 +521,12 @@ def criar_driver():
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
+
     if _HAS_WDM:
         service = Service(ChromeDriverManager().install())
     else:
         service = Service()
+
     driver = webdriver.Chrome(service=service, options=options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
@@ -508,105 +534,86 @@ def criar_driver():
 
 def expandir_todos(driver, secao, max_clicks=120):
     i = 0
+
     while True:
         btns = secao.find_elements(By.CSS_SELECTOR, "button.rt-expander-button")
         fechados = [b for b in btns if b.get_attribute("aria-expanded") == "false"]
+
         if not fechados:
             break
+
         driver.execute_script("arguments[0].click();", fechados[0])
         time.sleep(0.8)
+
         i += 1
         if i >= max_clicks:
             break
 
 
-# ---------------------------------------------------------------------------
-# DETECÇÃO DE LAYOUT
-# Critério: presença de "CNPJ" no header da tabela de pesquisas
-# ---------------------------------------------------------------------------
+# Detecção de layout
 
 def detectar_layout_novo(driver) -> bool:
-    """
-    Layout NOVO  → tabela HTML nativa com colunas CNPJ Instituto / CNPJ Contratante.
-    Layout ANTIGO → ReactTable (div.rt-thead / div.rt-th).
-    """
     try:
         secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
-        # Verifica headers de tabela HTML nativa
+
         headers = secao.find_elements(By.CSS_SELECTOR, "thead th")
-        textos  = [h.text.strip() for h in headers]
+        textos = [h.text.strip() for h in headers]
         if any("CNPJ" in t for t in textos):
             return True
-        # Fallback: verifica divs do ReactTable pelo texto
+
         rt_headers = secao.find_elements(By.CSS_SELECTOR, "div.rt-th")
-        textos_rt  = [h.text.strip() for h in rt_headers]
+        textos_rt = [h.text.strip() for h in rt_headers]
         if any("CNPJ" in t for t in textos_rt):
             return True
+
         return False
     except Exception:
         return False
 
 
-# ---------------------------------------------------------------------------
-# LAYOUT NOVO — tabela HTML nativa (ex: governador CE 2026)
-# Estrutura: thead com colunas fixas + tbody com linhas de instituto
-# que expandem para uma sub-tabela de cenários/candidatos
-# ---------------------------------------------------------------------------
+# Layout novo
 
 def _extrair_blocos_novo_layout(secao):
-    """
-    Percorre as linhas do tbody da tabela principal do layout novo.
-    Cada bloco = linha de instituto + sub-tabela de cenários expandida.
-    """
     blocos = []
-
     linhas = secao.find_elements(By.CSS_SELECTOR, "tbody tr")
     i = 0
 
     while i < len(linhas):
         linha = linhas[i]
-        tds   = linha.find_elements(By.CSS_SELECTOR, "td")
+        tds = linha.find_elements(By.CSS_SELECTOR, "td")
 
         if not tds:
             i += 1
             continue
 
-        # Linha de instituto: tem botão de expandir OU tem >= 4 colunas com conteúdo
-        tem_botao     = len(linha.find_elements(By.CSS_SELECTOR, "button")) > 0
-        tem_colunas   = len(tds) >= 4
+        tem_botao = len(linha.find_elements(By.CSS_SELECTOR, "button")) > 0
+        tem_colunas = len(tds) >= 4
 
         if not (tem_botao or tem_colunas):
             i += 1
             continue
 
-        # Coluna 0: "Número Cenários"  (pode ter botão)
-        # Coluna 1: Instituto (nome + registro + data)
-        # Coluna 2: Modo Pesquisa
-        # Coluna 3: Entrevistas / Erro (Confiança)
-        # Coluna 4: CNPJ Instituto
-        # Coluna 5: CNPJ Contratante
-
-        instituto_cel   = tds[1] if len(tds) > 1 else None
-        modo_raw        = tds[2].text.strip() if len(tds) > 2 else ""
+        instituto_cel = tds[1] if len(tds) > 1 else None
+        modo_raw = tds[2].text.strip() if len(tds) > 2 else ""
         entrev_erro_raw = tds[3].text.strip() if len(tds) > 3 else ""
 
         instituto_nome = ""
-        registro       = ""
+        registro = ""
         data_campo_raw = ""
-        link_fonte     = ""
+        link_fonte = ""
 
         if instituto_cel is not None:
-            texto_inst  = instituto_cel.text.strip()
+            texto_inst = instituto_cel.text.strip()
             linhas_inst = [l.strip() for l in texto_inst.split("\n") if l.strip()]
 
             if linhas_inst:
                 instituto_nome = linhas_inst[0]
 
-            # Segunda linha: "CE-00151/2026 · 2026-03-26 a 2026-03-30"
             for linha_inst in linhas_inst[1:]:
                 reg_m = re.match(r"([A-Z]{2}-[\d]+/\d+)", linha_inst)
                 if reg_m:
                     registro = reg_m.group(1)
+
                 if re.search(r"\d{4}-\d{2}-\d{2}", linha_inst):
                     data_campo_raw = linha_inst
 
@@ -617,33 +624,32 @@ def _extrair_blocos_novo_layout(secao):
                 pass
 
         bloco = {
-            "instituto":       _norm_ws(instituto_nome),
-            "registro_tse":    _norm_ws(registro),
-            "data_campo":      extrair_ultima_data(data_campo_raw),
-            "modo":            _norm_ws(_strip_html(modo_raw)),
+            "instituto": _norm_ws(instituto_nome),
+            "registro_tse": _norm_ws(registro),
+            "data_campo": extrair_ultima_data(data_campo_raw),
+            "modo": _norm_ws(_strip_html(modo_raw)),
             "entrev_erro_raw": entrev_erro_raw,
-            "link_fonte":      link_fonte,
-            "cenarios":        [],
+            "link_fonte": link_fonte,
+            "cenarios": [],
         }
 
-        # Procura sub-tabela nas linhas seguintes (até o próximo bloco)
         j = i + 1
         while j < len(linhas):
-            sub      = linhas[j]
-            sub_tds  = sub.find_elements(By.CSS_SELECTOR, "td")
+            sub = linhas[j]
+            sub_tds = sub.find_elements(By.CSS_SELECTOR, "td")
             tem_bt_s = len(sub.find_elements(By.CSS_SELECTOR, "button")) > 0
 
             if tem_bt_s:
-                break   # chegou no próximo bloco
+                break
 
             if not sub_tds:
                 j += 1
                 continue
 
-            # Tenta extrair sub-tabela de candidatos
             try:
-                sub_table   = sub.find_element(By.CSS_SELECTOR, "table")
+                sub_table = sub.find_element(By.CSS_SELECTOR, "table")
                 cand_headers = [_norm_ws(th.text) for th in sub_table.find_elements(By.CSS_SELECTOR, "thead th")]
+
                 for tr_cen in sub_table.find_elements(By.CSS_SELECTOR, "tbody tr"):
                     cels = tr_cen.find_elements(By.CSS_SELECTOR, "td")
                     vals = [c.text.strip() for c in cels]
@@ -661,9 +667,9 @@ def _extrair_blocos_novo_layout(secao):
 
 
 def scrape_novo_layout(driver, url, horario_raspagem, meta):
-    ano   = meta["ano"]
+    ano = meta["ano"]
     cargo = meta["cargo"]
-    uf    = meta["uf"]
+    uf = meta["uf"]
     turno = meta["turno"]
 
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
@@ -676,20 +682,20 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
         print("  [-] novo layout: nenhum bloco extraído")
         return None, None
 
-    pesquisas_rows  = []
+    pesquisas_rows = []
     resultados_rows = []
 
     for bloco in blocos:
-        instituto    = bloco["instituto"]
+        instituto = bloco["instituto"]
         registro_tse = bloco["registro_tse"]
-        data_campo   = bloco["data_campo"]
-        modo         = bloco["modo"]
-        link_fonte   = bloco["link_fonte"]
-        entrev_erro  = bloco["entrev_erro_raw"]
+        data_campo = bloco["data_campo"]
+        modo = bloco["modo"]
+        link_fonte = bloco["link_fonte"]
+        entrev_erro = bloco["entrev_erro_raw"]
 
-        # Entrevistas e erro vêm na mesma célula, ex: "1500\n2,6% (95%)"
-        amostra   = None
+        amostra = None
         erro_conf = ""
+
         for le in [l.strip() for l in entrev_erro.split("\n") if l.strip()]:
             if re.match(r"^\d+$", le):
                 try:
@@ -699,86 +705,87 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
             elif "%" in le:
                 erro_conf = le
 
-        margem        = inferir_margem_erro(erro_conf)
-        confianca     = inferir_confianca(erro_conf)
+        margem = inferir_margem_erro(erro_conf)
+        confianca = inferir_confianca(erro_conf)
         classificacao = classificar_instituto(instituto)
-        block_hash    = _sha1_short(f"{instituto}|{registro_tse}|{data_campo}", 10)
-        poll_id       = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
+        block_hash = _sha1_short(f"{instituto}|{registro_tse}|{data_campo}", 10)
+        poll_id = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
 
         cenarios = bloco["cenarios"] or [{}]
 
         for c_idx, cenario_dict in enumerate(cenarios):
             scenario_label = _norm_ws(cenario_dict.get("cenario", str(c_idx + 1))) or str(c_idx + 1)
-            scenario_id    = gerar_scenario_id(poll_id, scenario_label)
+            scenario_id = gerar_scenario_id(poll_id, scenario_label)
 
             pesquisas_rows.append({
-                "scenario_id":             scenario_id,
-                "poll_id":                 poll_id,
-                "ano":                     ano,
-                "uf":                      uf,
-                "cargo":                   cargo,
-                "turno":                   turno,
-                "instituto":               instituto,
+                "scenario_id": scenario_id,
+                "poll_id": poll_id,
+                "ano": ano,
+                "uf": uf,
+                "cargo": cargo,
+                "turno": turno,
+                "instituto": instituto,
                 "classificacao_instituto": classificacao,
-                "registro_tse":            registro_tse,
-                "data_campo":              data_campo,
-                "modo":                    modo,
-                "amostra":                 amostra,
-                "margem_erro":             margem,
-                "confianca":               confianca,
-                "scenario_label":          scenario_label,
-                "fonte_url":               url,
-                "fonte_url_original":      link_fonte,
-                "horario_raspagem":        horario_raspagem,
-                "conferida":               "",
+                "registro_tse": registro_tse,
+                "data_campo": data_campo,
+                "modo": modo,
+                "amostra": amostra,
+                "margem_erro": margem,
+                "confianca": confianca,
+                "scenario_label": scenario_label,
+                "fonte_url": url,
+                "fonte_url_original": link_fonte,
+                "horario_raspagem": horario_raspagem,
+                "conferida": "",
             })
 
             for col_key, val in cenario_dict.items():
                 if col_key.lower() == "cenario":
                     continue
+
                 pct = parsear_pct(val)
                 if pct is None:
                     continue
 
                 col_clean = _norm_ws(_strip_html(col_key.replace("<br>", " ")))
+
                 if col_clean.lower() in ("não válido", "nao valido", "não valido"):
                     candidato, partido, tipo = "Não válido", "", "nao_valido"
-                    candidato_partido        = "Não válido"
+                    candidato_partido = "Não válido"
                 else:
                     candidato, partido = parsear_candidato_partido(col_key)
-                    tipo               = "candidato"
-                    candidato_partido  = f"{candidato} ({partido})" if partido else candidato
+                    tipo = "candidato"
+                    candidato_partido = f"{candidato} ({partido})" if partido else candidato
 
                 resultados_rows.append({
-                    "scenario_id":             scenario_id,
-                    "poll_id":                 poll_id,
-                    "ano":                     ano,
-                    "uf":                      uf,
-                    "cargo":                   cargo,
-                    "turno":                   turno,
-                    "data_campo":              data_campo,
-                    "instituto":               instituto,
+                    "scenario_id": scenario_id,
+                    "poll_id": poll_id,
+                    "ano": ano,
+                    "uf": uf,
+                    "cargo": cargo,
+                    "turno": turno,
+                    "data_campo": data_campo,
+                    "instituto": instituto,
                     "classificacao_instituto": classificacao,
-                    "registro_tse":            registro_tse,
-                    "scenario_label":          scenario_label,
-                    "candidato":               candidato,
-                    "partido":                 partido,
-                    "candidato_partido":       candidato_partido,
-                    "tipo":                    tipo,
-                    "percentual":              pct,
-                    "fonte_url":               url,
-                    "horario_raspagem":        horario_raspagem,
+                    "registro_tse": registro_tse,
+                    "scenario_label": scenario_label,
+                    "candidato": candidato,
+                    "partido": partido,
+                    "candidato_partido": candidato_partido,
+                    "tipo": tipo,
+                    "percentual": pct,
+                    "fonte_url": url,
+                    "horario_raspagem": horario_raspagem,
                 })
 
     df_p = pd.DataFrame(pesquisas_rows)
     df_r = pd.DataFrame(resultados_rows)
+
     print(f"  [novo] {len(df_p)} cenários | {len(df_r)} resultados")
     return df_p, df_r
 
 
-# ---------------------------------------------------------------------------
-# LAYOUT ANTIGO — ReactTable (ex: presidente, estados sem migração)
-# ---------------------------------------------------------------------------
+# Layout antigo
 
 def extrair_link_fonte_do_grupo(group) -> str:
     for sel in [
@@ -794,24 +801,31 @@ def extrair_link_fonte_do_grupo(group) -> str:
                 return href
         except Exception:
             continue
+
     return ""
 
 
 def extrair_tabela_react(secao):
     headers = []
+
     for el in secao.find_elements(By.CSS_SELECTOR, "div.rt-thead .rt-th"):
         inner = el.find_elements(By.CSS_SELECTOR, ".rt-text-content, .rt-sort-header")
-        text  = (inner[0].text.strip() if inner else el.text.strip()).replace("\n", " ").strip()
+        text = (inner[0].text.strip() if inner else el.text.strip()).replace("\n", " ").strip()
         if text:
             headers.append(text)
 
-    rows_data, row_group_idx, links_por_grupo = [], [], []
+    rows_data = []
+    row_group_idx = []
+    links_por_grupo = []
+
     for g_idx, group in enumerate(secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group")):
         links_por_grupo.append(extrair_link_fonte_do_grupo(group))
+
         for row in group.find_elements(By.CSS_SELECTOR, "div.rt-tr"):
             cells = row.find_elements(By.CSS_SELECTOR, "div.rt-td")
             if not cells:
                 continue
+
             vals = [c.text.strip() for c in cells]
             if any(vals):
                 rows_data.append(vals)
@@ -823,20 +837,23 @@ def extrair_tabela_react(secao):
     n_cols = max(len(r) for r in rows_data)
     if len(headers) < n_cols:
         headers += [f"Col_{i}" for i in range(len(headers), n_cols)]
+
     headers = headers[:n_cols]
+
     for r in rows_data:
         while len(r) < n_cols:
             r.append("")
 
     df = pd.DataFrame(rows_data, columns=headers)
     df["_link_fonte"] = [links_por_grupo[g] for g in row_group_idx]
+
     return df, links_por_grupo
 
 
 def scrape_antigo_layout(driver, url, horario_raspagem, meta):
-    ano   = meta["ano"]
+    ano = meta["ano"]
     cargo = meta["cargo"]
-    uf    = meta["uf"]
+    uf = meta["uf"]
     turno = meta["turno"]
 
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
@@ -854,10 +871,10 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
     df_raw["_link_fonte"] = df_raw["_link_fonte"].replace("", pd.NA).ffill().fillna("")
 
     parsed = df_raw[col_pesquisa].apply(parsear_pesquisa)
-    df_raw["instituto"]    = parsed.apply(lambda x: x[0])
+    df_raw["instituto"] = parsed.apply(lambda x: x[0])
     df_raw["registro_tse"] = parsed.apply(lambda x: x[1])
-    df_raw["data_campo"]   = parsed.apply(lambda x: extrair_ultima_data(x[2]))
-    df_raw["_block_hash"]  = df_raw[col_pesquisa].apply(lambda x: _sha1_short(_norm_ws(x), 10))
+    df_raw["data_campo"] = parsed.apply(lambda x: extrair_ultima_data(x[2]))
+    df_raw["_block_hash"] = df_raw[col_pesquisa].apply(lambda x: _sha1_short(_norm_ws(x), 10))
     df_raw = df_raw.drop(columns=[col_pesquisa])
 
     if "Cenários" not in df_raw.columns:
@@ -865,27 +882,29 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
 
     cols_meta = [c for c in df_raw.columns if c in {"Modo Pesquisa", "Entrevistas", "Erro (Confiança)", "Cenários"}]
     cols_meta += ["instituto", "registro_tse", "data_campo", "_block_hash", "_link_fonte"]
-    cols_meta  = [c for c in cols_meta if c in df_raw.columns]
-    cols_cand  = [c for c in df_raw.columns if c not in cols_meta]
-    cols_cand  = [
+    cols_meta = [c for c in cols_meta if c in df_raw.columns]
+
+    cols_cand = [c for c in df_raw.columns if c not in cols_meta]
+    cols_cand = [
         c for c in cols_cand
         if re.search(r"\([A-Za-z]{2,}\)", str(c)) or str(c).lower().strip() in ("não válido", "nao valido")
     ]
 
-    pesquisas_rows, resultados_rows = [], []
+    pesquisas_rows = []
+    resultados_rows = []
 
     for _, row in df_raw.iterrows():
-        instituto           = _norm_ws(row.get("instituto", ""))
-        registro_tse        = _norm_ws(row.get("registro_tse", ""))
-        data_campo          = _norm_ws(row.get("data_campo", ""))
-        modo                = _norm_ws(row.get("Modo Pesquisa", ""))
-        entrevistas_raw     = _norm_ws(row.get("Entrevistas", ""))
-        erro_conf           = _norm_ws(row.get("Erro (Confiança)", ""))
-        scenario_label      = _norm_ws(row.get("Cenários", "")) or "NA"
-        block_hash          = _norm_ws(row.get("_block_hash", ""))
+        instituto = _norm_ws(row.get("instituto", ""))
+        registro_tse = _norm_ws(row.get("registro_tse", ""))
+        data_campo = _norm_ws(row.get("data_campo", ""))
+        modo = _norm_ws(row.get("Modo Pesquisa", ""))
+        entrevistas_raw = _norm_ws(row.get("Entrevistas", ""))
+        erro_conf = _norm_ws(row.get("Erro (Confiança)", ""))
+        scenario_label = _norm_ws(row.get("Cenários", "")) or "NA"
+        block_hash = _norm_ws(row.get("_block_hash", ""))
         link_fonte_original = _norm_ws(row.get("_link_fonte", ""))
 
-        poll_id     = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
+        poll_id = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
         scenario_id = gerar_scenario_id(poll_id, scenario_label)
 
         amostra = None
@@ -896,73 +915,74 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
             pass
 
         pesquisas_rows.append({
-            "scenario_id":             scenario_id,
-            "poll_id":                 poll_id,
-            "ano":                     ano,
-            "uf":                      uf,
-            "cargo":                   cargo,
-            "turno":                   turno,
-            "instituto":               instituto,
+            "scenario_id": scenario_id,
+            "poll_id": poll_id,
+            "ano": ano,
+            "uf": uf,
+            "cargo": cargo,
+            "turno": turno,
+            "instituto": instituto,
             "classificacao_instituto": classificar_instituto(instituto),
-            "registro_tse":            registro_tse,
-            "data_campo":              data_campo,
-            "modo":                    modo,
-            "amostra":                 amostra,
-            "margem_erro":             inferir_margem_erro(erro_conf),
-            "confianca":               inferir_confianca(erro_conf),
-            "scenario_label":          scenario_label,
-            "fonte_url":               url,
-            "fonte_url_original":      link_fonte_original,
-            "horario_raspagem":        horario_raspagem,
-            "conferida":               "",
+            "registro_tse": registro_tse,
+            "data_campo": data_campo,
+            "modo": modo,
+            "amostra": amostra,
+            "margem_erro": inferir_margem_erro(erro_conf),
+            "confianca": inferir_confianca(erro_conf),
+            "scenario_label": scenario_label,
+            "fonte_url": url,
+            "fonte_url_original": link_fonte_original,
+            "horario_raspagem": horario_raspagem,
+            "conferida": "",
         })
 
         for col in cols_cand:
             pct = parsear_pct(row.get(col, ""))
             if pct is None:
                 continue
+
             colname = _norm_ws(col)
             if colname.lower() in ("não válido", "nao valido"):
                 candidato, partido, tipo = "Não válido", "", "nao_valido"
-                candidato_partido        = "Não válido"
+                candidato_partido = "Não válido"
             else:
                 candidato, partido = parsear_candidato_partido(colname)
-                tipo               = "candidato"
-                candidato_partido  = f"{candidato} ({partido})" if partido else candidato
+                tipo = "candidato"
+                candidato_partido = f"{candidato} ({partido})" if partido else candidato
 
             resultados_rows.append({
-                "scenario_id":             scenario_id,
-                "poll_id":                 poll_id,
-                "ano":                     ano,
-                "uf":                      uf,
-                "cargo":                   cargo,
-                "turno":                   turno,
-                "data_campo":              data_campo,
-                "instituto":               instituto,
+                "scenario_id": scenario_id,
+                "poll_id": poll_id,
+                "ano": ano,
+                "uf": uf,
+                "cargo": cargo,
+                "turno": turno,
+                "data_campo": data_campo,
+                "instituto": instituto,
                 "classificacao_instituto": classificar_instituto(instituto),
-                "registro_tse":            registro_tse,
-                "scenario_label":          scenario_label,
-                "candidato":               candidato,
-                "partido":                 partido,
-                "candidato_partido":       candidato_partido,
-                "tipo":                    tipo,
-                "percentual":              pct,
-                "fonte_url":               url,
-                "horario_raspagem":        horario_raspagem,
+                "registro_tse": registro_tse,
+                "scenario_label": scenario_label,
+                "candidato": candidato,
+                "partido": partido,
+                "candidato_partido": candidato_partido,
+                "tipo": tipo,
+                "percentual": pct,
+                "fonte_url": url,
+                "horario_raspagem": horario_raspagem,
             })
 
     df_p = pd.DataFrame(pesquisas_rows)
     df_r = pd.DataFrame(resultados_rows)
+
     print(f"  [antigo] {len(df_p)} cenários | {len(df_r)} resultados")
     return df_p, df_r
 
 
-# ---------------------------------------------------------------------------
-# DISPATCHER — detecta layout e roteia
-# ---------------------------------------------------------------------------
+# Dispatcher
 
 def scrape_url(driver, url: str, horario_raspagem: str):
     meta = parse_url_meta(url)
+
     if not meta["cargo"]:
         print(f"[-] URL não reconhecida: {url}")
         return None, None
@@ -984,31 +1004,19 @@ def scrape_url(driver, url: str, horario_raspagem: str):
     if detectar_layout_novo(driver):
         print("  [layout] NOVO (CNPJ detectado)")
         return scrape_novo_layout(driver, url, horario_raspagem, meta)
-    else:
-        print("  [layout] ANTIGO (ReactTable)")
-        return scrape_antigo_layout(driver, url, horario_raspagem, meta)
+
+    print("  [layout] ANTIGO (ReactTable)")
+    return scrape_antigo_layout(driver, url, horario_raspagem, meta)
 
 
-# ---------------------------------------------------------------------------
-# GOOGLE SHEETS
-# ---------------------------------------------------------------------------
+# Google Sheets
 
 def gs_client_from_env():
     raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
     if not raw:
         raise RuntimeError("GOOGLE_CREDENTIALS_JSON não definido.")
+
     creds_dict = json.loads(raw)
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    return gspread.authorize(credentials)
-
-
-def gs_client_from_file(credentials_file="credentials.json"):
-    with open(credentials_file, "r") as f:
-        creds_dict = json.load(f)
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
@@ -1027,8 +1035,10 @@ def garantir_aba(sh, nome, rows=50000, cols=25):
 def _aba_vazia(values):
     if not values:
         return True
+
     if len(values) == 1 and all(str(x).strip() == "" for x in values[0]):
         return True
+
     return False
 
 
@@ -1038,6 +1048,7 @@ def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
 
     antes = len(df)
     df = df.drop_duplicates(subset=[key_col], keep="first").reset_index(drop=True)
+
     if len(df) < antes:
         print(f"  [dedup interno] removidas {antes - len(df)} duplicatas na coleta")
 
@@ -1051,14 +1062,14 @@ def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
 
     header = values[0]
     if key_col not in header:
-        print(f"  [AVISO] chave '{key_col}' ausente no header. Reescrevendo aba.")
+        print(f"  [aviso] chave '{key_col}' ausente no header. Reescrevendo aba.")
         aba.clear()
         aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
         return len(df), 0
 
-    idx_key  = header.index(key_col)
+    idx_key = header.index(key_col)
     existing = {row[idx_key] for row in values[1:] if len(row) > idx_key and row[idx_key].strip()}
-    df_add   = df[~df[key_col].astype(str).isin(existing)].reset_index(drop=True)
+    df_add = df[~df[key_col].astype(str).isin(existing)].reset_index(drop=True)
 
     if df_add.empty:
         print(f"  [sem novidades] {len(existing)} já existiam")
@@ -1074,6 +1085,7 @@ def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
 
     df_add = df_add.reindex(columns=header_final, fill_value="")
     aba.insert_rows(df_add.fillna("").astype(str).values.tolist(), row=2)
+
     print(f"  [insert] {len(df_add)} nova(s) | {len(existing)} já existiam")
     return len(df_add), len(existing)
 
@@ -1083,13 +1095,13 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
         print("[-] nada para salvar")
         return
 
-    sh             = gc.open_by_key(spreadsheet_id)
-    aba_pesquisas  = garantir_aba(sh, "pesquisas",  rows=50000,  cols=25)
+    sh = gc.open_by_key(spreadsheet_id)
+    aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=25)
     aba_resultados = garantir_aba(sh, "resultados", rows=200000, cols=25)
 
     if df_p is not None and not df_p.empty:
         novos, exist = dedup_e_salvar(aba_pesquisas, df_p, key_col="scenario_id")
-        print(f"[+] pesquisas:  {novos} novas | {exist} já existiam")
+        print(f"[+] pesquisas: {novos} novas | {exist} já existiam")
 
     if df_r is not None and not df_r.empty:
         df_r = df_r.copy()
@@ -1102,18 +1114,14 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
         print(f"[+] resultados: {novos} novas | {exist} já existiam")
 
 
-# ---------------------------------------------------------------------------
-# MAIN — produção (via variáveis de ambiente)
-# ---------------------------------------------------------------------------
+# Main
 
 def main():
     incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
-    incluir_senado     = env_bool("INCLUIR_SENADO",     True)
+    incluir_senado = env_bool("INCLUIR_SENADO", True)
     incluir_presidente = env_bool("INCLUIR_PRESIDENTE", True)
 
-    spreadsheet_id = (os.getenv("SPREADSHEET_ID_POLLINGDATA", "") or "").strip()
-    if not spreadsheet_id:
-        raise RuntimeError("SPREADSHEET_ID_POLLINGDATA não definido.")
+    spreadsheet_id = obter_spreadsheet_id()
 
     urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente)
     if not urls:
@@ -1130,12 +1138,16 @@ def main():
     print("[+] Iniciando Chrome...")
     driver = criar_driver()
 
-    all_p, all_r = [], []
+    all_p = []
+    all_r = []
+
     try:
         for url in urls:
             df_p, df_r = scrape_url(driver, url, horario_raspagem)
+
             if df_p is not None and not df_p.empty:
                 all_p.append(df_p)
+
             if df_r is not None and not df_r.empty:
                 all_r.append(df_r)
     finally:
@@ -1148,58 +1160,5 @@ def main():
     print("[+] OK")
 
 
-# ---------------------------------------------------------------------------
-# MAIN — teste local (credentials.json + SPREADSHEET_ID hardcoded)
-# ---------------------------------------------------------------------------
-
 if __name__ == "__main__":
-    _SPREADSHEET_ID_TESTE = "1bH1EhMPIECw4jSt9nBuC3kM90n1ImZ88flkJIcm73nw"
-    _CREDENTIALS_FILE     = "credentials.json"
-
-    _URLS_TESTE = [
-        # Layout NOVO — tem CNPJ (CE governador):
-        "https://www.pollingdata.com.br/2026/governador/ce/2026_governador_ce_t1.html",
-        # Layout ANTIGO — ReactTable (presidente):
-        "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html",
-    ]
-
-    horario_raspagem = datetime.now(
-        zoneinfo.ZoneInfo("America/Recife")
-    ).strftime("%Y-%m-%d %H:%M:%S")
-
-    print("[+] Conectando ao Google Sheets (arquivo local)...")
-    gc = gs_client_from_file(_CREDENTIALS_FILE)
-
-    print("[+] Iniciando Chrome...")
-    driver = criar_driver()
-
-    all_p, all_r = [], []
-    try:
-        for url in _URLS_TESTE:
-            df_p, df_r = scrape_url(driver, url, horario_raspagem)
-            if df_p is not None and not df_p.empty:
-                all_p.append(df_p)
-            if df_r is not None and not df_r.empty:
-                all_r.append(df_r)
-    finally:
-        driver.quit()
-
-    if all_p:
-        df_p_all = pd.concat(all_p, ignore_index=True)
-        print(f"\n[pesquisas] {len(df_p_all)} linhas")
-        print(df_p_all[["instituto", "registro_tse", "data_campo", "scenario_label", "fonte_url"]].to_string())
-
-    if all_r:
-        df_r_all = pd.concat(all_r, ignore_index=True)
-        print(f"\n[resultados] {len(df_r_all)} linhas")
-        print(df_r_all[["instituto", "candidato_partido", "scenario_label", "percentual"]].to_string())
-
-    if all_p or all_r:
-        salvar_tudo(
-            gc,
-            _SPREADSHEET_ID_TESTE,
-            pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame(),
-            pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame(),
-        )
-
-    print("\n[+] OK")
+    main()
