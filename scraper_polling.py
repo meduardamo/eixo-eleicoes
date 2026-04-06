@@ -22,155 +22,12 @@ except Exception:
     _HAS_WDM = False
 
 
-UFS = [
-    "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go",
-    "ma", "mg", "ms", "mt", "pa", "pb", "pe", "pi", "pr",
-    "rj", "rn", "ro", "rr", "rs", "sc", "se", "sp", "to"
-]
-
-PRESIDENTE_URLS_DEFAULT = [
-    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html"
+TEST_URLS = [
+    "https://www.pollingdata.com.br/2026/governador/ce/2026_governador_ce_t1.html",
+    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html",
 ]
 
 WAIT_CSS = "div#dados-das-pesquisas"
-
-CLASSIFICACAO_INSTITUTOS = {
-    "Datafolha": "A+",
-    "AtlasIntel": "A+",
-    "Jornal Girassol": "A+",
-    "Gazeta Dados": "A+",
-    "Jornal Stylo": "A+",
-    "MDA": "A+",
-    "MAS Opinião": "A",
-    "Badra Comunicação": "A",
-    "Ibope": "A",
-    "DMP": "A",
-    "Paraná Pesquisas": "A",
-    "Real Time Big Data": "A",
-    "Grupo M": "A",
-    "Futura": "A-",
-    "Instituto Amostragem": "A-",
-    "Instituto Gasparetto de Pesquisas": "A-",
-    "Serpes": "A-",
-    "Perfil Pesquisas Técnicas (RN)": "A-",
-    "Voice Pesquisas (MT)": "A-",
-    "Govnet/Instituto Opinião (SP)": "A-",
-    "Instituto Econométrica": "B+",
-    "MT Dados": "B+",
-    "Instituto de Pesquisa Resultado (MS)": "B+",
-    "Data M": "B+",
-    "6 Sigma": "B+",
-    "Prever Pesquisas": "B+",
-    "Solução Treinamento": "B+",
-    "Ágora Pesquisa (RJ)": "B",
-    "EPP": "B",
-    "Exata Pesquisa (MA)": "B",
-    "Instituto Jales": "B",
-    "Dataqualy": "B",
-    "Painel Brasil": "B",
-    "Brand Consultoria": "B",
-    "Instituto Opinião (PR)": "B",
-    "INOPE": "B",
-    "Vox Populi": "B",
-    "IPEMS": "B",
-    "Dataform": "B",
-    "Real Dados": "B",
-    "Incope": "B",
-    "Instituto Datailha": "B-",
-    "Tendência Pesquisa (SC)": "B-",
-    "Certifica Consultoria": "B-",
-    "Opinar Pesquisas": "B-",
-    "FLS Pesquisa": "B-",
-    "IPAT": "B-",
-    "Dados Pesquisa (GO)": "B-",
-    "Agora Pesquisa (BA)": "B-",
-    "Pontual Pesquisas (AM)": "B-",
-    "ABC Dados": "B-",
-    "Mapa Marketing": "B-",
-    "Múltipla Pesquisa (PE)": "B-",
-    "Instituto Múltipla": "B-",
-    "Instituto Haverroth": "B-",
-    "IPPEC (PR)": "B-",
-    "IABR": "B-",
-    "CP2 Pesquisa": "B-",
-    "RF Consultoria": "B-",
-    "IRG Consultoria": "B-",
-    "Fortiori": "B-",
-    "Colectta Consultoria": "B-",
-    "Consult Pesquisa (RN)": "B-",
-    "Agorasei Pesquisa": "B-",
-    "BMO": "B-",
-    "Opinião Pesquisas (PB)": "B-",
-    "Ipespe": "B-",
-    "IPESPE": "B-",
-    "Quaest": "B-",
-    "W J Mendes": "B-",
-    "Instituto Qualitativa": "B-",
-    "Folha Capital": "C+",
-    "AR7 Pesquisa": "C+",
-    "Veritá": "C+",
-    "Instituto Methodus": "C+",
-    "Methodus": "C+",
-    "Estimativa": "C+",
-    "Camminus Marketing": "C+",
-    "Doxa": "C+",
-    "R M Mariath": "C+",
-    "Equação Pesquisas": "C+",
-    "Instituto Seta": "C+",
-    "Polo Pesquisas": "C+",
-    "Ranking Pesquisa": "C+",
-    "Ranking Brasil Inteligência": "C+",
-    "Index Pesquisas": "C+",
-    "Potencial": "C+",
-    "F5 Atualiza Dados": "C",
-    "Jornal Correio Continental": "C",
-    "MBO": "C",
-    "Comunicare": "C",
-    "Naipes Marketing": "C",
-    "Instituto Exatta (PE)": "C",
-    "Escutec": "C",
-    "Instituto França": "C",
-    "Ibrape": "C",
-    "Instituto Datasensus": "C",
-    "INOP": "C",
-    "Instituto Vope": "C",
-    "Vox Opinião Pública (SP)": "C",
-    "Surgiu Pesquisas": "C",
-    "Alternativa Dados": "C-",
-    "Seculus Consultoria": "C-",
-    "Seculus": "C-",
-    "Datavox (PB)": "C-",
-    "Instituto Credibilidade": "C-",
-    "Multidados": "C-",
-    "Voga Pesquisas": "C-",
-    "Jornal O+Positivo": "C-",
-    "Studio Pesquisas": "C-",
-    "Brasil Dados": "C-",
-    "Census Pesquisas": "C-",
-    "Exatus Consultoria (RN)": "C-",
-    "Infornews": "C-",
-    "Zaytec Brasil": "C-",
-    "Access": "C-",
-    "Brasmarket": "N",
-    "DataPoder360": "N",
-    "FSB Pesquisa": "N",
-    "Gerp": "N",
-    "Ideia Big Data": "N",
-    "Ipec (antigo Ibope)": "N",
-    "Ipsos Ipec": "N",
-    "Sensus": "N"
-}
-
-
-def classificar_instituto(nome: str) -> str:
-    return CLASSIFICACAO_INSTITUTOS.get(_norm_ws(nome), "Ainda não foi avaliado")
-
-
-def env_bool(name: str, default: bool = False) -> bool:
-    v = (os.getenv(name, "") or "").strip().lower()
-    if v == "":
-        return default
-    return v in ("1", "true", "t", "yes", "y", "sim", "on")
 
 
 def _norm_ws(s) -> str:
@@ -226,19 +83,6 @@ def parse_url_meta(url: str):
             "cargo": "presidente",
             "uf": "BR",
             "turno": m.group("turno").lower()
-        }
-
-    m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>senador)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)\.html|(?P<turno2>t\d)/?$)",
-        u, re.I
-    )
-    if m:
-        turno = m.group("turno") or m.group("turno2")
-        return {
-            "ano": int(m.group("ano")),
-            "cargo": "senador",
-            "uf": m.group("uf").upper(),
-            "turno": turno.lower()
         }
 
     return {"ano": None, "cargo": None, "uf": None, "turno": None}
@@ -315,48 +159,6 @@ def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_bloc
 
 def gerar_scenario_id(poll_id, scenario_label):
     return f"{poll_id}|{_norm_ws(scenario_label)}"
-
-
-def obter_spreadsheet_id():
-    spreadsheet_id_pollingdata = (os.getenv("SPREADSHEET_ID_POLLINGDATA", "") or "").strip()
-    spreadsheet_id_padrao = (os.getenv("SPREADSHEET_ID", "") or "").strip()
-
-    if spreadsheet_id_pollingdata:
-        return spreadsheet_id_pollingdata
-
-    if spreadsheet_id_padrao:
-        return spreadsheet_id_padrao
-
-    raise RuntimeError("Nenhum spreadsheet id foi definido. Use SPREADSHEET_ID_POLLINGDATA ou SPREADSHEET_ID.")
-
-
-def urls_governador_2026_t1(ufs):
-    return [
-        f"https://www.pollingdata.com.br/2026/governador/{uf}/2026_governador_{uf}_t1.html"
-        for uf in ufs
-    ]
-
-
-def urls_senado_2026_t1(ufs):
-    return [
-        f"https://www.pollingdata.com.br/2026/senador/{uf}/2026_senador_{uf}_t1.html"
-        for uf in ufs
-    ]
-
-
-def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool):
-    urls = []
-
-    if incluir_governador:
-        urls += urls_governador_2026_t1(UFS)
-
-    if incluir_senado:
-        urls += urls_senado_2026_t1(UFS)
-
-    if incluir_presidente:
-        urls += list(PRESIDENTE_URLS_DEFAULT)
-
-    return urls
 
 
 def criar_driver():
@@ -635,7 +437,6 @@ def scrape_novo_layout_json(driver, url, horario_raspagem, meta):
 
         margem = inferir_margem_erro(erro_conf)
         confianca = inferir_confianca(erro_conf)
-        classificacao = classificar_instituto(instituto)
 
         block_hash = _sha1_short(f"{instituto}|{registro}|{data_campo}", 10)
         poll_id = gerar_poll_id(uf, instituto, registro_norm, data_campo, cargo, turno, block_hash)
@@ -655,7 +456,6 @@ def scrape_novo_layout_json(driver, url, horario_raspagem, meta):
                 "cargo": cargo,
                 "turno": turno,
                 "instituto": instituto,
-                "classificacao_instituto": classificacao,
                 "registro_tse": registro,
                 "data_campo": data_campo,
                 "modo": modo,
@@ -666,7 +466,6 @@ def scrape_novo_layout_json(driver, url, horario_raspagem, meta):
                 "fonte_url": url,
                 "fonte_url_original": link_fonte,
                 "horario_raspagem": horario_raspagem,
-                "conferida": "",
             })
 
             for col_key, col_vals in cenarios_dict.items():
@@ -684,11 +483,9 @@ def scrape_novo_layout_json(driver, url, horario_raspagem, meta):
                     candidato = "Não válido"
                     partido = ""
                     tipo = "nao_valido"
-                    candidato_partido = "Não válido"
                 else:
                     candidato, partido = parsear_candidato_partido(col_key)
                     tipo = "candidato"
-                    candidato_partido = f"{candidato} ({partido})" if partido else candidato
 
                 resultados_rows.append({
                     "scenario_id": scenario_id,
@@ -699,12 +496,10 @@ def scrape_novo_layout_json(driver, url, horario_raspagem, meta):
                     "turno": turno,
                     "data_campo": data_campo,
                     "instituto": instituto,
-                    "classificacao_instituto": classificacao,
                     "registro_tse": registro,
                     "scenario_label": scenario_label,
                     "candidato": candidato,
                     "partido": partido,
-                    "candidato_partido": candidato_partido,
                     "tipo": tipo,
                     "percentual": pct,
                     "fonte_url": url,
@@ -761,7 +556,6 @@ def scrape_novo_layout_dom(driver, url, horario_raspagem, meta):
 
         margem = inferir_margem_erro(erro_conf)
         confianca = inferir_confianca(erro_conf)
-        classificacao = classificar_instituto(instituto)
         block_hash = _sha1_short(f"{instituto}|{registro_tse}|{data_campo}", 10)
         poll_id = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
 
@@ -784,7 +578,6 @@ def scrape_novo_layout_dom(driver, url, horario_raspagem, meta):
                 "cargo": cargo,
                 "turno": turno,
                 "instituto": instituto,
-                "classificacao_instituto": classificacao,
                 "registro_tse": registro_tse,
                 "data_campo": data_campo,
                 "modo": modo,
@@ -795,7 +588,6 @@ def scrape_novo_layout_dom(driver, url, horario_raspagem, meta):
                 "fonte_url": url,
                 "fonte_url_original": link_fonte,
                 "horario_raspagem": horario_raspagem,
-                "conferida": "",
             })
 
             for col_key, val in cenario_dict.items():
@@ -812,11 +604,9 @@ def scrape_novo_layout_dom(driver, url, horario_raspagem, meta):
                     candidato = "Não válido"
                     partido = ""
                     tipo = "nao_valido"
-                    candidato_partido = "Não válido"
                 else:
                     candidato, partido = parsear_candidato_partido(col_clean)
                     tipo = "candidato"
-                    candidato_partido = f"{candidato} ({partido})" if partido else candidato
 
                 resultados_rows.append({
                     "scenario_id": scenario_id,
@@ -827,12 +617,10 @@ def scrape_novo_layout_dom(driver, url, horario_raspagem, meta):
                     "turno": turno,
                     "data_campo": data_campo,
                     "instituto": instituto,
-                    "classificacao_instituto": classificacao,
                     "registro_tse": registro_tse,
                     "scenario_label": scenario_label,
                     "candidato": candidato,
                     "partido": partido,
-                    "candidato_partido": candidato_partido,
                     "tipo": tipo,
                     "percentual": pct,
                     "fonte_url": url,
@@ -854,7 +642,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
     if df_p is not None and not df_p.empty:
         return df_p, df_r
 
-    print("  [novo] fallback para extração pelo DOM")
+    print("  [novo] fallback para DOM")
     return scrape_novo_layout_dom(driver, url, horario_raspagem, meta)
 
 
@@ -872,7 +660,6 @@ def extrair_link_fonte_do_grupo(group) -> str:
                 return href
         except Exception:
             continue
-
     return ""
 
 
@@ -934,7 +721,6 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
 
     df_raw, _ = extrair_tabela_react(secao)
     if df_raw is None or df_raw.empty:
-        print("  [-] sem tabela")
         return None, None
 
     col_pesquisa = df_raw.columns.tolist()[0]
@@ -993,7 +779,6 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
             "cargo": cargo,
             "turno": turno,
             "instituto": instituto,
-            "classificacao_instituto": classificar_instituto(instituto),
             "registro_tse": registro_tse,
             "data_campo": data_campo,
             "modo": modo,
@@ -1004,7 +789,6 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
             "fonte_url": url,
             "fonte_url_original": link_fonte_original,
             "horario_raspagem": horario_raspagem,
-            "conferida": "",
         })
 
         for col in cols_cand:
@@ -1017,11 +801,9 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
                 candidato = "Não válido"
                 partido = ""
                 tipo = "nao_valido"
-                candidato_partido = "Não válido"
             else:
                 candidato, partido = parsear_candidato_partido(colname)
                 tipo = "candidato"
-                candidato_partido = f"{candidato} ({partido})" if partido else candidato
 
             resultados_rows.append({
                 "scenario_id": scenario_id,
@@ -1032,12 +814,10 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
                 "turno": turno,
                 "data_campo": data_campo,
                 "instituto": instituto,
-                "classificacao_instituto": classificar_instituto(instituto),
                 "registro_tse": registro_tse,
                 "scenario_label": scenario_label,
                 "candidato": candidato,
                 "partido": partido,
-                "candidato_partido": candidato_partido,
                 "tipo": tipo,
                 "percentual": pct,
                 "fonte_url": url,
@@ -1054,22 +834,13 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
 def scrape_url(driver, url: str, horario_raspagem: str):
     meta = parse_url_meta(url)
 
-    if not meta["cargo"]:
-        print(f"[-] URL não reconhecida: {url}")
-        return None, None
-
     print(f"[+] {meta['cargo'].upper()} {meta['uf']} {meta['turno']} -> {url}")
     driver.get(url)
-    time.sleep(10)
+    time.sleep(8)
 
-    try:
-        WebDriverWait(driver, 40).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
-        )
-    except Exception:
-        print("  [-] timeout (sem container)")
-        return None, None
-
+    WebDriverWait(driver, 40).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
+    )
     time.sleep(2)
 
     if detectar_layout_novo(driver):
@@ -1080,136 +851,18 @@ def scrape_url(driver, url: str, horario_raspagem: str):
     return scrape_antigo_layout(driver, url, horario_raspagem, meta)
 
 
-def gs_client_from_env():
-    raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
-    if not raw:
-        raise RuntimeError("GOOGLE_CREDENTIALS_JSON não definido.")
-
-    creds_dict = json.loads(raw)
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    return gspread.authorize(credentials)
-
-
-def garantir_aba(sh, nome, rows=50000, cols=25):
-    try:
-        return sh.worksheet(nome)
-    except gspread.exceptions.WorksheetNotFound:
-        return sh.add_worksheet(title=nome, rows=rows, cols=cols)
-
-
-def _aba_vazia(values):
-    if not values:
-        return True
-
-    if len(values) == 1 and all(str(x).strip() == "" for x in values[0]):
-        return True
-
-    return False
-
-
-def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
-    if key_col not in df.columns:
-        raise RuntimeError(f"df não tem coluna de chave: '{key_col}'")
-
-    antes = len(df)
-    df = df.drop_duplicates(subset=[key_col], keep="first").reset_index(drop=True)
-
-    if len(df) < antes:
-        print(f"  [dedup interno] removidas {antes - len(df)} duplicatas na coleta")
-
-    values = aba.get_all_values()
-
-    if _aba_vazia(values):
-        aba.clear()
-        aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
-        print(f"  [aba vazia] {len(df)} linhas gravadas")
-        return len(df), 0
-
-    header = values[0]
-    if key_col not in header:
-        print(f"  [aviso] chave '{key_col}' ausente no header. Reescrevendo aba.")
-        aba.clear()
-        aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
-        return len(df), 0
-
-    idx_key = header.index(key_col)
-    existing = {row[idx_key] for row in values[1:] if len(row) > idx_key and row[idx_key].strip()}
-    df_add = df[~df[key_col].astype(str).isin(existing)].reset_index(drop=True)
-
-    if df_add.empty:
-        print(f"  [sem novidades] {len(existing)} já existiam")
-        return 0, len(existing)
-
-    colunas_novas = [c for c in df_add.columns if c not in header]
-    if colunas_novas:
-        header_final = header + colunas_novas
-        aba.update([header_final], range_name="A1")
-        print(f"  [schema] {len(colunas_novas)} coluna(s) nova(s): {colunas_novas}")
-    else:
-        header_final = header
-
-    df_add = df_add.reindex(columns=header_final, fill_value="")
-    aba.insert_rows(df_add.fillna("").astype(str).values.tolist(), row=2)
-
-    print(f"  [insert] {len(df_add)} nova(s) | {len(existing)} já existiam")
-    return len(df_add), len(existing)
-
-
-def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame):
-    if (df_p is None or df_p.empty) and (df_r is None or df_r.empty):
-        print("[-] nada para salvar")
-        return
-
-    sh = gc.open_by_key(spreadsheet_id)
-    aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=25)
-    aba_resultados = garantir_aba(sh, "resultados", rows=200000, cols=25)
-
-    if df_p is not None and not df_p.empty:
-        novos, exist = dedup_e_salvar(aba_pesquisas, df_p, key_col="scenario_id")
-        print(f"[+] pesquisas: {novos} novas | {exist} já existiam")
-
-    if df_r is not None and not df_r.empty:
-        df_r = df_r.copy()
-        df_r["_dedup_key"] = (
-            df_r["scenario_id"].astype(str)
-            + "|" + df_r["tipo"].astype(str)
-            + "|" + df_r["candidato"].astype(str)
-        )
-        novos, exist = dedup_e_salvar(aba_resultados, df_r, key_col="_dedup_key")
-        print(f"[+] resultados: {novos} novas | {exist} já existiam")
-
-
 def main():
-    incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
-    incluir_senado = env_bool("INCLUIR_SENADO", True)
-    incluir_presidente = env_bool("INCLUIR_PRESIDENTE", True)
-
-    spreadsheet_id = obter_spreadsheet_id()
-
-    urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente)
-    if not urls:
-        print("[-] Nenhuma URL selecionada. Ajuste INCLUIR_*.")
-        return
-
     horario_raspagem = datetime.now(
         zoneinfo.ZoneInfo("America/Recife")
     ).strftime("%Y-%m-%d %H:%M:%S")
 
-    print("[+] Conectando ao Google Sheets...")
-    gc = gs_client_from_env()
-
-    print("[+] Iniciando Chrome...")
     driver = criar_driver()
 
-    all_p = []
-    all_r = []
-
     try:
-        for url in urls:
+        all_p = []
+        all_r = []
+
+        for url in TEST_URLS:
             df_p, df_r = scrape_url(driver, url, horario_raspagem)
 
             if df_p is not None and not df_p.empty:
@@ -1217,14 +870,30 @@ def main():
 
             if df_r is not None and not df_r.empty:
                 all_r.append(df_r)
+
+        df_p_all = pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame()
+        df_r_all = pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame()
+
+        print("\n=== PESQUISAS ===")
+        if not df_p_all.empty:
+            print(df_p_all[[
+                "uf", "cargo", "instituto", "registro_tse", "data_campo",
+                "scenario_label", "amostra", "margem_erro", "confianca"
+            ]].to_string(index=False))
+        else:
+            print("vazio")
+
+        print("\n=== RESULTADOS ===")
+        if not df_r_all.empty:
+            print(df_r_all[[
+                "uf", "cargo", "instituto", "data_campo",
+                "scenario_label", "candidato", "partido", "percentual"
+            ]].to_string(index=False))
+        else:
+            print("vazio")
+
     finally:
         driver.quit()
-
-    df_p_all = pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame()
-    df_r_all = pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame()
-
-    salvar_tudo(gc, spreadsheet_id, df_p_all, df_r_all)
-    print("[+] OK")
 
 
 if __name__ == "__main__":
