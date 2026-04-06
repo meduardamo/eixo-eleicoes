@@ -532,12 +532,37 @@ def criar_driver():
     return driver
 
 
-def expandir_todos(driver, secao, max_clicks=120):
+def expandir_todos_antigo(driver, secao, max_clicks=120):
     i = 0
 
     while True:
         btns = secao.find_elements(By.CSS_SELECTOR, "button.rt-expander-button")
-        fechados = [b for b in btns if b.get_attribute("aria-expanded") == "false"]
+        fechados = [b for b in btns if (b.get_attribute("aria-expanded") or "").lower() == "false"]
+
+        if not fechados:
+            break
+
+        driver.execute_script("arguments[0].click();", fechados[0])
+        time.sleep(0.8)
+
+        i += 1
+        if i >= max_clicks:
+            break
+
+
+def expandir_todos_novo(driver, secao, max_clicks=120):
+    i = 0
+
+    while True:
+        btns = secao.find_elements(By.CSS_SELECTOR, "button[aria-expanded='false']")
+        fechados = []
+
+        for b in btns:
+            try:
+                if b.is_displayed() and b.is_enabled():
+                    fechados.append(b)
+            except Exception:
+                pass
 
         if not fechados:
             break
@@ -555,15 +580,14 @@ def expandir_todos(driver, secao, max_clicks=120):
 def detectar_layout_novo(driver) -> bool:
     try:
         secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+        texto_secao = secao.text.lower()
 
-        headers = secao.find_elements(By.CSS_SELECTOR, "thead th")
-        textos = [h.text.strip() for h in headers]
-        if any("CNPJ" in t for t in textos):
+        if "cnpj instituto" in texto_secao or "cnpj contratante" in texto_secao:
             return True
 
-        rt_headers = secao.find_elements(By.CSS_SELECTOR, "div.rt-th")
-        textos_rt = [h.text.strip() for h in rt_headers]
-        if any("CNPJ" in t for t in textos_rt):
+        headers = secao.find_elements(By.CSS_SELECTOR, "thead th")
+        textos = [h.text.strip().lower() for h in headers]
+        if any("cnpj" in t for t in textos):
             return True
 
         return False
@@ -673,7 +697,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
     turno = meta["turno"]
 
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
-    expandir_todos(driver, secao)
+    expandir_todos_novo(driver, secao)
     time.sleep(2)
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
 
@@ -857,7 +881,7 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
     turno = meta["turno"]
 
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
-    expandir_todos(driver, secao)
+    expandir_todos_antigo(driver, secao)
     time.sleep(2)
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
 
@@ -1001,7 +1025,9 @@ def scrape_url(driver, url: str, horario_raspagem: str):
 
     time.sleep(2)
 
-    if detectar_layout_novo(driver):
+    layout_novo = detectar_layout_novo(driver)
+
+    if layout_novo:
         print("  [layout] NOVO (CNPJ detectado)")
         return scrape_novo_layout(driver, url, horario_raspagem, meta)
 
