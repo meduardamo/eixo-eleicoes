@@ -22,7 +22,7 @@ except Exception:
     _HAS_WDM = False
 
 
-# Config geral
+# Config
 
 UFS = [
     "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go",
@@ -326,7 +326,7 @@ def _norm_ws(s) -> str:
     try:
         if pd.isna(s):
             s = ""
-    except (TypeError, ValueError):
+    except Exception:
         pass
     return re.sub(r"\s+", " ", str(s)).strip()
 
@@ -479,7 +479,7 @@ def obter_spreadsheet_id():
     raise RuntimeError("Nenhum spreadsheet id foi definido. Use SPREADSHEET_ID_POLLINGDATA ou SPREADSHEET_ID.")
 
 
-# Builders de URL
+# URLs
 
 def urls_governador_2026_t1(ufs):
     return [
@@ -532,6 +532,24 @@ def criar_driver():
     return driver
 
 
+def detectar_layout_novo(driver) -> bool:
+    try:
+        secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+        texto = secao.text.lower()
+
+        if "cnpj instituto" in texto or "cnpj contratante" in texto:
+            return True
+
+        headers = secao.find_elements(By.CSS_SELECTOR, "thead th")
+        textos = [h.text.strip().lower() for h in headers]
+        if any("cnpj" in t for t in textos):
+            return True
+
+        return False
+    except Exception:
+        return False
+
+
 def expandir_todos_antigo(driver, secao, max_clicks=120):
     i = 0
 
@@ -550,74 +568,105 @@ def expandir_todos_antigo(driver, secao, max_clicks=120):
             break
 
 
-def expandir_todos_novo(driver, secao, max_clicks=120):
-    i = 0
-
-    while True:
-        btns = secao.find_elements(By.CSS_SELECTOR, "button[aria-expanded='false']")
-        fechados = []
-
-        for b in btns:
-            try:
-                if b.is_displayed() and b.is_enabled():
-                    fechados.append(b)
-            except Exception:
-                pass
-
-        if not fechados:
-            break
-
-        driver.execute_script("arguments[0].click();", fechados[0])
-        time.sleep(0.8)
-
-        i += 1
-        if i >= max_clicks:
-            break
-
-
-# Detecção de layout
-
-def detectar_layout_novo(driver) -> bool:
+def _linha_principal_novo(tr):
     try:
-        secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
-        texto_secao = secao.text.lower()
-
-        if "cnpj instituto" in texto_secao or "cnpj contratante" in texto_secao:
-            return True
-
-        headers = secao.find_elements(By.CSS_SELECTOR, "thead th")
-        textos = [h.text.strip().lower() for h in headers]
-        if any("cnpj" in t for t in textos):
-            return True
-
-        return False
+        return len(tr.find_elements(By.CSS_SELECTOR, "td")) >= 6
     except Exception:
         return False
+
+
+def _linha_tem_subtabela(tr):
+    try:
+        return len(tr.find_elements(By.CSS_SELECTOR, "table")) > 0
+    except Exception:
+        return False
+
+
+def _clicar_expansor_novo(driver, linha):
+    tds = linha.find_elements(By.CSS_SELECTOR, "td")
+    if not tds:
+        return False
+
+    cel = tds[0]
+
+    seletores = [
+        "button[aria-expanded='false']",
+        "button",
+        "[role='button']",
+        "svg",
+        "span",
+        "div",
+    ]
+
+    for sel in seletores:
+        try:
+            elementos = cel.find_elements(By.CSS_SELECTOR, sel)
+            for el in elementos:
+                try:
+                    if el.is_displayed() and el.is_enabled():
+                        driver.execute_script("arguments[0].click();", el)
+                        return True
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    try:
+        driver.execute_script("arguments[0].click();", cel)
+        return True
+    except Exception:
+        return False
+
+
+def expandir_todos_novo(driver, secao, max_clicks=200):
+    clicks = 0
+
+    while clicks < max_clicks:
+        linhas = secao.find_elements(By.CSS_SELECTOR, "tbody > tr")
+        mudou = False
+
+        i = 0
+        while i < len(linhas):
+            linha = linhas[i]
+
+            if not _linha_principal_novo(linha):
+                i += 1
+                continue
+
+            proxima = linhas[i + 1] if i + 1 < len(linhas) else None
+            ja_expandida = proxima is not None and _linha_tem_subtabela(proxima)
+
+            if not ja_expandida:
+                clicou = _clicar_expansor_novo(driver, linha)
+                if clicou:
+                    time.sleep(1.0)
+                    secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+                    clicks += 1
+                    mudou = True
+                    break
+
+            i += 1
+
+        if not mudou:
+            break
 
 
 # Layout novo
 
 def _extrair_blocos_novo_layout(secao):
     blocos = []
-    linhas = secao.find_elements(By.CSS_SELECTOR, "tbody tr")
+    linhas = secao.find_elements(By.CSS_SELECTOR, "tbody > tr")
     i = 0
 
     while i < len(linhas):
         linha = linhas[i]
         tds = linha.find_elements(By.CSS_SELECTOR, "td")
 
-        if not tds:
+        if len(tds) < 6:
             i += 1
             continue
 
-        tem_botao = len(linha.find_elements(By.CSS_SELECTOR, "button")) > 0
-        tem_colunas = len(tds) >= 4
-
-        if not (tem_botao or tem_colunas):
-            i += 1
-            continue
-
-        instituto_cel = tds[1] if len(tds) > 1 else None
+        instituto_cel = tds[1]
         modo_raw = tds[2].text.strip() if len(tds) > 2 else ""
         entrev_erro_raw = tds[3].text.strip() if len(tds) > 3 else ""
 
@@ -626,26 +675,25 @@ def _extrair_blocos_novo_layout(secao):
         data_campo_raw = ""
         link_fonte = ""
 
-        if instituto_cel is not None:
-            texto_inst = instituto_cel.text.strip()
-            linhas_inst = [l.strip() for l in texto_inst.split("\n") if l.strip()]
+        texto_inst = instituto_cel.text.strip()
+        linhas_inst = [l.strip() for l in texto_inst.split("\n") if l.strip()]
 
-            if linhas_inst:
-                instituto_nome = linhas_inst[0]
+        if linhas_inst:
+            instituto_nome = linhas_inst[0]
 
-            for linha_inst in linhas_inst[1:]:
-                reg_m = re.match(r"([A-Z]{2}-[\d]+/\d+)", linha_inst)
-                if reg_m:
-                    registro = reg_m.group(1)
+        for linha_inst in linhas_inst[1:]:
+            reg_m = re.match(r"([A-Z]{2}-[\d]+/\d+)", linha_inst)
+            if reg_m:
+                registro = reg_m.group(1)
 
-                if re.search(r"\d{4}-\d{2}-\d{2}", linha_inst):
-                    data_campo_raw = linha_inst
+            if re.search(r"\d{4}-\d{2}-\d{2}", linha_inst):
+                data_campo_raw = linha_inst
 
-            try:
-                a = instituto_cel.find_element(By.CSS_SELECTOR, "a[href]")
-                link_fonte = (a.get_attribute("href") or "").strip()
-            except Exception:
-                pass
+        try:
+            a = instituto_cel.find_element(By.CSS_SELECTOR, "a[href]")
+            link_fonte = (a.get_attribute("href") or "").strip()
+        except Exception:
+            pass
 
         bloco = {
             "instituto": _norm_ws(instituto_nome),
@@ -661,24 +709,27 @@ def _extrair_blocos_novo_layout(secao):
         while j < len(linhas):
             sub = linhas[j]
             sub_tds = sub.find_elements(By.CSS_SELECTOR, "td")
-            tem_bt_s = len(sub.find_elements(By.CSS_SELECTOR, "button")) > 0
 
-            if tem_bt_s:
+            if len(sub_tds) >= 6:
                 break
 
-            if not sub_tds:
-                j += 1
-                continue
-
             try:
-                sub_table = sub.find_element(By.CSS_SELECTOR, "table")
-                cand_headers = [_norm_ws(th.text) for th in sub_table.find_elements(By.CSS_SELECTOR, "thead th")]
+                tabelas = sub.find_elements(By.CSS_SELECTOR, "table")
+                for sub_table in tabelas:
+                    cand_headers = [
+                        _norm_ws(th.text)
+                        for th in sub_table.find_elements(By.CSS_SELECTOR, "thead th")
+                    ]
 
-                for tr_cen in sub_table.find_elements(By.CSS_SELECTOR, "tbody tr"):
-                    cels = tr_cen.find_elements(By.CSS_SELECTOR, "td")
-                    vals = [c.text.strip() for c in cels]
-                    if vals and cand_headers:
-                        bloco["cenarios"].append(dict(zip(cand_headers, vals)))
+                    if not cand_headers:
+                        continue
+
+                    for tr_cen in sub_table.find_elements(By.CSS_SELECTOR, "tbody tr"):
+                        cels = tr_cen.find_elements(By.CSS_SELECTOR, "td")
+                        vals = [c.text.strip() for c in cels]
+
+                        if vals and len(vals) == len(cand_headers):
+                            bloco["cenarios"].append(dict(zip(cand_headers, vals)))
             except Exception:
                 pass
 
@@ -738,7 +789,12 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
         cenarios = bloco["cenarios"] or [{}]
 
         for c_idx, cenario_dict in enumerate(cenarios):
-            scenario_label = _norm_ws(cenario_dict.get("cenario", str(c_idx + 1))) or str(c_idx + 1)
+            scenario_label = (
+                _norm_ws(cenario_dict.get("Cenário", ""))
+                or _norm_ws(cenario_dict.get("cenario", ""))
+                or str(c_idx + 1)
+            )
+
             scenario_id = gerar_scenario_id(poll_id, scenario_label)
 
             pesquisas_rows.append({
@@ -764,7 +820,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
             })
 
             for col_key, val in cenario_dict.items():
-                if col_key.lower() == "cenario":
+                if col_key.lower() in ("cenário", "cenario"):
                     continue
 
                 pct = parsear_pct(val)
@@ -777,7 +833,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
                     candidato, partido, tipo = "Não válido", "", "nao_valido"
                     candidato_partido = "Não válido"
                 else:
-                    candidato, partido = parsear_candidato_partido(col_key)
+                    candidato, partido = parsear_candidato_partido(col_clean)
                     tipo = "candidato"
                     candidato_partido = f"{candidato} ({partido})" if partido else candidato
 
@@ -1025,9 +1081,7 @@ def scrape_url(driver, url: str, horario_raspagem: str):
 
     time.sleep(2)
 
-    layout_novo = detectar_layout_novo(driver)
-
-    if layout_novo:
+    if detectar_layout_novo(driver):
         print("  [layout] NOVO (CNPJ detectado)")
         return scrape_novo_layout(driver, url, horario_raspagem, meta)
 
