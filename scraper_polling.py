@@ -1,3 +1,4 @@
+import os
 import re
 import time
 import json
@@ -5,6 +6,8 @@ import hashlib
 from datetime import datetime
 import zoneinfo
 import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -19,9 +22,14 @@ except Exception:
     _HAS_WDM = False
 
 
-TEST_URLS = [
-    "https://www.pollingdata.com.br/2026/governador/ce/2026_governador_ce_t1.html",
-    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html",
+UFS = [
+    "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go",
+    "ma", "mg", "ms", "mt", "pa", "pb", "pe", "pi", "pr",
+    "rj", "rn", "ro", "rr", "rs", "sc", "se", "sp", "to"
+]
+
+PRESIDENTE_URLS_DEFAULT = [
+    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html"
 ]
 
 WAIT_CSS = "div#dados-das-pesquisas"
@@ -148,6 +156,13 @@ CLASSIFICACAO_INSTITUTOS = {
 
 def classificar_instituto(nome):
     return CLASSIFICACAO_INSTITUTOS.get(_norm_ws(nome), "Ainda não foi avaliado")
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    v = (os.getenv(name, "") or "").strip().lower()
+    if v == "":
+        return default
+    return v in ("1", "true", "t", "yes", "y", "sim", "on")
 
 
 def _norm_ws(s) -> str:
@@ -294,6 +309,42 @@ def gerar_scenario_id(poll_id, scenario_label):
     return f"{poll_id}|{_norm_ws(scenario_label)}"
 
 
+def obter_spreadsheet_id():
+    spreadsheet_id = (os.getenv("SPREADSHEET_ID_POLLINGDATA", "") or "").strip()
+    if spreadsheet_id:
+        return spreadsheet_id
+    raise RuntimeError("SPREADSHEET_ID_POLLINGDATA não definido.")
+
+
+def urls_governador_2026_t1(ufs):
+    return [
+        f"https://www.pollingdata.com.br/2026/governador/{uf}/2026_governador_{uf}_t1.html"
+        for uf in ufs
+    ]
+
+
+def urls_senado_2026_t1(ufs):
+    return [
+        f"https://www.pollingdata.com.br/2026/senador/{uf}/2026_senador_{uf}_t1.html"
+        for uf in ufs
+    ]
+
+
+def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool):
+    urls = []
+
+    if incluir_governador:
+        urls += urls_governador_2026_t1(UFS)
+
+    if incluir_senado:
+        urls += urls_senado_2026_t1(UFS)
+
+    if incluir_presidente:
+        urls += list(PRESIDENTE_URLS_DEFAULT)
+
+    return urls
+
+
 def criar_driver():
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
@@ -345,18 +396,9 @@ def decidir_layout(driver):
     tem_cnpj_instituto = "cnpj instituto" in headers_txt
     tem_cnpj_contratante = "cnpj contratante" in headers_txt
 
-    print("  headers encontrados:")
-    if headers:
-        for h in headers:
-            print(f"    - {h}")
-    else:
-        print("    - nenhum")
-
     if tem_cnpj_instituto and tem_cnpj_contratante:
-        print("  layout decidido: NOVO")
         return "novo"
 
-    print("  layout decidido: ANTIGO")
     return "antigo"
 
 
@@ -718,8 +760,7 @@ def scrape_url(driver, url, horario_raspagem):
         print(f"[-] URL não reconhecida: {url}")
         return None, None
 
-    print(f"\n[+] {meta['cargo'].upper()} {meta['uf']} {meta['turno']}")
-    print(url)
+    print(f"[+] {meta['cargo'].upper()} {meta['uf']} {meta['turno']} -> {url}")
 
     driver.get(url)
     esperar_tabela(driver)
@@ -735,49 +776,154 @@ def scrape_url(driver, url, horario_raspagem):
     return scrape_antigo_layout(driver, url, horario_raspagem, meta)
 
 
+def gs_client_from_env():
+    raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
+    if not raw:
+        raise RuntimeError("GOOGLE_CREDENTIALS_JSON não definido.")
+
+    creds_dict = json.loads(raw)
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return gspread.authorize(credentials)
+
+
+def garantir_aba(sh, nome, rows=50000, cols=25):
+    try:
+        return sh.worksheet(nome)
+    except gspread.exceptions.WorksheetNotFound:
+        return sh.add_worksheet(title=nome, rows=rows, cols=cols)
+
+
+def _aba_vazia(values):
+    if not values:
+        return True
+
+    if len(values) == 1 and all(str(x).strip() == "" for x in values[0]):
+        return True
+
+    return False
+
+
+def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
+    if key_col not in df.columns:
+        raise RuntimeError(f"df não tem coluna de chave: '{key_col}'")
+
+    antes = len(df)
+    df = df.drop_duplicates(subset=[key_col], keep="first").reset_index(drop=True)
+
+    if len(df) < antes:
+        print(f"  [dedup interno] removidas {antes - len(df)} duplicatas na coleta")
+
+    values = aba.get_all_values()
+
+    if _aba_vazia(values):
+        aba.clear()
+        aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
+        print(f"  [aba vazia] {len(df)} linhas gravadas")
+        return len(df), 0
+
+    header = values[0]
+    if key_col not in header:
+        print(f"  [aviso] chave '{key_col}' ausente no header. Reescrevendo aba.")
+        aba.clear()
+        aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
+        return len(df), 0
+
+    idx_key = header.index(key_col)
+    existing = {row[idx_key] for row in values[1:] if len(row) > idx_key and row[idx_key].strip()}
+    df_add = df[~df[key_col].astype(str).isin(existing)].reset_index(drop=True)
+
+    if df_add.empty:
+        print(f"  [sem novidades] {len(existing)} já existiam")
+        return 0, len(existing)
+
+    colunas_novas = [c for c in df_add.columns if c not in header]
+    if colunas_novas:
+        header_final = header + colunas_novas
+        aba.update([header_final], range_name="A1")
+        print(f"  [schema] {len(colunas_novas)} coluna(s) nova(s): {colunas_novas}")
+    else:
+        header_final = header
+
+    df_add = df_add.reindex(columns=header_final, fill_value="")
+    aba.insert_rows(df_add.fillna("").astype(str).values.tolist(), row=2)
+
+    print(f"  [insert] {len(df_add)} nova(s) | {len(existing)} já existiam")
+    return len(df_add), len(existing)
+
+
+def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame):
+    if (df_p is None or df_p.empty) and (df_r is None or df_r.empty):
+        print("[-] nada para salvar")
+        return
+
+    sh = gc.open_by_key(spreadsheet_id)
+    aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=30)
+    aba_resultados = garantir_aba(sh, "resultados", rows=200000, cols=30)
+
+    if df_p is not None and not df_p.empty:
+        novos, exist = dedup_e_salvar(aba_pesquisas, df_p, key_col="scenario_id")
+        print(f"[+] pesquisas: {novos} novas | {exist} já existiam")
+
+    if df_r is not None and not df_r.empty:
+        df_r = df_r.copy()
+        df_r["_dedup_key"] = (
+            df_r["scenario_id"].astype(str)
+            + "|" + df_r["tipo"].astype(str)
+            + "|" + df_r["candidato"].astype(str)
+        )
+        novos, exist = dedup_e_salvar(aba_resultados, df_r, key_col="_dedup_key")
+        print(f"[+] resultados: {novos} novas | {exist} já existiam")
+
+
 def main():
+    incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
+    incluir_senado = env_bool("INCLUIR_SENADO", True)
+    incluir_presidente = env_bool("INCLUIR_PRESIDENTE", True)
+
+    spreadsheet_id = obter_spreadsheet_id()
+    urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente)
+
+    if not urls:
+        print("[-] Nenhuma URL selecionada. Ajuste INCLUIR_*.")
+        return
+
     horario_raspagem = datetime.now(
         zoneinfo.ZoneInfo("America/Recife")
     ).strftime("%Y-%m-%d %H:%M:%S")
 
+    print("[+] Conectando ao Google Sheets...")
+    gc = gs_client_from_env()
+
+    print("[+] Iniciando Chrome...")
     driver = criar_driver()
 
+    all_p = []
+    all_r = []
+
     try:
-        all_p = []
-        all_r = []
+        for url in urls:
+            try:
+                df_p, df_r = scrape_url(driver, url, horario_raspagem)
 
-        for url in TEST_URLS:
-            df_p, df_r = scrape_url(driver, url, horario_raspagem)
+                if df_p is not None and not df_p.empty:
+                    all_p.append(df_p)
 
-            if df_p is not None and not df_p.empty:
-                all_p.append(df_p)
-
-            if df_r is not None and not df_r.empty:
-                all_r.append(df_r)
-
-        df_p_all = pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame()
-        df_r_all = pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame()
-
-        print("\n=== PESQUISAS ===")
-        if not df_p_all.empty:
-            print(df_p_all[[
-                "uf", "cargo", "instituto", "registro_tse", "data_campo",
-                "scenario_label", "modo", "amostra", "margem_erro", "confianca"
-            ]].to_string(index=False))
-        else:
-            print("vazio")
-
-        print("\n=== RESULTADOS ===")
-        if not df_r_all.empty:
-            print(df_r_all[[
-                "uf", "cargo", "instituto", "data_campo",
-                "scenario_label", "candidato", "partido", "percentual"
-            ]].to_string(index=False))
-        else:
-            print("vazio")
-
+                if df_r is not None and not df_r.empty:
+                    all_r.append(df_r)
+            except Exception as e:
+                print(f"  [-] erro ao processar URL {url}: {e}")
     finally:
         driver.quit()
+
+    df_p_all = pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame()
+    df_r_all = pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame()
+
+    salvar_tudo(gc, spreadsheet_id, df_p_all, df_r_all)
+    print("[+] OK")
 
 
 if __name__ == "__main__":
