@@ -153,9 +153,104 @@ CLASSIFICACAO_INSTITUTOS = {
     "Access": "C-",
 }
 
+METODOLOGIA_INSTITUTOS = {
+    "Datafolha": "Pesquisa quantitativa, por amostragem, com aplicação de questionário estruturado e abordagem presencial em pontos de fluxo. Universo: população brasileira com 16 anos ou mais.",
+    "AtlasIntel": "Pesquisa quantitativa, com coleta online via questionário estruturado e pós-estratificação da amostra conforme o perfil do eleitorado nacional.",
+    "Jornal Girassol": "Pesquisa quantitativa, com aplicação de questionário estruturado em entrevistas presenciais junto ao eleitorado, realizadas em domicílios e estabelecimentos comerciais na zona urbana. Uma entrevista por domicílio ou estabelecimento.",
+    "Gazeta Dados": "Pesquisa quantitativa, com aplicação de questionário estruturado para aferição de intenção de voto e avaliação de governo.",
+    "MDA": "Pesquisa quantitativa, com entrevistas presenciais realizadas em domicílios e, complementarmente, em pontos de fluxo.",
+    "Badra Comunicação": "Pesquisa quantitativa, por amostragem por cotas, com seleção de entrevistados proporcional ao perfil do universo pesquisado.",
+    "Ibope": "Pesquisa quantitativa, com entrevistas telefônicas e aplicação de questionário estruturado junto a uma amostra representativa do eleitorado.",
+    "DMP": "Pesquisa quantitativa, com entrevistas presenciais e aplicação de questionário estruturado, por amostragem probabilística simples. Universo: eleitorado das zonas eleitorais do município.",
+    "Paraná Pesquisas": "Pesquisa quantitativa, com aplicação de questionário em formato espontâneo (sem apresentação de nomes) e estimulado (com apresentação de nomes).",
+    "Real Time Big Data": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Grupo M": "Pesquisa científica estruturada, com foco em modelagem de sistemas de informação.",
+    "Futura": "Pesquisa quantitativa, com foco em intenção de voto e avaliação de governo.",
+    "Instituto Amostragem": "Pesquisa qualitativa, realizada por meio de grupos de discussão (focus group), entrevistas semiestruturadas e entrevistas em profundidade.",
+    "Instituto Gasparetto de Pesquisas": "Pesquisa quantitativa, com entrevistas presenciais e aplicação de questionário estruturado, por amostragem aleatória estratificada, com base em dados do IBGE/TSE.",
+    "Serpes": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Perfil Pesquisas Técnicas (RN)": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Voice Pesquisas (MT)": "Pesquisa quantitativa, com entrevistas telefônicas (fixo e celular) e aplicação de questionário estruturado, por amostragem probabilística do eleitorado.",
+    "Govnet/Instituto Opinião (SP)": "Pesquisa quantitativa, com foco em intenção de voto e opinião pública junto a uma amostra representativa da população.",
+    "Instituto Econométrica": "Pesquisa quantitativa, com entrevistas presenciais face a face e aplicação de questionário estruturado com questões abertas e fechadas, conduzida por entrevistadores treinados e identificados.",
+    "Instituto de Pesquisa Resultado (MS)": "Pesquisa mista, com abordagens qualitativa e quantitativa, utilizando entrevistas telefônicas (CATI) e coleta online. Foco em intenção de voto, imagem política, tendências de mercado e satisfação de clientes.",
+    "6 Sigma": "Pesquisa quantitativa, com entrevistas presenciais por abordagem aleatória e aplicação de questionário estruturado junto à amostra definida.",
+    "Prever Pesquisas": "Pesquisa quantitativa de campo, com foco em intenção de voto e opinião pública.",
+    "Ágora Pesquisa (RJ)": "Pesquisa quantitativa, de natureza exploratório-descritiva, operacionalizada por meio da técnica survey com aplicação de questionário estruturado. A coleta de dados será realizada exclusivamente por meio de entrevistas pessoais domiciliares, utilizando dispositivos eletrônicos (tablets). O universo é constituído pelos eleitores com 16 anos ou mais, regularmente inscritos no cadastro eleitoral e residentes no estado do Rio de Janeiro.",
+    "EPP": "Pesquisa quantitativa, por amostragem por cotas de gênero, faixa etária, grau de instrução, renda familiar, zona (urbana e rural), microrregiões e municípios.",
+    "Exata Pesquisa (MA)": "Pesquisa quantitativa, com entrevistas domiciliares presenciais e aplicação de questionário estruturado, conduzida por profissionais treinados. Universo: população eleitora com 16 anos ou mais.",
+    "Dataqualy": "Pesquisa mista, com abordagens qualitativa (grupos focais, entrevistas em profundidade, etnografia) e quantitativa (amostragem).",
+    "Painel Brasil": "Pesquisa mista, com abordagens qualitativa e quantitativa, utilizando diversas técnicas de coleta.",
+    "Brand Consultoria": "Pesquisa quantitativa, com entrevistas telefônicas (CATI) e aplicação de questionário estruturado com alternativas randomizadas, junto a uma amostra representativa do eleitorado.",
+    "Vox Populi": "Pesquisa mista, com abordagem qualitativa para análise de motivações e comportamentos e abordagem quantitativa com aplicação de questionário estruturado junto a uma amostra representativa do público-alvo.",
+    "IPEMS": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Real Dados": "Pesquisa quantitativa, com foco em coleta e análise de dados sobre comportamento do consumidor.",
+    "Instituto Datailha": "Pesquisa quantitativa, com entrevistas presenciais e aplicação de questionário estruturado para aferição da opinião do eleitorado.",
+    "Tendência Pesquisa (SC)": "Pesquisa quantitativa, com entrevistas presenciais do tipo intercept em pontos de fluxo, por amostragem aleatória simples com controle de cotas (sexo, faixa etária, grau de instrução e nível econômico).",
+    "Certifica Consultoria": "Pesquisa mista, com abordagens qualitativa e quantitativa combinadas.",
+    "IPAT": "Pesquisa quantitativa, com foco em opinião pública, hábitos e mercado.",
+    "Dados Pesquisa (GO)": "Pesquisa quantitativa, com coleta de dados primários, aplicada a estudos eleitorais, de opinião pública e de mercado.",
+    "Agora Pesquisa (BA)": "Pesquisa quantitativa, com foco em intenção de voto e avaliação de governo.",
+    "Pontual Pesquisas (AM)": "Pesquisa quantitativa, com entrevistas presenciais.",
+    "Instituto Haverroth": "Pesquisa mista, com abordagens qualitativa e quantitativa, voltada à identificação do perfil, expectativas e tendências de eleitores e consumidores.",
+    "IRG Consultoria": "Pesquisa quantitativa, com entrevistas telefônicas individuais e aplicação de questionário estruturado junto a uma amostra representativa do eleitorado.",
+    "Fortiori": "Pesquisa mista, com abordagem quantitativa para análise de dados e qualitativa para compreensão de comportamentos e atitudes.",
+    "Colectta Consultoria": "Pesquisa quantitativa, com entrevistas presenciais por abordagem aleatória e aplicação de questionário estruturado.",
+    "Consult Pesquisa (RN)": "Pesquisa quantitativa, por amostragem probabilística com sorteio em múltiplos estágios.",
+    "Agorasei Pesquisa": "Pesquisa quantitativa de campo, com foco em intenção de voto e avaliação de governo.",
+    "Opinião Pesquisas (PB)": "Pesquisa quantitativa, por amostragem probabilística ou por cotas, visando a representatividade da população estudada.",
+    "Ipespe": "Pesquisa baseada em análise de dados secundários, com foco em histórico eleitoral e comportamento do eleitor.",
+    "Quaest": "Pesquisa quantitativa, com aplicação de questionário estruturado junto a uma amostra representativa, com análise estatística dos dados.",
+    "W J Mendes": "Pesquisa quantitativa, com uso de métodos estatísticos e análise de dados numéricos para identificação de padrões.",
+    "Instituto Qualitativa": "Pesquisa qualitativa, com foco na compreensão de motivações, sentimentos e opiniões sobre fenômenos sociais, políticos ou de mercado.",
+    "AR7 Pesquisa": "Pesquisa quantitativa, com foco em opinião pública.",
+    "Veritá": "Pesquisa quantitativa, com entrevistas e aplicação de questionário estruturado junto a uma amostra representativa do eleitorado estadual.",
+    "Instituto Methodus": "Pesquisa mista, com abordagens qualitativa e quantitativa, presenciais e digitais, com foco em inteligência estratégica.",
+    "Doxa": "Pesquisa quantitativa, por amostragem, com aplicação de questionário estruturado e abordagem presencial junto a uma amostra representativa do eleitorado, com base em dados do TSE, IBGE e FAPESPA.",
+    "Instituto Seta": "Pesquisa quantitativa, com entrevistas presenciais e aplicação de questionário estruturado junto a uma amostra representativa do eleitorado.",
+    "Ranking Pesquisa": "Pesquisa quantitativa, com entrevistas domiciliares presenciais e aplicação de questionário estruturado junto a uma amostra representativa da população. Universo: eleitorado do estado do Rio Grande do Norte. Foco em avaliação do cenário político e administrativo.",
+    "Potencial": "Pesquisa quantitativa, com coleta de dados e uso de tecnologia aplicados à inteligência de mercado.",
+    "F5 Atualiza Dados": "Pesquisa quantitativa, com entrevistas telefônicas (CATI) e aplicação de questionário estruturado.",
+    "MBO": "Pesquisa quantitativa, com aplicação de questionário em formato espontâneo (sem apresentação de nomes) e estimulado (com apresentação de nomes dos pré-candidatos).",
+    "Comunicare": "Pesquisa quantitativa, com foco em opinião pública e preferências do eleitorado e da sociedade civil.",
+    "Naipes Marketing": "Pesquisa quantitativa de mercado, com uso de tecnologia e inteligência de dados.",
+    "Instituto Exatta (PE)": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Escutec": "Pesquisa quantitativa, com aplicação de questionário estruturado.",
+    "Instituto França": "Pesquisa quantitativa, com entrevistas presenciais individuais e aplicação de questionário estruturado junto a uma amostra representativa do eleitorado.",
+    "Ibrape": "Pesquisa quantitativa, com metodologia científica validada.",
+    "Instituto Datasensus": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "INOP": "Pesquisa qualitativa, com metodologia estruturada e em conformidade legal.",
+    "Instituto Vope": "Pesquisa quantitativa, com entrevistas presenciais diretas junto ao eleitorado.",
+    "Vox Opinião Pública (SP)": "Pesquisa quantitativa, com entrevistas presenciais domiciliares.",
+    "Seculus Consultoria": "Pesquisa quantitativa de campo, com aplicação de questionário estruturado, por amostragem probabilística ou por cotas, visando representatividade geográfica e demográfica.",
+    "Datavox (PB)": "Pesquisa quantitativa, com foco em opinião pública e intenção de voto.",
+    "Multidados": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Voga Pesquisas": "Pesquisa mista, com abordagens qualitativa, quantitativa e de monitoramento.",
+    "Studio Pesquisas": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Census Pesquisas": "Pesquisa quantitativa, com entrevistas domiciliares presenciais e aplicação de questionário estruturado com perguntas espontâneas e estimuladas (alternativas em ordem alfabética ou randomizadas), por amostragem estratificada em 2 estágios com abordagem aleatória simples (gênero, faixa etária, nível de instrução e renda).",
+    "Zaytec Brasil": "Pesquisa mista, com abordagens qualitativa, quantitativa, análise de dados secundários e combinação quali-quanti.",
+    "Access": "Pesquisa baseada em análise de dados secundários e revisão bibliográfica.",
+    "Brasmarket": "Pesquisa quantitativa, com foco em opinião pública e intenção de voto.",
+    "FSB Pesquisa": "Pesquisa quantitativa, com entrevistas telefônicas e aplicação de questionário estruturado para aferição de intenção de voto.",
+    "Gerp": "Pesquisa quantitativa, com aplicação de questionário em formato espontâneo (sem apresentação de lista de candidatos).",
+    "Ideia Big Data": "Pesquisa mista, com abordagens qualitativa, quantitativa e análise combinada quali-quanti.",
+    "Ipec (antigo Ibope)": "Pesquisa quantitativa, com entrevistas presenciais face a face e aplicação de questionário estruturado, por amostragem com base em dados do IBGE para representatividade geográfica e socioeconômica. Amostra típica: 2.000 entrevistas em levantamentos nacionais.",
+    "Sensus": "Pesquisa quantitativa, com entrevistas presenciais face a face.",
+    "121 Labs": "Pesquisa quantitativa, com foco em opinião pública e mercado, com análise de dados.",
+    "Agili Pesquisas": "Pesquisa quantitativa, com foco na captação de percepções e opiniões do público-alvo.",
+    "Alexandre Sócrates Naviskas": "Pesquisa quantitativa, com foco em pesquisas eleitorais e de opinião pública.",
+    "American Analytics": "Pesquisa quantitativa, com coleta, organização e análise de dados para suporte à tomada de decisão estratégica.",
+    "Datasonda": "Pesquisa quantitativa, por amostragem por cotas representativas do eleitorado (gênero, faixa etária, escolaridade, renda e bairros).",
+    "Delta Agência de Pesquisa": "Pesquisa quantitativa, por amostragem por cotas, com entrevistas presenciais face a face e aplicação de questionário estruturado por entrevistadores treinados.",
+}
+
 
 def classificar_instituto(nome):
     return CLASSIFICACAO_INSTITUTOS.get(_norm_ws(nome), "Ainda não foi avaliado")
+
+
+def obter_metodologia(nome):
+    return METODOLOGIA_INSTITUTOS.get(_norm_ws(nome), "")
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -463,6 +558,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
         margem = inferir_margem_erro(erro_conf)
         confianca = inferir_confianca(erro_conf)
         classificacao = classificar_instituto(instituto)
+        metodologia = obter_metodologia(instituto)
 
         block_hash = _sha1_short(f"{instituto}|{registro}|{data_campo}", 10)
         poll_id = gerar_poll_id(uf, instituto, registro_norm, data_campo, cargo, turno, block_hash)
@@ -483,6 +579,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
                 "turno": turno,
                 "instituto": instituto,
                 "classificacao_instituto": classificacao,
+                "metodologia": metodologia,
                 "registro_tse": registro,
                 "data_campo": data_campo,
                 "modo": modo,
@@ -526,6 +623,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
                     "data_campo": data_campo,
                     "instituto": instituto,
                     "classificacao_instituto": classificacao,
+                    "metodologia": metodologia,
                     "registro_tse": registro,
                     "scenario_label": scenario_label,
                     "candidato": candidato,
@@ -678,6 +776,8 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
         scenario_label = _norm_ws(row.get("Cenários", "")) or "NA"
         block_hash = _norm_ws(row.get("_block_hash", ""))
         link_fonte_original = _norm_ws(row.get("_link_fonte", ""))
+        classificacao = classificar_instituto(instituto)
+        metodologia = obter_metodologia(instituto)
 
         poll_id = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
         scenario_id = gerar_scenario_id(poll_id, scenario_label)
@@ -697,7 +797,8 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
             "cargo": cargo,
             "turno": turno,
             "instituto": instituto,
-            "classificacao_instituto": classificar_instituto(instituto),
+            "classificacao_instituto": classificacao,
+            "metodologia": metodologia,
             "registro_tse": registro_tse,
             "data_campo": data_campo,
             "modo": modo,
@@ -734,7 +835,8 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
                 "turno": turno,
                 "data_campo": data_campo,
                 "instituto": instituto,
-                "classificacao_instituto": classificar_instituto(instituto),
+                "classificacao_instituto": classificacao,
+                "metodologia": metodologia,
                 "registro_tse": registro_tse,
                 "scenario_label": scenario_label,
                 "candidato": candidato,
@@ -861,8 +963,8 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
         return
 
     sh = gc.open_by_key(spreadsheet_id)
-    aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=30)
-    aba_resultados = garantir_aba(sh, "resultados", rows=200000, cols=30)
+    aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=35)
+    aba_resultados = garantir_aba(sh, "resultados", rows=200000, cols=35)
 
     if df_p is not None and not df_p.empty:
         novos, exist = dedup_e_salvar(aba_pesquisas, df_p, key_col="scenario_id")
