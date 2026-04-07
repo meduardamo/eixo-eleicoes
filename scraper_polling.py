@@ -151,27 +151,77 @@ def criar_driver():
     return driver
 
 
-def detectar_layout_novo_por_cnpj(driver):
-    try:
-        secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
-    except Exception:
-        return False
+def esperar_tabela_renderizar(driver, timeout=40):
+    WebDriverWait(driver, timeout).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
+    )
 
-    textos = []
+    def _pronto(_driver):
+        try:
+            secao = _driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
 
-    for sel in ["thead th", "table th", ".rt-thead .rt-th"]:
+            candidatos = [
+                "thead th",
+                "table th",
+                ".rt-thead .rt-th",
+                "tbody tr",
+                ".rt-tbody .rt-tr-group",
+            ]
+
+            for sel in candidatos:
+                els = secao.find_elements(By.CSS_SELECTOR, sel)
+                if els:
+                    return True
+
+            return False
+        except Exception:
+            return False
+
+    WebDriverWait(driver, timeout).until(_pronto)
+    time.sleep(2)
+
+
+def coletar_headers_visiveis(driver):
+    secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+    headers = []
+
+    seletores = [
+        "thead th",
+        "table th",
+        ".rt-thead .rt-th",
+    ]
+
+    for sel in seletores:
         try:
             els = secao.find_elements(By.CSS_SELECTOR, sel)
-            textos.extend([_norm_ws(el.text).lower() for el in els if _norm_ws(el.text)])
+            for el in els:
+                txt = _norm_ws(el.text)
+                if txt and txt.lower() not in [h.lower() for h in headers]:
+                    headers.append(txt)
         except Exception:
             pass
 
-    headers_txt = " | ".join(textos)
+    return headers
+
+
+def decidir_layout(driver):
+    headers = coletar_headers_visiveis(driver)
+    headers_txt = " | ".join([h.lower() for h in headers])
 
     tem_cnpj_instituto = "cnpj instituto" in headers_txt
     tem_cnpj_contratante = "cnpj contratante" in headers_txt
 
-    return tem_cnpj_instituto and tem_cnpj_contratante
+    layout = "novo" if (tem_cnpj_instituto and tem_cnpj_contratante) else "antigo"
+
+    print("  headers encontrados:")
+    if headers:
+        for h in headers:
+            print(f"    - {h}")
+    else:
+        print("    - nenhum header encontrado")
+
+    print(f"  layout decidido: {layout.upper()}")
+    return layout
 
 
 def expandir_todos_antigo(driver, secao, max_clicks=120):
@@ -397,6 +447,7 @@ def scrape_antigo(driver, url, meta, horario_raspagem):
                 "horario_raspagem": horario_raspagem,
             })
 
+    print(f"  antigo -> {len(pesquisas)} cenários | {len(resultados)} resultados")
     return pd.DataFrame(pesquisas), pd.DataFrame(resultados)
 
 
@@ -563,6 +614,7 @@ def scrape_novo(driver, url, meta, horario_raspagem):
                     "horario_raspagem": horario_raspagem,
                 })
 
+    print(f"  novo -> {len(pesquisas)} cenários | {len(resultados)} resultados")
     return pd.DataFrame(pesquisas), pd.DataFrame(resultados)
 
 
@@ -572,17 +624,11 @@ def scrape_url(driver, url, horario_raspagem):
     print(url)
 
     driver.get(url)
-    time.sleep(8)
+    esperar_tabela_renderizar(driver)
 
-    WebDriverWait(driver, 40).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
-    )
-    time.sleep(2)
+    layout = decidir_layout(driver)
 
-    eh_novo = detectar_layout_novo_por_cnpj(driver)
-    print(f"  layout detectado: {'NOVO' if eh_novo else 'ANTIGO'}")
-
-    if eh_novo:
+    if layout == "novo":
         return scrape_novo(driver, url, meta, horario_raspagem)
 
     return scrape_antigo(driver, url, meta, horario_raspagem)
