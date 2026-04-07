@@ -579,7 +579,6 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
                 "turno": turno,
                 "instituto": instituto,
                 "classificacao_instituto": classificacao,
-                "metodologia": metodologia,
                 "registro_tse": registro,
                 "data_campo": data_campo,
                 "modo": modo,
@@ -591,6 +590,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
                 "fonte_url_original": link_fonte,
                 "horario_raspagem": horario_raspagem,
                 "conferida": "",
+                "metodologia": metodologia,
             })
 
             for col_key, col_vals in cenarios_dict.items():
@@ -623,7 +623,6 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
                     "data_campo": data_campo,
                     "instituto": instituto,
                     "classificacao_instituto": classificacao,
-                    "metodologia": metodologia,
                     "registro_tse": registro,
                     "scenario_label": scenario_label,
                     "candidato": candidato,
@@ -798,7 +797,6 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
             "turno": turno,
             "instituto": instituto,
             "classificacao_instituto": classificacao,
-            "metodologia": metodologia,
             "registro_tse": registro_tse,
             "data_campo": data_campo,
             "modo": modo,
@@ -810,6 +808,7 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
             "fonte_url_original": link_fonte_original,
             "horario_raspagem": horario_raspagem,
             "conferida": "",
+            "metodologia": metodologia,
         })
 
         for col in cols_cand:
@@ -836,7 +835,6 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
                 "data_campo": data_campo,
                 "instituto": instituto,
                 "classificacao_instituto": classificacao,
-                "metodologia": metodologia,
                 "registro_tse": registro_tse,
                 "scenario_label": scenario_label,
                 "candidato": candidato,
@@ -909,9 +907,19 @@ def _aba_vazia(values):
     return False
 
 
+def reordenar_metodologia_para_ultima_coluna(df: pd.DataFrame) -> pd.DataFrame:
+    if "metodologia" not in df.columns:
+        return df
+
+    cols = [c for c in df.columns if c != "metodologia"] + ["metodologia"]
+    return df[cols]
+
+
 def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
     if key_col not in df.columns:
         raise RuntimeError(f"df não tem coluna de chave: '{key_col}'")
+
+    df = reordenar_metodologia_para_ultima_coluna(df)
 
     antes = len(df)
     df = df.drop_duplicates(subset=[key_col], keep="first").reset_index(drop=True)
@@ -934,21 +942,28 @@ def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
         aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
         return len(df), 0
 
-    idx_key = header.index(key_col)
+    colunas_novas = [c for c in df.columns if c not in header]
+    header_sem_metodologia = [c for c in header if c != "metodologia"]
+    header_final = header_sem_metodologia + [c for c in colunas_novas if c != "metodologia"]
+    if "metodologia" in df.columns or "metodologia" in header:
+        header_final += ["metodologia"]
+
+    if header_final != header:
+        aba.update([header_final], range_name="A1")
+        if colunas_novas:
+            print(f"  [schema] {len(colunas_novas)} coluna(s) nova(s): {colunas_novas}")
+        elif "metodologia" in header and header[-1] != "metodologia":
+            print("  [schema] metodologia movida para a última coluna")
+
+    idx_key = header_final.index(key_col)
+    values = aba.get_all_values()
     existing = {row[idx_key] for row in values[1:] if len(row) > idx_key and row[idx_key].strip()}
+
     df_add = df[~df[key_col].astype(str).isin(existing)].reset_index(drop=True)
 
     if df_add.empty:
         print(f"  [sem novidades] {len(existing)} já existiam")
         return 0, len(existing)
-
-    colunas_novas = [c for c in df_add.columns if c not in header]
-    if colunas_novas:
-        header_final = header + colunas_novas
-        aba.update([header_final], range_name="A1")
-        print(f"  [schema] {len(colunas_novas)} coluna(s) nova(s): {colunas_novas}")
-    else:
-        header_final = header
 
     df_add = df_add.reindex(columns=header_final, fill_value="")
     aba.insert_rows(df_add.fillna("").astype(str).values.tolist(), row=2)
