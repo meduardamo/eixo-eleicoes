@@ -1,6 +1,7 @@
 name: percentual 
 
 on:
+  workflow_dispatch:
   schedule:
     # GitHub Actions roda em UTC.
     # Horários em Brasília (UTC-3): 08:53, 15:17 e 20:42.
