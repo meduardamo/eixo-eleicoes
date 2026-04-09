@@ -915,6 +915,121 @@ def reordenar_metodologia_para_ultima_coluna(df: pd.DataFrame) -> pd.DataFrame:
     return df[cols]
 
 
+def adicionar_posicao_pesquisa(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adiciona coluna 'posicao_pesquisa' com o ranking do candidato
+    dentro de cada scenario_id, ordenado por percentual decrescente.
+    Empates recebem o mesmo número (método 'min').
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+    df["posicao_pesquisa"] = (
+        df.groupby("scenario_id")["percentual"]
+        .rank(method="min", ascending=False)
+        .astype(int)
+    )
+    return df
+
+
+def preencher_posicao_pesquisa_na_aba(aba):
+    """
+    Lê a aba 'resultados' inteira, recalcula posicao_pesquisa para TODAS
+    as linhas onde o campo está vazio, e atualiza apenas essas células
+    na planilha (batch update para eficiência).
+    """
+    print("  [posicao] verificando linhas antigas sem posicao_pesquisa...")
+    values = aba.get_all_values()
+
+    if _aba_vazia(values) or len(values) < 2:
+        print("  [posicao] aba vazia ou sem dados, nada a preencher")
+        return
+
+    header = values[0]
+
+    # Garante que a coluna existe; se não, não há nada a fazer ainda
+    if "posicao_pesquisa" not in header:
+        print("  [posicao] coluna posicao_pesquisa ainda não existe na aba, será criada no próximo insert")
+        return
+
+    col_idx_pos = header.index("posicao_pesquisa")
+
+    # Identifica colunas necessárias para recalcular o rank
+    if "scenario_id" not in header or "percentual" not in header:
+        print("  [posicao] colunas scenario_id ou percentual ausentes, impossível recalcular")
+        return
+
+    col_idx_sid = header.index("scenario_id")
+    col_idx_pct = header.index("percentual")
+
+    # Monta um DataFrame com todas as linhas de dados
+    rows = values[1:]
+    registros = []
+    for i, row in enumerate(rows):
+        def safe_get(r, idx):
+            return r[idx] if idx < len(r) else ""
+
+        sid = safe_get(row, col_idx_sid).strip()
+        pct_raw = safe_get(row, col_idx_pct).strip()
+        pos_atual = safe_get(row, col_idx_pos).strip()
+
+        pct = parsear_pct(pct_raw)
+
+        registros.append({
+            "row_num": i + 2,           # linha real na planilha (1-indexed + header)
+            "scenario_id": sid,
+            "percentual": pct,
+            "posicao_atual": pos_atual,
+        })
+
+    df = pd.DataFrame(registros)
+
+    # Filtra apenas linhas com scenario_id e percentual válidos
+    df_valido = df[df["scenario_id"].ne("") & df["percentual"].notna()].copy()
+
+    if df_valido.empty:
+        print("  [posicao] nenhuma linha com dados válidos para recalcular")
+        return
+
+    # Recalcula posicao_pesquisa para todos os grupos
+    df_valido["posicao_calculada"] = (
+        df_valido.groupby("scenario_id")["percentual"]
+        .rank(method="min", ascending=False)
+        .astype(int)
+    )
+
+    # Filtra apenas as linhas onde posicao_pesquisa está vazia
+    df_para_atualizar = df_valido[df_valido["posicao_atual"].eq("")].copy()
+
+    if df_para_atualizar.empty:
+        print("  [posicao] todas as linhas já têm posicao_pesquisa preenchida")
+        return
+
+    # Converte índice de coluna para letra (ex: 0 -> A, 25 -> Z, 26 -> AA)
+    def col_idx_to_letter(idx):
+        result = ""
+        while idx >= 0:
+            result = chr(idx % 26 + ord("A")) + result
+            idx = idx // 26 - 1
+        return result
+
+    col_letter = col_idx_to_letter(col_idx_pos)
+
+    # Batch update: agrupa todas as células a atualizar
+    cell_updates = []
+    for _, row in df_para_atualizar.iterrows():
+        cell_ref = f"{col_letter}{row['row_num']}"
+        cell_updates.append({
+            "range": cell_ref,
+            "values": [[str(int(row["posicao_calculada"]))]]
+        })
+
+    if cell_updates:
+        aba.batch_update(cell_updates)
+        print(f"  [posicao] {len(cell_updates)} linhas antigas preenchidas com posicao_pesquisa")
+
+
 def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
     if key_col not in df.columns:
         raise RuntimeError(f"df não tem coluna de chave: '{key_col}'")
@@ -987,6 +1102,10 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
 
     if df_r is not None and not df_r.empty:
         df_r = df_r.copy()
+
+        # Calcula posicao_pesquisa para os dados novos desta rodada
+        df_r = adicionar_posicao_pesquisa(df_r)
+
         df_r["_dedup_key"] = (
             df_r["scenario_id"].astype(str)
             + "|" + df_r["tipo"].astype(str)
@@ -994,6 +1113,9 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
         )
         novos, exist = dedup_e_salvar(aba_resultados, df_r, key_col="_dedup_key")
         print(f"[+] resultados: {novos} novas | {exist} já existiam")
+
+    # Preenche posicao_pesquisa em linhas antigas que ainda estão vazias
+    preencher_posicao_pesquisa_na_aba(aba_resultados)
 
 
 def main():
