@@ -7,6 +7,8 @@ from datetime import datetime
 import zoneinfo
 import pandas as pd
 import gspread
+from gspread import Cell
+from gspread.utils import rowcol_to_a1
 from google.oauth2.service_account import Credentials
 
 from selenium import webdriver
@@ -33,6 +35,8 @@ PRESIDENTE_URLS_DEFAULT = [
 ]
 
 WAIT_CSS = "div#dados-das-pesquisas"
+FORCAR_LOCALE_PLANILHA = True
+LOCALE_PLANILHA = "en_US"
 
 CLASSIFICACAO_INSTITUTOS = {
     "Datafolha": "A+",
@@ -361,6 +365,19 @@ def parsear_pct(valor):
         return None
 
 
+def normalizar_percentual_planilha(valor):
+    v = str(valor).strip().lstrip("'")
+    if not v or v in ("-", "NaN%", "nan%", "NaN", "nan", "NA", ""):
+        return None
+    try:
+        n = float(v.replace("%", "").replace(",", ".").strip())
+        if abs(n) >= 1000:
+            n = n / 1000.0
+        return round(n, 1)
+    except Exception:
+        return None
+
+
 def parsear_candidato_partido(col_header: str):
     col_clean = _strip_html(str(col_header).replace("<br>", " "))
     m = re.match(r"^(.+?)\s*\(([^)]+)\)\s*$", col_clean.strip())
@@ -402,6 +419,11 @@ def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_bloc
 
 def gerar_scenario_id(poll_id, scenario_label):
     return f"{poll_id}|{_norm_ws(scenario_label)}"
+
+
+def eh_cenario_media(scenario_label) -> bool:
+    s = _norm_ws(scenario_label).lower()
+    return bool(re.match(r"^m[eé]dia\b", s))
 
 
 def obter_spreadsheet_id():
@@ -908,38 +930,96 @@ def _aba_vazia(values):
 
 
 def reordenar_metodologia_para_ultima_coluna(df: pd.DataFrame) -> pd.DataFrame:
-    if "metodologia" not in df.columns:
-        return df
-
-    cols = [c for c in df.columns if c != "metodologia"] + ["metodologia"]
+    cols_final = [
+        "percentual_media_cenarios",
+        "origem_percentual_media",
+        "metodologia",
+    ]
+    cols = [c for c in df.columns if c not in cols_final]
+    cols += [c for c in cols_final if c in df.columns]
     return df[cols]
 
 
 def adicionar_posicao_pesquisa(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Adiciona coluna 'posicao_pesquisa' com o ranking do candidato
-    dentro de cada scenario_id, ordenado por percentual decrescente.
-    Empates recebem o mesmo número (método 'min').
+    Mantém compatibilidade com o fluxo atual, mas calcula a posição usando
+    a média dos cenários por pesquisa.
+    """
+    if df.empty:
+        return df
+
+    return adicionar_metricas_media_cenarios(df)
+
+
+def adicionar_metricas_media_cenarios(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcula um percentual de referência por candidato dentro de cada poll_id.
+
+    Regra:
+    - se já existir cenário de média para o candidato, usa esse valor;
+    - caso contrário, calcula a média dos cenários numéricos no código.
+
+    A posição passa a ser calculada por poll_id com base nesse percentual
+    de referência, e não mais por scenario_id.
     """
     if df.empty:
         return df
 
     df = df.copy()
-    df["posicao_pesquisa"] = (
-        df.groupby("scenario_id")["percentual"]
-        .rank(method="min", ascending=False)
-        .astype(int)
+    df["scenario_label"] = df["scenario_label"].fillna("").astype(str)
+    df["eh_cenario_media"] = df["scenario_label"].apply(eh_cenario_media)
+
+    chaves = ["poll_id", "tipo", "candidato"]
+    df_media = (
+        df[df["eh_cenario_media"]]
+        .groupby(chaves, dropna=False)["percentual"]
+        .mean()
+        .reset_index(name="percentual_media_existente")
     )
-    return df
+    df_cenarios = (
+        df[~df["eh_cenario_media"]]
+        .groupby(chaves, dropna=False)["percentual"]
+        .mean()
+        .reset_index(name="percentual_media_calculada")
+    )
+
+    df_ref = (
+        df[chaves]
+        .drop_duplicates()
+        .merge(df_media, on=chaves, how="left")
+        .merge(df_cenarios, on=chaves, how="left")
+    )
+    df_ref["percentual_media_cenarios"] = df_ref["percentual_media_existente"].combine_first(
+        df_ref["percentual_media_calculada"]
+    )
+    df_ref["origem_percentual_media"] = df_ref["percentual_media_existente"].apply(
+        lambda x: "cenario_media_existente" if pd.notna(x) else ""
+    )
+    df_ref.loc[
+        df_ref["origem_percentual_media"].eq("") & df_ref["percentual_media_calculada"].notna(),
+        "origem_percentual_media"
+    ] = "media_calculada_no_codigo"
+    df_ref["posicao_pesquisa"] = (
+        df_ref.groupby("poll_id")["percentual_media_cenarios"]
+        .rank(method="min", ascending=False)
+        .astype("Int64")
+    )
+
+    df = df.merge(
+        df_ref[chaves + ["percentual_media_cenarios", "origem_percentual_media", "posicao_pesquisa"]],
+        on=chaves,
+        how="left",
+    )
+
+    return df.drop(columns=["eh_cenario_media"])
 
 
 def preencher_posicao_pesquisa_na_aba(aba):
     """
-    Lê a aba 'resultados' inteira, recalcula posicao_pesquisa para TODAS
-    as linhas onde o campo está vazio, e atualiza apenas essas células
-    na planilha (batch update para eficiência).
+    Lê a aba 'resultados', recalcula a média dos cenários e a posição
+    consolidada por pesquisa, e atualiza apenas as células necessárias.
     """
-    print("  [posicao] verificando linhas antigas sem posicao_pesquisa...")
+    print("  [posicao] recalculando média dos cenários e posição consolidada...")
     values = aba.get_all_values()
 
     if _aba_vazia(values) or len(values) < 2:
@@ -948,65 +1028,69 @@ def preencher_posicao_pesquisa_na_aba(aba):
 
     header = values[0]
 
-    # Garante que a coluna existe; se não, não há nada a fazer ainda
     if "posicao_pesquisa" not in header:
         print("  [posicao] coluna posicao_pesquisa ainda não existe na aba, será criada no próximo insert")
         return
 
     col_idx_pos = header.index("posicao_pesquisa")
 
-    # Identifica colunas necessárias para recalcular o rank
-    if "scenario_id" not in header or "percentual" not in header:
-        print("  [posicao] colunas scenario_id ou percentual ausentes, impossível recalcular")
+    if "percentual_media_cenarios" not in header:
+        print("  [posicao] coluna percentual_media_cenarios ainda não existe na aba, será criada no próximo insert")
         return
 
-    col_idx_sid = header.index("scenario_id")
-    col_idx_pct = header.index("percentual")
+    col_idx_pct_media = header.index("percentual_media_cenarios")
 
-    # Monta um DataFrame com todas as linhas de dados
+    if "poll_id" not in header or "percentual" not in header:
+        print("  [posicao] colunas poll_id ou percentual ausentes, impossível recalcular")
+        return
+
+    if "tipo" not in header or "candidato" not in header:
+        print("  [posicao] colunas tipo ou candidato ausentes, impossível recalcular")
+        return
+
+    col_idx_poll = header.index("poll_id")
+    col_idx_pct = header.index("percentual")
+    col_idx_tipo = header.index("tipo")
+    col_idx_candidato = header.index("candidato")
+    col_idx_scenario_label = header.index("scenario_label") if "scenario_label" in header else None
+    col_idx_origem = header.index("origem_percentual_media") if "origem_percentual_media" in header else None
+
     rows = values[1:]
     registros = []
     for i, row in enumerate(rows):
         def safe_get(r, idx):
             return r[idx] if idx < len(r) else ""
 
-        sid = safe_get(row, col_idx_sid).strip()
+        poll_id = safe_get(row, col_idx_poll).strip()
         pct_raw = safe_get(row, col_idx_pct).strip()
         pos_atual = safe_get(row, col_idx_pos).strip()
+        pct_media_atual = safe_get(row, col_idx_pct_media).strip()
+        origem_atual = safe_get(row, col_idx_origem).strip() if col_idx_origem is not None else ""
 
         pct = parsear_pct(pct_raw)
 
         registros.append({
-            "row_num": i + 2,           # linha real na planilha (1-indexed + header)
-            "scenario_id": sid,
+            "row_num": i + 2,
+            "poll_id": poll_id,
             "percentual": pct,
+            "tipo": safe_get(row, col_idx_tipo).strip(),
+            "candidato": safe_get(row, col_idx_candidato).strip(),
+            "scenario_label": safe_get(row, col_idx_scenario_label).strip() if col_idx_scenario_label is not None else "",
             "posicao_atual": pos_atual,
+            "percentual_media_atual": parsear_pct(pct_media_atual),
+            "origem_percentual_media_atual": origem_atual,
         })
 
     df = pd.DataFrame(registros)
 
-    # Filtra apenas linhas com scenario_id e percentual válidos
-    df_valido = df[df["scenario_id"].ne("") & df["percentual"].notna()].copy()
+    df_valido = df[df["poll_id"].ne("") & df["percentual"].notna()].copy()
 
     if df_valido.empty:
         print("  [posicao] nenhuma linha com dados válidos para recalcular")
         return
 
-    # Recalcula posicao_pesquisa para todos os grupos
-    df_valido["posicao_calculada"] = (
-        df_valido.groupby("scenario_id")["percentual"]
-        .rank(method="min", ascending=False)
-        .astype(int)
-    )
+    df_valido = adicionar_metricas_media_cenarios(df_valido)
 
-    # Filtra apenas as linhas onde posicao_pesquisa está vazia
-    df_para_atualizar = df_valido[df_valido["posicao_atual"].eq("")].copy()
-
-    if df_para_atualizar.empty:
-        print("  [posicao] todas as linhas já têm posicao_pesquisa preenchida")
-        return
-
-    # Converte índice de coluna para letra (ex: 0 -> A, 25 -> Z, 26 -> AA)
     def col_idx_to_letter(idx):
         result = ""
         while idx >= 0:
@@ -1014,20 +1098,229 @@ def preencher_posicao_pesquisa_na_aba(aba):
             idx = idx // 26 - 1
         return result
 
-    col_letter = col_idx_to_letter(col_idx_pos)
+    col_letter_pos = col_idx_to_letter(col_idx_pos)
+    col_letter_pct_media = col_idx_to_letter(col_idx_pct_media)
+    col_letter_origem = col_idx_to_letter(col_idx_origem) if col_idx_origem is not None else None
 
-    # Batch update: agrupa todas as células a atualizar
     cell_updates = []
-    for _, row in df_para_atualizar.iterrows():
-        cell_ref = f"{col_letter}{row['row_num']}"
-        cell_updates.append({
-            "range": cell_ref,
-            "values": [[str(int(row["posicao_calculada"]))]]
-        })
+    for _, row in df_valido.iterrows():
+        posicao_nova = row["posicao_pesquisa"]
+        pct_media_novo = row["percentual_media_cenarios"]
+
+        if pd.notna(posicao_nova):
+            posicao_nova_str = str(int(posicao_nova))
+            if row["posicao_atual"] != posicao_nova_str:
+                cell_updates.append({
+                    "range": f"{col_letter_pos}{row['row_num']}",
+                    "values": [[posicao_nova_str]]
+                })
+
+        if pd.notna(pct_media_novo):
+            pct_media_atual = row["percentual_media_atual"]
+            if pd.isna(pct_media_atual) or abs(float(pct_media_atual) - float(pct_media_novo)) > 1e-9:
+                cell_updates.append({
+                    "range": f"{col_letter_pct_media}{row['row_num']}",
+                    "values": [[str(pct_media_novo)]]
+                })
+
+        if col_letter_origem is not None:
+            origem = row.get("origem_percentual_media", "") or ""
+            if row.get("origem_percentual_media_atual", "") != origem:
+                cell_updates.append({
+                    "range": f"{col_letter_origem}{row['row_num']}",
+                    "values": [[origem]]
+                })
 
     if cell_updates:
         aba.batch_update(cell_updates)
-        print(f"  [posicao] {len(cell_updates)} linhas antigas preenchidas com posicao_pesquisa")
+        print(f"  [posicao] {len(cell_updates)} células atualizadas com média dos cenários e posição")
+    else:
+        print("  [posicao] planilha já estava consistente com a média dos cenários")
+
+
+def carregar_df_da_aba(aba) -> pd.DataFrame:
+    values = aba.get_all_values()
+    if _aba_vazia(values) or len(values) < 2:
+        return pd.DataFrame()
+
+    header = values[0]
+    rows = values[1:]
+    rows_norm = []
+    for row in rows:
+        if len(row) < len(header):
+            row = row + [""] * (len(header) - len(row))
+        rows_norm.append(row[:len(header)])
+
+    return pd.DataFrame(rows_norm, columns=header)
+
+
+def sobrescrever_aba(aba, df: pd.DataFrame):
+    df = reordenar_metodologia_para_ultima_coluna(df)
+    aba.clear()
+    if df.empty:
+        aba.update([df.columns.tolist()])
+        print(f"  [rewrite] aba '{aba.title}' limpa e mantido apenas header")
+        return
+
+    aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
+    print(f"  [rewrite] aba '{aba.title}' regravada com {len(df)} linhas")
+
+
+def corrigir_coluna_numerica_na_aba(aba, nome_coluna: str, padrao: str = "0.0"):
+    values_raw = aba.get_all_values(value_render_option="UNFORMATTED_VALUE")
+    if _aba_vazia(values_raw) or len(values_raw) < 2:
+        return
+
+    header = values_raw[0]
+    if nome_coluna not in header:
+        return
+
+    col_idx = header.index(nome_coluna) + 1
+    updates = []
+
+    for row_idx, row in enumerate(values_raw[1:], start=2):
+        atual_raw = row[col_idx - 1] if len(row) >= col_idx else ""
+        novo = normalizar_percentual_planilha(atual_raw)
+        if novo is None:
+            continue
+
+        atual_raw_txt = str(atual_raw).strip()
+        veio_como_texto = isinstance(atual_raw, str)
+        exige_forcar_numero = veio_como_texto and (
+            atual_raw_txt.startswith("'")
+            or "%" in atual_raw_txt
+            or "," in atual_raw_txt
+            or "." in atual_raw_txt
+        )
+
+        atual_f = None
+        if isinstance(atual_raw, (int, float)):
+            atual_f = float(atual_raw)
+        else:
+            atual_txt = str(atual_raw).strip().lstrip("'")
+            try:
+                atual_f = float(atual_txt.replace("%", "").replace(",", "."))
+            except Exception:
+                atual_f = None
+
+        if veio_como_texto and atual_f is not None:
+            exige_forcar_numero = True
+
+        if (
+            atual_f is not None
+            and round(atual_f, 1) == novo
+            and abs(atual_f) < 1000
+            and not exige_forcar_numero
+        ):
+            continue
+
+        updates.append(Cell(row=row_idx, col=col_idx, value=float(novo)))
+
+    if updates:
+        aba.update_cells(updates, value_input_option="RAW")
+        print(f"  [fmt] aba '{aba.title}': {len(updates)} célula(s) corrigidas na coluna '{nome_coluna}'")
+
+    n_linhas = len(values_raw)
+    col_letra = rowcol_to_a1(1, col_idx)[:-1]
+    intervalo = f"{col_letra}2:{col_letra}{n_linhas}"
+    aba.format(intervalo, {"numberFormat": {"type": "NUMBER", "pattern": padrao}})
+
+
+def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
+    """
+    Gera uma base consolidada para BI com 1 linha por poll_id + candidato.
+    Usa a média dos cenários como percentual base e calcula a posição entre
+    candidatos da mesma pesquisa.
+    """
+    cols = [
+        "poll_id", "ano", "uf", "cargo", "turno", "data_campo", "instituto",
+        "classificacao_instituto", "registro_tse", "candidato", "partido",
+        "candidato_partido", "tipo", "percentual_base",
+        "origem_percentual_base", "cenario_usado_no_calculo",
+        "qtd_cenarios_considerados", "posicao_candidato", "eh_lider",
+        "eh_segundo", "fonte_url", "horario_raspagem"
+    ]
+
+    if df_resultados is None or df_resultados.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = df_resultados.copy()
+    if "percentual" in df.columns:
+        df["percentual"] = df["percentual"].apply(parsear_pct)
+    else:
+        df["percentual"] = None
+
+    for col in ["poll_id", "tipo", "candidato", "scenario_label"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    df = df[df["poll_id"].astype(str).str.strip().ne("") & df["percentual"].notna()].copy()
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = adicionar_metricas_media_cenarios(df)
+    df["eh_cenario_media"] = df["scenario_label"].apply(eh_cenario_media)
+
+    chaves = ["poll_id", "tipo", "candidato"]
+    df_qtd = (
+        df[~df["eh_cenario_media"]]
+        .groupby(chaves, dropna=False)["scenario_label"]
+        .nunique()
+        .reset_index(name="qtd_cenarios_considerados")
+    )
+
+    df_media_lbl = (
+        df[df["eh_cenario_media"]]
+        .sort_values(chaves + ["scenario_label"])
+        .drop_duplicates(subset=chaves, keep="first")[chaves + ["scenario_label"]]
+        .rename(columns={"scenario_label": "cenario_usado_no_calculo"})
+    )
+
+    df_pref = df.copy()
+    df_pref["_ordem_escolha"] = df_pref["eh_cenario_media"].astype(int) * -1
+    df_base = (
+        df_pref
+        .sort_values(chaves + ["_ordem_escolha", "scenario_label"])
+        .drop_duplicates(subset=chaves, keep="first")
+        .copy()
+    )
+
+    df_base = df_base.merge(df_qtd, on=chaves, how="left")
+    df_base = df_base.merge(df_media_lbl, on=chaves, how="left")
+
+    df_base["origem_percentual_base"] = df_base["origem_percentual_media"]
+    df_base["percentual_base"] = df_base["percentual_media_cenarios"]
+    df_base["qtd_cenarios_considerados"] = df_base["qtd_cenarios_considerados"].fillna(0).astype(int)
+    df_base["cenario_usado_no_calculo"] = df_base["cenario_usado_no_calculo"].fillna("")
+    df_base.loc[
+        df_base["origem_percentual_base"].eq("media_calculada_no_codigo"),
+        "cenario_usado_no_calculo"
+    ] = "media_calculada_no_codigo"
+
+    df_candidatos = df_base[df_base["tipo"].astype(str).str.lower().eq("candidato")].copy()
+    df_candidatos["posicao_candidato"] = (
+        df_candidatos.groupby("poll_id")["percentual_base"]
+        .rank(method="min", ascending=False)
+        .astype("Int64")
+    )
+    df_candidatos["eh_lider"] = df_candidatos["posicao_candidato"].eq(1)
+    df_candidatos["eh_segundo"] = df_candidatos["posicao_candidato"].eq(2)
+
+    for col in cols:
+        if col not in df_candidatos.columns:
+            df_candidatos[col] = ""
+
+    df_candidatos = df_candidatos[cols].copy()
+    df_candidatos = df_candidatos.sort_values(
+        by=["cargo", "uf", "turno", "data_campo", "poll_id", "posicao_candidato", "candidato"],
+        ascending=[True, True, True, False, True, True, True],
+        na_position="last",
+    ).reset_index(drop=True)
+
+    df_candidatos["eh_lider"] = df_candidatos["eh_lider"].map(lambda x: "TRUE" if x is True else "FALSE")
+    df_candidatos["eh_segundo"] = df_candidatos["eh_segundo"].map(lambda x: "TRUE" if x is True else "FALSE")
+
+    return df_candidatos
 
 
 def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
@@ -1058,17 +1351,18 @@ def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
         return len(df), 0
 
     colunas_novas = [c for c in df.columns if c not in header]
-    header_sem_metodologia = [c for c in header if c != "metodologia"]
-    header_final = header_sem_metodologia + [c for c in colunas_novas if c != "metodologia"]
-    if "metodologia" in df.columns or "metodologia" in header:
-        header_final += ["metodologia"]
+    cols_final = ["percentual_media_cenarios", "origem_percentual_media", "metodologia"]
+    header_base = [c for c in header if c not in cols_final]
+    novas_base = [c for c in colunas_novas if c not in cols_final]
+    header_final = header_base + novas_base
+    header_final += [c for c in cols_final if c in df.columns or c in header]
 
     if header_final != header:
         aba.update([header_final], range_name="A1")
         if colunas_novas:
             print(f"  [schema] {len(colunas_novas)} coluna(s) nova(s): {colunas_novas}")
-        elif "metodologia" in header and header[-1] != "metodologia":
-            print("  [schema] metodologia movida para a última coluna")
+        else:
+            print(f"  [schema] colunas finais reposicionadas: {[c for c in cols_final if c in header_final]}")
 
     idx_key = header_final.index(key_col)
     values = aba.get_all_values()
@@ -1093,8 +1387,15 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
         return
 
     sh = gc.open_by_key(spreadsheet_id)
+    if FORCAR_LOCALE_PLANILHA:
+        try:
+            sh.update_locale(LOCALE_PLANILHA)
+        except Exception as e:
+            print(f"  [fmt] não foi possível definir locale da planilha para {LOCALE_PLANILHA}: {e}")
+
     aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=35)
     aba_resultados = garantir_aba(sh, "resultados", rows=200000, cols=35)
+    aba_resultados_bi = garantir_aba(sh, "resultados_bi", rows=200000, cols=40)
 
     if df_p is not None and not df_p.empty:
         novos, exist = dedup_e_salvar(aba_pesquisas, df_p, key_col="scenario_id")
@@ -1103,7 +1404,6 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
     if df_r is not None and not df_r.empty:
         df_r = df_r.copy()
 
-        # Calcula posicao_pesquisa para os dados novos desta rodada
         df_r = adicionar_posicao_pesquisa(df_r)
 
         df_r["_dedup_key"] = (
@@ -1114,8 +1414,16 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
         novos, exist = dedup_e_salvar(aba_resultados, df_r, key_col="_dedup_key")
         print(f"[+] resultados: {novos} novas | {exist} já existiam")
 
-    # Preenche posicao_pesquisa em linhas antigas que ainda estão vazias
     preencher_posicao_pesquisa_na_aba(aba_resultados)
+
+    df_resultados_all = carregar_df_da_aba(aba_resultados)
+    df_resultados_bi = construir_resultados_bi(df_resultados_all)
+    sobrescrever_aba(aba_resultados_bi, df_resultados_bi)
+    print(f"[+] resultados_bi: {len(df_resultados_bi)} linhas consolidadas para Looker")
+
+    corrigir_coluna_numerica_na_aba(aba_resultados, "percentual")
+    corrigir_coluna_numerica_na_aba(aba_resultados, "percentual_media_cenarios")
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "percentual_base")
 
 
 def main():
