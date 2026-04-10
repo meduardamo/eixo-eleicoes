@@ -966,6 +966,18 @@ def adicionar_metricas_media_cenarios(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     df = df.copy()
+    cols_auxiliares = [
+        "percentual_media_cenarios",
+        "origem_percentual_media",
+        "posicao_pesquisa",
+        "percentual_media_existente",
+        "percentual_media_calculada",
+        "eh_cenario_media",
+    ]
+    cols_para_remover = [c for c in cols_auxiliares if c in df.columns]
+    if cols_para_remover:
+        df = df.drop(columns=cols_para_remover)
+
     df["scenario_label"] = df["scenario_label"].fillna("").astype(str)
     df["eh_cenario_media"] = df["scenario_label"].apply(eh_cenario_media)
 
