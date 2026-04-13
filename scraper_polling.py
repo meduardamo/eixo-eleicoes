@@ -287,9 +287,38 @@ def _sha1_short(s: str, n=10) -> str:
     return hashlib.sha1(str(s).encode("utf-8", errors="ignore")).hexdigest()[:n]
 
 
+def normalizar_data_campo(valor) -> str:
+    s = _norm_ws(valor)
+    if not s:
+        return ""
+
+    candidatos = re.findall(r"\d{4}-\d{1,2}-\d{1,2}", s)
+    if candidatos:
+        dt = pd.to_datetime(candidatos[-1], errors="coerce")
+        if pd.notna(dt):
+            return dt.strftime("%Y-%m-%d")
+
+    candidatos = re.findall(r"\d{1,2}[/-]\d{1,2}[/-]\d{4}", s)
+    if candidatos:
+        dt = pd.to_datetime(candidatos[-1], dayfirst=True, errors="coerce")
+        if pd.notna(dt):
+            return dt.strftime("%Y-%m-%d")
+
+    candidatos = re.findall(r"\d{4}[/-]\d{1,2}[/-]\d{1,2}", s)
+    if candidatos:
+        dt = pd.to_datetime(candidatos[-1], yearfirst=True, errors="coerce")
+        if pd.notna(dt):
+            return dt.strftime("%Y-%m-%d")
+
+    dt = pd.to_datetime(s, dayfirst=True, errors="coerce")
+    if pd.notna(dt):
+        return dt.strftime("%Y-%m-%d")
+
+    return s
+
+
 def extrair_ultima_data(s: str) -> str:
-    datas = re.findall(r"\d{4}-\d{2}-\d{2}", str(s))
-    return datas[-1] if datas else _norm_ws(s)
+    return normalizar_data_campo(s)
 
 
 def parse_url_meta(url: str):
@@ -1250,9 +1279,10 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.copy()
     df["media_movel_13d"] = None
+    df["_orig_idx_mm"] = df.index
 
     if "data_campo" not in df.columns or "percentual_base" not in df.columns:
-        return df
+        return df.drop(columns=["_orig_idx_mm"], errors="ignore")
 
     for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato"]:
         if col not in df.columns:
@@ -1272,34 +1302,26 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     ].copy()
 
     if df_valid.empty:
-        return df.drop(columns=["_data_campo_dt", "_percentual_base_num"], errors="ignore")
+        return df.drop(columns=["_data_campo_dt", "_percentual_base_num", "_orig_idx_mm"], errors="ignore")
 
-    df_diario = (
-        df_valid.groupby(chaves_serie + ["_data_campo_dt"], dropna=False)["_percentual_base_num"]
-        .mean()
-        .reset_index()
-        .sort_values(chaves_serie + ["_data_campo_dt"])
-    )
+    mm_series_por_linha = []
 
-    def calcular_mm_13d(grupo: pd.DataFrame) -> pd.Series:
-        serie = (
-            grupo.set_index("_data_campo_dt")["_percentual_base_num"]
-            .rolling(window="13D")
+    for _, grupo in df_valid.groupby(chaves_serie, dropna=False):
+        grupo = grupo.sort_values("_data_campo_dt").copy()
+        media_diaria = (
+            grupo.groupby("_data_campo_dt")["_percentual_base_num"]
             .mean()
+            .sort_index()
         )
-        return pd.Series(serie.to_numpy(), index=grupo.index)
+        mm_diaria = media_diaria.rolling(window="13D").mean()
+        mm_por_linha = grupo["_data_campo_dt"].map(mm_diaria.to_dict())
+        mm_series_por_linha.append(pd.Series(mm_por_linha.to_numpy(), index=grupo["_orig_idx_mm"]))
 
-    df_diario["media_movel_13d"] = (
-        df_diario.groupby(chaves_serie, dropna=False, group_keys=False)
-        .apply(calcular_mm_13d)
-    )
+    if mm_series_por_linha:
+        mm_final = pd.concat(mm_series_por_linha)
+        df.loc[mm_final.index, "media_movel_13d"] = mm_final.astype(float)
 
-    df["_mm_key"] = list(zip(*[df[col] for col in chaves_serie], df["_data_campo_dt"]))
-    df_diario["_mm_key"] = list(zip(*[df_diario[col] for col in chaves_serie], df_diario["_data_campo_dt"]))
-    mm_map = df_diario.set_index("_mm_key")["media_movel_13d"].to_dict()
-    df["media_movel_13d"] = df["_mm_key"].map(mm_map)
-
-    return df.drop(columns=["_data_campo_dt", "_percentual_base_num", "_mm_key"], errors="ignore")
+    return df.drop(columns=["_data_campo_dt", "_percentual_base_num", "_orig_idx_mm"], errors="ignore")
 
 
 def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
@@ -1325,6 +1347,11 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
         df["percentual"] = df["percentual"].apply(parsear_pct)
     else:
         df["percentual"] = None
+
+    if "data_campo" in df.columns:
+        df["data_campo"] = df["data_campo"].apply(normalizar_data_campo)
+    else:
+        df["data_campo"] = ""
 
     for col in ["poll_id", "tipo", "candidato", "scenario_label"]:
         if col not in df.columns:
