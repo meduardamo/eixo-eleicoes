@@ -1238,6 +1238,58 @@ def corrigir_coluna_numerica_na_aba(aba, nome_coluna: str, padrao: str = "0.0"):
     aba.format(intervalo, {"numberFormat": {"type": "NUMBER", "pattern": padrao}})
 
 
+def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcula uma média móvel de 13 dias por candidato, usando a média diária do
+    percentual_base em cada combinação de ano/cargo/uf/turno/tipo/candidato.
+    """
+    if df.empty:
+        df = df.copy()
+        df["media_movel_13d"] = None
+        return df
+
+    df = df.copy()
+    df["media_movel_13d"] = None
+
+    if "data_campo" not in df.columns or "percentual_base" not in df.columns:
+        return df
+
+    df["_data_campo_dt"] = pd.to_datetime(df["data_campo"], errors="coerce")
+    df["_percentual_base_num"] = pd.to_numeric(df["percentual_base"], errors="coerce")
+
+    chaves_serie = ["ano", "cargo", "uf", "turno", "tipo", "candidato"]
+    df_valid = df[
+        df["_data_campo_dt"].notna()
+        & df["_percentual_base_num"].notna()
+        & df["candidato"].astype(str).str.strip().ne("")
+    ].copy()
+
+    if df_valid.empty:
+        return df.drop(columns=["_data_campo_dt", "_percentual_base_num"], errors="ignore")
+
+    df_diario = (
+        df_valid.groupby(chaves_serie + ["_data_campo_dt"], dropna=False)["_percentual_base_num"]
+        .mean()
+        .reset_index()
+        .sort_values(chaves_serie + ["_data_campo_dt"])
+    )
+
+    df_diario["media_movel_13d"] = (
+        df_diario.groupby(chaves_serie, dropna=False)
+        .rolling(window="13D", on="_data_campo_dt")["_percentual_base_num"]
+        .mean()
+        .reset_index(level=chaves_serie, drop=True)
+    )
+
+    df = df.merge(
+        df_diario[chaves_serie + ["_data_campo_dt", "media_movel_13d"]],
+        on=chaves_serie + ["_data_campo_dt"],
+        how="left",
+    )
+
+    return df.drop(columns=["_data_campo_dt", "_percentual_base_num"], errors="ignore")
+
+
 def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     """
     Gera uma base consolidada para BI com 1 linha por poll_id + candidato.
@@ -1249,7 +1301,7 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
         "classificacao_instituto", "registro_tse", "candidato", "partido",
         "candidato_partido", "tipo", "percentual_base",
         "origem_percentual_base", "cenario_usado_no_calculo",
-        "qtd_cenarios_considerados", "posicao_candidato", "eh_lider",
+        "qtd_cenarios_considerados", "media_movel_13d", "posicao_candidato", "eh_lider",
         "eh_segundo", "fonte_url", "horario_raspagem"
     ]
 
@@ -1317,6 +1369,7 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     )
     df_candidatos["eh_lider"] = df_candidatos["posicao_candidato"].eq(1)
     df_candidatos["eh_segundo"] = df_candidatos["posicao_candidato"].eq(2)
+    df_candidatos = adicionar_media_movel_13d_resultados_bi(df_candidatos)
 
     for col in cols:
         if col not in df_candidatos.columns:
@@ -1436,6 +1489,7 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
     corrigir_coluna_numerica_na_aba(aba_resultados, "percentual")
     corrigir_coluna_numerica_na_aba(aba_resultados, "percentual_media_cenarios")
     corrigir_coluna_numerica_na_aba(aba_resultados_bi, "percentual_base")
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "media_movel_13d")
 
 
 def main():
