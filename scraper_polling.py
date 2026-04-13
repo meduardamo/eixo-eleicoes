@@ -287,34 +287,9 @@ def _sha1_short(s: str, n=10) -> str:
     return hashlib.sha1(str(s).encode("utf-8", errors="ignore")).hexdigest()[:n]
 
 
-def normalizar_data_campo(valor) -> str:
-    s = _norm_ws(valor)
-    if not s:
-        return ""
-
-    candidatos = re.findall(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", s)
-    if candidatos:
-        token = candidatos[-1].replace("/", "-")
-        try:
-            dt = datetime.strptime(token, "%Y-%m-%d")
-            return dt.strftime("%Y-%m-%d")
-        except ValueError:
-            pass
-
-    candidatos = re.findall(r"\d{1,2}[/-]\d{1,2}[/-]\d{4}", s)
-    if candidatos:
-        token = candidatos[-1].replace("/", "-")
-        try:
-            dt = datetime.strptime(token, "%d-%m-%Y")
-            return dt.strftime("%Y-%m-%d")
-        except ValueError:
-            pass
-
-    return s
-
-
 def extrair_ultima_data(s: str) -> str:
-    return normalizar_data_campo(s)
+    datas = re.findall(r"\d{4}-\d{2}-\d{2}", str(s))
+    return datas[-1] if datas else _norm_ws(s)
 
 
 def parse_url_meta(url: str):
@@ -367,10 +342,10 @@ def parsear_pesquisa(texto):
         if re.match(r"^\(\d+\)$", linha):
             continue
 
-        m = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})", linha)
+        m = re.search(r"(\d{4}-\d{2}-\d{2})", linha)
         if m:
-            data = normalizar_data_campo(m.group(1))
-            antes = linha[:m.start()].strip()
+            data = m.group(1)
+            antes = linha[:linha.index(data)].strip()
             if antes:
                 id_pesquisa = antes
         else:
@@ -1346,9 +1321,7 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     else:
         df["percentual"] = None
 
-    if "data_campo" in df.columns:
-        df["data_campo"] = df["data_campo"].apply(normalizar_data_campo)
-    else:
+    if "data_campo" not in df.columns:
         df["data_campo"] = ""
 
     for col in ["poll_id", "tipo", "candidato", "scenario_label"]:
