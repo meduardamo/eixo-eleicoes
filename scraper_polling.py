@@ -1313,8 +1313,10 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
             .mean()
             .sort_index()
         )
+        media_diaria.index = pd.to_datetime(media_diaria.index, utc=True).tz_localize(None)
         mm_diaria = media_diaria.rolling(window="13D").mean()
-        mm_por_linha = grupo["_data_campo_dt"].map(mm_diaria.to_dict())
+        datas_normalizadas = pd.to_datetime(grupo["_data_campo_dt"], utc=True).dt.tz_localize(None)
+        mm_por_linha = datas_normalizadas.map(mm_diaria.to_dict())
         mm_series_por_linha.append(pd.Series(mm_por_linha.to_numpy(), index=grupo["_orig_idx_mm"]))
 
     if mm_series_por_linha:
