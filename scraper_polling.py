@@ -292,27 +292,23 @@ def normalizar_data_campo(valor) -> str:
     if not s:
         return ""
 
-    candidatos = re.findall(r"\d{4}-\d{1,2}-\d{1,2}", s)
+    candidatos = re.findall(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", s)
     if candidatos:
-        dt = pd.to_datetime(candidatos[-1], errors="coerce")
-        if pd.notna(dt):
+        token = candidatos[-1].replace("/", "-")
+        try:
+            dt = datetime.strptime(token, "%Y-%m-%d")
             return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            pass
 
     candidatos = re.findall(r"\d{1,2}[/-]\d{1,2}[/-]\d{4}", s)
     if candidatos:
-        dt = pd.to_datetime(candidatos[-1], dayfirst=True, errors="coerce")
-        if pd.notna(dt):
+        token = candidatos[-1].replace("/", "-")
+        try:
+            dt = datetime.strptime(token, "%d-%m-%Y")
             return dt.strftime("%Y-%m-%d")
-
-    candidatos = re.findall(r"\d{4}[/-]\d{1,2}[/-]\d{1,2}", s)
-    if candidatos:
-        dt = pd.to_datetime(candidatos[-1], yearfirst=True, errors="coerce")
-        if pd.notna(dt):
-            return dt.strftime("%Y-%m-%d")
-
-    dt = pd.to_datetime(s, dayfirst=True, errors="coerce")
-    if pd.notna(dt):
-        return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            pass
 
     return s
 
@@ -371,10 +367,10 @@ def parsear_pesquisa(texto):
         if re.match(r"^\(\d+\)$", linha):
             continue
 
-        m = re.search(r"(\d{4}-\d{2}-\d{2})", linha)
+        m = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})", linha)
         if m:
-            data = m.group(1)
-            antes = linha[:linha.index(data)].strip()
+            data = normalizar_data_campo(m.group(1))
+            antes = linha[:m.start()].strip()
             if antes:
                 id_pesquisa = antes
         else:
