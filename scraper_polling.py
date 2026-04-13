@@ -1202,7 +1202,8 @@ def sobrescrever_aba(aba, df: pd.DataFrame):
         print(f"  [rewrite] aba '{aba.title}' limpa e mantido apenas header")
         return
 
-    aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
+    df_export = df.astype(object).where(pd.notna(df), "")
+    aba.update([df.columns.tolist()] + df_export.astype(str).values.tolist())
     print(f"  [rewrite] aba '{aba.title}' regravada com {len(df)} linhas")
 
 
@@ -1360,7 +1361,10 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
         expandido["media_movel_13d"] = mm_diaria.to_numpy()
         partes_expandidas.append(expandido)
 
-    df_expandido = pd.concat(partes_expandidas + [df_sem_serie], ignore_index=True, sort=False)
+    frames_concat = [parte for parte in partes_expandidas if not parte.empty]
+    if not df_sem_serie.empty:
+        frames_concat.append(df_sem_serie)
+    df_expandido = pd.concat(frames_concat, ignore_index=True, sort=False) if frames_concat else df.copy()
     return df_expandido.drop(columns=["_data_campo_dt", "_percentual_base_num"], errors="ignore")
 
 
