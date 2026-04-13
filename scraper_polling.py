@@ -1313,7 +1313,8 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
         errors="coerce",
     )
 
-    chaves_serie = ["ano", "cargo", "uf", "turno", "tipo", "candidato_partido"]
+    chaves_escopo = ["ano", "cargo", "uf", "turno", "tipo"]
+    chaves_serie = chaves_escopo + ["candidato_partido"]
     colunas_dimensao = ["ano", "uf", "cargo", "turno", "tipo", "candidato", "partido", "candidato_partido"]
 
     df_com_serie = df[
@@ -1325,16 +1326,24 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     if df_com_serie.empty:
         return df.drop(columns=["_data_campo_dt", "_percentual_base_num"], errors="ignore")
 
+    datas_finais_por_escopo = (
+        df_com_serie.groupby(chaves_escopo, dropna=False)["_data_campo_dt"]
+        .max()
+        .to_dict()
+    )
+
     partes_expandidas = []
 
-    for _, grupo in df_com_serie.groupby(chaves_serie, dropna=False):
+    for chave_serie, grupo in df_com_serie.groupby(chaves_serie, dropna=False):
         grupo = grupo.sort_values("_data_campo_dt").copy()
         datas_validas = grupo["_data_campo_dt"].dropna().sort_values()
         if datas_validas.empty:
             partes_expandidas.append(grupo)
             continue
 
-        faixa_datas = pd.date_range(datas_validas.iloc[0], datas_validas.iloc[-1], freq="D")
+        chave_escopo = chave_serie[:len(chaves_escopo)] if isinstance(chave_serie, tuple) else (chave_serie,)
+        data_final_escopo = datas_finais_por_escopo.get(chave_escopo, datas_validas.iloc[-1])
+        faixa_datas = pd.date_range(datas_validas.iloc[0], data_final_escopo, freq="D")
         base_datas = pd.DataFrame({"_data_campo_dt": faixa_datas})
 
         media_diaria = (
@@ -1614,8 +1623,8 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
         na_position="last",
     ).reset_index(drop=True)
 
-    df_candidatos["eh_lider"] = df_candidatos["eh_lider"].map(lambda x: "TRUE" if x is True else "FALSE")
-    df_candidatos["eh_segundo"] = df_candidatos["eh_segundo"].map(lambda x: "TRUE" if x is True else "FALSE")
+    df_candidatos["eh_lider"] = df_candidatos["eh_lider"].map({True: "TRUE", False: "FALSE"}).fillna("")
+    df_candidatos["eh_segundo"] = df_candidatos["eh_segundo"].map({True: "TRUE", False: "FALSE"}).fillna("")
 
     return df_candidatos
 
