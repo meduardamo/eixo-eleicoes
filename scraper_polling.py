@@ -1268,8 +1268,12 @@ def corrigir_coluna_numerica_na_aba(aba, nome_coluna: str, padrao: str = "0.0"):
 
 def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Calcula uma média móvel de 13 dias por candidato, usando a média diária do
-    percentual_base em cada combinação de ano/cargo/uf/turno/tipo/candidato_partido.
+    Expande cada série para o grão diário e calcula uma média móvel de 13 dias
+    por candidato em cada combinação de ano/cargo/uf/turno/tipo/candidato_partido.
+
+    Nos dias sem pesquisa, percentual_base e demais métricas diárias permanecem
+    vazios, mas media_movel_13d continua preenchida para permitir linha contínua
+    no BI.
     """
     if df.empty:
         df = df.copy()
@@ -1278,10 +1282,9 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.copy()
     df["media_movel_13d"] = None
-    df["_orig_idx_mm"] = df.index
 
     if "data_campo" not in df.columns or "percentual_base" not in df.columns:
-        return df.drop(columns=["_orig_idx_mm"], errors="ignore")
+        return df
 
     for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato", "partido", "candidato_partido"]:
         if col not in df.columns:
@@ -1310,42 +1313,55 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     chaves_serie = ["ano", "cargo", "uf", "turno", "tipo", "candidato_partido"]
-    df_valid = df[
+    colunas_dimensao = ["ano", "uf", "cargo", "turno", "tipo", "candidato", "partido", "candidato_partido"]
+
+    df_com_serie = df[
         df["_data_campo_dt"].notna()
-        & df["_percentual_base_num"].notna()
         & df["candidato_partido"].astype(str).str.strip().ne("")
     ].copy()
+    df_sem_serie = df[~df.index.isin(df_com_serie.index)].copy()
 
-    if df_valid.empty:
-        return df.drop(columns=["_data_campo_dt", "_percentual_base_num", "_orig_idx_mm"], errors="ignore")
+    if df_com_serie.empty:
+        return df.drop(columns=["_data_campo_dt", "_percentual_base_num"], errors="ignore")
 
-    mm_series_por_linha = []
+    partes_expandidas = []
 
-    for _, grupo in df_valid.groupby(chaves_serie, dropna=False):
+    for _, grupo in df_com_serie.groupby(chaves_serie, dropna=False):
         grupo = grupo.sort_values("_data_campo_dt").copy()
+        datas_validas = grupo["_data_campo_dt"].dropna().sort_values()
+        if datas_validas.empty:
+            partes_expandidas.append(grupo)
+            continue
+
+        faixa_datas = pd.date_range(datas_validas.iloc[0], datas_validas.iloc[-1], freq="D")
+        base_datas = pd.DataFrame({"_data_campo_dt": faixa_datas})
+
         media_diaria = (
             grupo.groupby("_data_campo_dt")["_percentual_base_num"]
             .mean()
-            .sort_index()
+            .reindex(faixa_datas)
         )
         media_diaria.index = pd.to_datetime(media_diaria.index, utc=True).tz_localize(None)
-        mm_diaria = media_diaria.rolling(window="13D").mean()
-        datas_normalizadas = pd.to_datetime(grupo["_data_campo_dt"], utc=True).dt.tz_localize(None)
-        mm_por_linha = datas_normalizadas.map(mm_diaria.to_dict())
-        mm_series_por_linha.append(pd.Series(mm_por_linha.to_numpy(), index=grupo["_orig_idx_mm"]))
+        mm_diaria = media_diaria.rolling(window="13D", min_periods=1).mean()
 
-    if mm_series_por_linha:
-        mm_final = pd.concat(mm_series_por_linha)
-        df.loc[mm_final.index, "media_movel_13d"] = mm_final.astype(float)
+        grupo_merge = (
+            grupo.drop(columns=["media_movel_13d"], errors="ignore")
+            .drop_duplicates(subset=["_data_campo_dt"], keep="first")
+            .copy()
+        )
 
-    # Fallback defensivo: qualquer linha válida sem média móvel recebe
-    # o próprio percentual_base do dia.
-    idx_validos = set(df_valid["_orig_idx_mm"].tolist())
-    mask_fallback = df.index.to_series().isin(idx_validos) & pd.isna(df["media_movel_13d"])
-    if mask_fallback.any():
-        df.loc[mask_fallback, "media_movel_13d"] = df.loc[mask_fallback, "_percentual_base_num"].astype(float)
+        expandido = base_datas.merge(grupo_merge, on="_data_campo_dt", how="left")
 
-    return df.drop(columns=["_data_campo_dt", "_percentual_base_num", "_orig_idx_mm"], errors="ignore")
+        referencia = grupo.iloc[0]
+        for col in colunas_dimensao:
+            expandido[col] = expandido[col].fillna(referencia.get(col, ""))
+
+        expandido["data_campo"] = expandido["_data_campo_dt"].dt.strftime("%Y-%m-%d")
+        expandido["media_movel_13d"] = mm_diaria.to_numpy()
+        partes_expandidas.append(expandido)
+
+    df_expandido = pd.concat(partes_expandidas + [df_sem_serie], ignore_index=True, sort=False)
+    return df_expandido.drop(columns=["_data_campo_dt", "_percentual_base_num"], errors="ignore")
 
 
 def deduplicar_resultados_bi_preferindo_cenario_media(df: pd.DataFrame) -> pd.DataFrame:
