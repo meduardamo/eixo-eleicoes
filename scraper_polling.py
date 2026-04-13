@@ -1254,6 +1254,13 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     if "data_campo" not in df.columns or "percentual_base" not in df.columns:
         return df
 
+    for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato", "data_campo"]:
+        df[col] = df[col].fillna("").astype(str).str.strip()
+
     df["_data_campo_dt"] = pd.to_datetime(df["data_campo"], errors="coerce")
     df["_percentual_base_num"] = pd.to_numeric(df["percentual_base"], errors="coerce")
 
@@ -1287,13 +1294,12 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
         .apply(calcular_mm_13d)
     )
 
-    df = df.merge(
-        df_diario[chaves_serie + ["_data_campo_dt", "media_movel_13d"]],
-        on=chaves_serie + ["_data_campo_dt"],
-        how="left",
-    )
+    df["_mm_key"] = list(zip(*[df[col] for col in chaves_serie], df["_data_campo_dt"]))
+    df_diario["_mm_key"] = list(zip(*[df_diario[col] for col in chaves_serie], df_diario["_data_campo_dt"]))
+    mm_map = df_diario.set_index("_mm_key")["media_movel_13d"].to_dict()
+    df["media_movel_13d"] = df["_mm_key"].map(mm_map)
 
-    return df.drop(columns=["_data_campo_dt", "_percentual_base_num"], errors="ignore")
+    return df.drop(columns=["_data_campo_dt", "_percentual_base_num", "_mm_key"], errors="ignore")
 
 
 def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
