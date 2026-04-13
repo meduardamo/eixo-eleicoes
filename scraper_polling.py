@@ -287,6 +287,34 @@ def _sha1_short(s: str, n=10) -> str:
     return hashlib.sha1(str(s).encode("utf-8", errors="ignore")).hexdigest()[:n]
 
 
+def normalizar_data_campo_segura(valor) -> str:
+    """
+    Normaliza datas aceitando apenas estes formatos de entrada:
+    - YYYY-MM-DD
+    - M/D/YYYY ou MM/DD/YYYY
+
+    Importante: não interpreta datas como DD/MM/YYYY.
+    Ex.: 2/3/2026 -> 2026-02-03
+    """
+    s = _norm_ws(valor)
+    if not s:
+        return ""
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            return s
+
+    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", s):
+        try:
+            return datetime.strptime(s, "%m/%d/%Y").strftime("%Y-%m-%d")
+        except ValueError:
+            return s
+
+    return s
+
+
 def extrair_ultima_data(s: str) -> str:
     datas = re.findall(r"\d{4}-\d{2}-\d{2}", str(s))
     return datas[-1] if datas else _norm_ws(s)
@@ -1276,7 +1304,10 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
         df[col] = df[col].fillna("").astype(str).str.strip()
 
     df["_data_campo_dt"] = pd.to_datetime(df["data_campo"], errors="coerce")
-    df["_percentual_base_num"] = pd.to_numeric(df["percentual_base"], errors="coerce")
+    df["_percentual_base_num"] = pd.to_numeric(
+        df["percentual_base"].astype(str).str.replace(",", ".", regex=False),
+        errors="coerce",
+    )
 
     chaves_serie = ["ano", "cargo", "uf", "turno", "tipo", "candidato_partido"]
     df_valid = df[
@@ -1306,6 +1337,13 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     if mm_series_por_linha:
         mm_final = pd.concat(mm_series_por_linha)
         df.loc[mm_final.index, "media_movel_13d"] = mm_final.astype(float)
+
+    # Fallback defensivo: qualquer linha válida sem média móvel recebe
+    # o próprio percentual_base do dia.
+    idx_validos = set(df_valid["_orig_idx_mm"].tolist())
+    mask_fallback = df.index.to_series().isin(idx_validos) & pd.isna(df["media_movel_13d"])
+    if mask_fallback.any():
+        df.loc[mask_fallback, "media_movel_13d"] = df.loc[mask_fallback, "_percentual_base_num"].astype(float)
 
     return df.drop(columns=["_data_campo_dt", "_percentual_base_num", "_orig_idx_mm"], errors="ignore")
 
@@ -1481,6 +1519,8 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
 
     if "data_campo" not in df.columns:
         df["data_campo"] = ""
+    else:
+        df["data_campo"] = df["data_campo"].apply(normalizar_data_campo_segura)
 
     for col in ["poll_id", "tipo", "candidato", "scenario_label"]:
         if col not in df.columns:
@@ -1631,8 +1671,8 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
             print(f"  [fmt] não foi possível definir locale da planilha para {LOCALE_PLANILHA}: {e}")
 
     aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=35)
-    aba_resultados = garantir_aba(sh, "resultados", rows=200000, cols=35)
-    aba_resultados_bi = garantir_aba(sh, "resultados_bi", rows=200000, cols=40)
+    aba_resultados = garantir_aba(sh, "resultados", rows=20000, cols=35)
+    aba_resultados_bi = garantir_aba(sh, "resultados_bi", rows=20000, cols=40)
 
     if df_p is not None and not df_p.empty:
         novos, exist = dedup_e_salvar(aba_pesquisas, df_p, key_col="scenario_id")
