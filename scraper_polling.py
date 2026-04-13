@@ -414,7 +414,7 @@ def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_bloc
     if id_pesquisa and id_pesquisa.lower() not in ("sem registro", "sem_registro", "semregistro", "nan", ""):
         return f"{uf}|{cargo}|{turno}|{id_pesquisa}|{data_campo}"
 
-    return f"{uf}|{cargo}|{turno}|{instituto_slug}|{data_campo}|{raw_block_hash}"
+    return f"{uf}|{cargo}|{turno}|{instituto_slug}|{data_campo}"
 
 
 def gerar_scenario_id(poll_id, scenario_label):
@@ -1241,7 +1241,7 @@ def corrigir_coluna_numerica_na_aba(aba, nome_coluna: str, padrao: str = "0.0"):
 def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calcula uma média móvel de 13 dias por candidato, usando a média diária do
-    percentual_base em cada combinação de ano/cargo/uf/turno/tipo/candidato.
+    percentual_base em cada combinação de ano/cargo/uf/turno/tipo/candidato_partido.
     """
     if df.empty:
         df = df.copy()
@@ -1255,21 +1255,34 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     if "data_campo" not in df.columns or "percentual_base" not in df.columns:
         return df.drop(columns=["_orig_idx_mm"], errors="ignore")
 
-    for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato"]:
+    for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato", "partido", "candidato_partido"]:
         if col not in df.columns:
             df[col] = ""
 
-    for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato", "data_campo"]:
+    df["candidato_partido"] = (
+        df["candidato_partido"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+    vazio_candidato_partido = df["candidato_partido"].eq("")
+    if vazio_candidato_partido.any():
+        candidato = df["candidato"].fillna("").astype(str).str.strip()
+        partido = df["partido"].fillna("").astype(str).str.strip()
+        composto = candidato.where(partido.eq(""), candidato + " (" + partido + ")")
+        df.loc[vazio_candidato_partido, "candidato_partido"] = composto.loc[vazio_candidato_partido]
+
+    for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato_partido", "data_campo"]:
         df[col] = df[col].fillna("").astype(str).str.strip()
 
     df["_data_campo_dt"] = pd.to_datetime(df["data_campo"], errors="coerce")
     df["_percentual_base_num"] = pd.to_numeric(df["percentual_base"], errors="coerce")
 
-    chaves_serie = ["ano", "cargo", "uf", "turno", "tipo", "candidato"]
+    chaves_serie = ["ano", "cargo", "uf", "turno", "tipo", "candidato_partido"]
     df_valid = df[
         df["_data_campo_dt"].notna()
         & df["_percentual_base_num"].notna()
-        & df["candidato"].astype(str).str.strip().ne("")
+        & df["candidato_partido"].astype(str).str.strip().ne("")
     ].copy()
 
     if df_valid.empty:
@@ -1297,19 +1310,164 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=["_data_campo_dt", "_percentual_base_num", "_orig_idx_mm"], errors="ignore")
 
 
+def deduplicar_resultados_bi_preferindo_cenario_media(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove duplicatas lógicas no BI quando a mesma pesquisa aparece com
+    poll_ids diferentes ao longo do tempo.
+
+    Regra de preferência:
+    - prioriza linhas com origem_percentual_base = cenario_media_existente;
+    - depois media_calculada_no_codigo;
+    - por fim qualquer outra origem.
+
+    Para pesquisas sem registro válido, a chave lógica usa instituto + data +
+    escopo eleitoral, evitando que mudanças no block_hash gerem duplicatas no BI.
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+
+    def registro_valido(valor: str) -> bool:
+        s = _norm_ws(valor).lower()
+        return s not in ("", "sem registro", "sem_registro", "semregistro", "nan")
+
+    def chave_pesquisa_logica(row) -> str:
+        registro = _norm_ws(row.get("registro_tse", ""))
+        if registro_valido(registro):
+            return "|".join([
+                "registro",
+                registro,
+                _norm_ws(row.get("ano", "")),
+                _norm_ws(row.get("uf", "")),
+                _norm_ws(row.get("cargo", "")),
+                _norm_ws(row.get("turno", "")),
+            ])
+
+        return "|".join([
+            "sem_registro",
+            _slug(row.get("instituto", "")),
+            _norm_ws(row.get("data_campo", "")),
+            _norm_ws(row.get("ano", "")),
+            _norm_ws(row.get("uf", "")),
+            _norm_ws(row.get("cargo", "")),
+            _norm_ws(row.get("turno", "")),
+        ])
+
+    prioridade_origem = {
+        "cenario_media_existente": 0,
+        "media_calculada_no_codigo": 1,
+    }
+
+    df["_chave_pesquisa_logica"] = df.apply(chave_pesquisa_logica, axis=1)
+    df["_chave_bi_dedup"] = (
+        df["_chave_pesquisa_logica"].astype(str)
+        + "|" + df["tipo"].fillna("").astype(str).str.strip()
+        + "|" + df["candidato_partido"].fillna("").astype(str).str.strip()
+    )
+    df["_prioridade_origem_bi"] = (
+        df["origem_percentual_base"]
+        .fillna("")
+        .astype(str)
+        .map(lambda x: prioridade_origem.get(x, 9))
+    )
+
+    df = (
+        df.sort_values(
+            by=["_chave_bi_dedup", "_prioridade_origem_bi", "poll_id"],
+            ascending=[True, True, True],
+            na_position="last",
+        )
+        .drop_duplicates(subset=["_chave_bi_dedup"], keep="first")
+        .copy()
+    )
+
+    return df.drop(
+        columns=["_chave_pesquisa_logica", "_chave_bi_dedup", "_prioridade_origem_bi"],
+        errors="ignore",
+    )
+
+
+def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agrega a base de BI no grão diário antes do cálculo da média móvel.
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+    prioridade_origem = {
+        "cenario_media_existente": 0,
+        "media_calculada_no_codigo": 1,
+    }
+
+    for col in [
+        "ano", "uf", "cargo", "turno", "data_campo", "tipo", "candidato",
+        "partido", "candidato_partido", "instituto", "classificacao_instituto",
+        "registro_tse", "origem_percentual_base", "cenario_usado_no_calculo",
+        "fonte_url", "poll_id", "horario_raspagem"
+    ]:
+        if col not in df.columns:
+            df[col] = ""
+
+    df["_prioridade_origem_bi"] = (
+        df["origem_percentual_base"]
+        .fillna("")
+        .astype(str)
+        .map(lambda x: prioridade_origem.get(x, 9))
+    )
+
+    dims = [
+        "ano", "uf", "cargo", "turno", "data_campo", "tipo",
+        "candidato", "partido", "candidato_partido"
+    ]
+
+    def juntar_unicos(series: pd.Series) -> str:
+        valores = sorted({_norm_ws(v) for v in series if _norm_ws(v)})
+        return " | ".join(valores)
+
+    df = df.sort_values(
+        by=dims + ["_prioridade_origem_bi", "poll_id"],
+        ascending=[True] * len(dims) + [True, True],
+        na_position="last",
+    )
+
+    df_diario = (
+        df.groupby(dims, dropna=False)
+        .agg(
+            percentual_base=("percentual_base", "mean"),
+            qtd_pesquisas_dia=("poll_id", "nunique"),
+            qtd_cenarios_considerados=("qtd_cenarios_considerados", "sum"),
+            origem_percentual_base=("origem_percentual_base", "first"),
+            cenario_usado_no_calculo=("cenario_usado_no_calculo", "first"),
+            institutos_no_dia=("instituto", juntar_unicos),
+            classificacoes_instituto_no_dia=("classificacao_instituto", juntar_unicos),
+            registros_tse_no_dia=("registro_tse", juntar_unicos),
+            fontes_no_dia=("fonte_url", juntar_unicos),
+            poll_ids_agregados=("poll_id", juntar_unicos),
+            horario_raspagem=("horario_raspagem", "max"),
+        )
+        .reset_index()
+    )
+
+    return df_diario
+
+
 def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     """
-    Gera uma base consolidada para BI com 1 linha por poll_id + candidato.
-    Usa a média dos cenários como percentual base e calcula a posição entre
-    candidatos da mesma pesquisa.
+    Gera uma base consolidada para BI no grão diário por candidato_partido.
+    Primeiro consolida cada pesquisa usando a média dos cenários; depois
+    agrega por dia e só então calcula a média móvel.
     """
     cols = [
-        "poll_id", "ano", "uf", "cargo", "turno", "data_campo", "instituto",
-        "classificacao_instituto", "registro_tse", "candidato", "partido",
-        "candidato_partido", "tipo", "percentual_base",
+        "ano", "uf", "cargo", "turno", "data_campo", "candidato", "partido",
+        "candidato_partido", "tipo", "percentual_base", "qtd_pesquisas_dia",
+        "qtd_cenarios_considerados",
         "origem_percentual_base", "cenario_usado_no_calculo",
-        "qtd_cenarios_considerados", "media_movel_13d", "posicao_candidato", "eh_lider",
-        "eh_segundo", "fonte_url", "horario_raspagem"
+        "media_movel_13d", "posicao_candidato", "eh_lider", "eh_segundo",
+        "institutos_no_dia", "classificacoes_instituto_no_dia",
+        "registros_tse_no_dia", "poll_ids_agregados", "fontes_no_dia",
+        "horario_raspagem"
     ]
 
     if df_resultados is None or df_resultados.empty:
@@ -1372,8 +1530,12 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     ] = "media_calculada_no_codigo"
 
     df_candidatos = df_base[df_base["tipo"].astype(str).str.lower().eq("candidato")].copy()
+    df_candidatos = deduplicar_resultados_bi_preferindo_cenario_media(df_candidatos)
+    df_candidatos = agregar_resultados_bi_diario(df_candidatos)
+
+    chaves_posicao = ["ano", "uf", "cargo", "turno", "data_campo"]
     df_candidatos["posicao_candidato"] = (
-        df_candidatos.groupby("poll_id")["percentual_base"]
+        df_candidatos.groupby(chaves_posicao)["percentual_base"]
         .rank(method="min", ascending=False)
         .astype("Int64")
     )
@@ -1387,8 +1549,8 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
 
     df_candidatos = df_candidatos[cols].copy()
     df_candidatos = df_candidatos.sort_values(
-        by=["cargo", "uf", "turno", "data_campo", "poll_id", "posicao_candidato", "candidato"],
-        ascending=[True, True, True, False, True, True, True],
+        by=["cargo", "uf", "turno", "data_campo", "posicao_candidato", "candidato_partido"],
+        ascending=[True, True, True, False, True, True],
         na_position="last",
     ).reset_index(drop=True)
 
@@ -1483,8 +1645,9 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
 
         df_r["_dedup_key"] = (
             df_r["scenario_id"].astype(str)
-            + "|" + df_r["tipo"].astype(str)
-            + "|" + df_r["candidato"].astype(str)
+            + "|" + df_r["data_campo"].fillna("").astype(str)
+            + "|" + df_r["tipo"].fillna("").astype(str)
+            + "|" + df_r["candidato_partido"].fillna("").astype(str)
         )
         novos, exist = dedup_e_salvar(aba_resultados, df_r, key_col="_dedup_key")
         print(f"[+] resultados: {novos} novas | {exist} já existiam")
