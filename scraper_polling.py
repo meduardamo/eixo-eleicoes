@@ -1274,11 +1274,17 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
         .sort_values(chaves_serie + ["_data_campo_dt"])
     )
 
+    def calcular_mm_13d(grupo: pd.DataFrame) -> pd.Series:
+        serie = (
+            grupo.set_index("_data_campo_dt")["_percentual_base_num"]
+            .rolling(window="13D")
+            .mean()
+        )
+        return pd.Series(serie.to_numpy(), index=grupo.index)
+
     df_diario["media_movel_13d"] = (
-        df_diario.groupby(chaves_serie, dropna=False)
-        .rolling(window="13D", on="_data_campo_dt")["_percentual_base_num"]
-        .mean()
-        .reset_index(level=chaves_serie, drop=True)
+        df_diario.groupby(chaves_serie, dropna=False, group_keys=False)
+        .apply(calcular_mm_13d)
     )
 
     df = df.merge(
