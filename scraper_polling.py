@@ -984,8 +984,12 @@ def adicionar_metricas_media_cenarios(df: pd.DataFrame) -> pd.DataFrame:
     Calcula um percentual de referência por candidato dentro de cada poll_id.
 
     Regra:
-    - se já existir cenário de média para o candidato, usa esse valor;
-    - caso contrário, calcula a média dos cenários numéricos no código.
+    - se existirem cenários individuais para o candidato, usa a média
+      calculada a partir desses cenários em que ele aparece;
+    - só usa o cenário de média já salvo como fallback quando não houver
+      cenários individuais disponíveis;
+    - a ausência de um candidato em outro cenário não entra como zero no
+      cálculo dessa média de referência.
 
     A posição passa a ser calculada por poll_id com base nesse percentual
     de referência, e não mais por scenario_id.
@@ -1029,16 +1033,16 @@ def adicionar_metricas_media_cenarios(df: pd.DataFrame) -> pd.DataFrame:
         .merge(df_media, on=chaves, how="left")
         .merge(df_cenarios, on=chaves, how="left")
     )
-    df_ref["percentual_media_cenarios"] = df_ref["percentual_media_existente"].combine_first(
-        df_ref["percentual_media_calculada"]
+    df_ref["percentual_media_cenarios"] = df_ref["percentual_media_calculada"].combine_first(
+        df_ref["percentual_media_existente"]
     )
-    df_ref["origem_percentual_media"] = df_ref["percentual_media_existente"].apply(
-        lambda x: "cenario_media_existente" if pd.notna(x) else ""
+    df_ref["origem_percentual_media"] = df_ref["percentual_media_calculada"].apply(
+        lambda x: "media_calculada_no_codigo" if pd.notna(x) else ""
     )
     df_ref.loc[
-        df_ref["origem_percentual_media"].eq("") & df_ref["percentual_media_calculada"].notna(),
+        df_ref["origem_percentual_media"].eq("") & df_ref["percentual_media_existente"].notna(),
         "origem_percentual_media"
-    ] = "media_calculada_no_codigo"
+    ] = "cenario_media_existente"
     df_ref["posicao_pesquisa"] = (
         df_ref.groupby("poll_id")["percentual_media_cenarios"]
         .rank(method="min", ascending=False)
