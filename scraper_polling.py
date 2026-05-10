@@ -3,6 +3,7 @@ import re
 import time
 import json
 import hashlib
+import unicodedata
 from datetime import datetime
 import zoneinfo
 import pandas as pd
@@ -1691,6 +1692,295 @@ def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
     return len(df_add), len(existing)
 
 
+def _norm_key_text(s) -> str:
+    txt = _norm_ws(s)
+    if not txt:
+        return ""
+    txt = unicodedata.normalize("NFKD", txt)
+    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+    txt = txt.lower()
+    txt = re.sub(r"[^a-z0-9]+", " ", txt)
+    return re.sub(r"\s+", " ", txt).strip()
+
+
+def _registro_tse_valido(valor) -> bool:
+    s = _norm_ws(valor).lower()
+    return s not in ("", "sem registro", "sem_registro", "semregistro", "nan", "none")
+
+
+def _eh_linha_manual(conferida_valor) -> bool:
+    return _norm_ws(conferida_valor).lower() == "manual_streamlit"
+
+
+def _parse_data_yyyy_mm_dd(valor):
+    s = normalizar_data_campo_segura(valor)
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _assinatura_poll(df_resultados: pd.DataFrame, poll_id: str) -> dict:
+    if df_resultados is None or df_resultados.empty or not poll_id:
+        return {}
+
+    df = df_resultados.copy()
+    for col in ["poll_id", "tipo", "candidato_partido", "candidato", "percentual"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    recorte = df[df["poll_id"].astype(str).str.strip().eq(_norm_ws(poll_id))].copy()
+    if recorte.empty:
+        return {}
+
+    recorte["_tipo_key"] = recorte["tipo"].apply(_norm_key_text)
+    recorte["_cand_key"] = recorte["candidato_partido"].apply(_norm_key_text)
+    recorte["_cand_key"] = recorte["_cand_key"].mask(
+        recorte["_cand_key"].eq(""),
+        recorte["candidato"].apply(_norm_key_text),
+    )
+    recorte["_item_key"] = recorte["_tipo_key"] + "|" + recorte["_cand_key"]
+    recorte["_pct"] = recorte["percentual"].apply(parsear_pct)
+    recorte = recorte[recorte["_item_key"].str.strip().ne("") & recorte["_pct"].notna()].copy()
+    if recorte.empty:
+        return {}
+
+    medias = recorte.groupby("_item_key", dropna=False)["_pct"].mean()
+    return {k: float(v) for k, v in medias.items()}
+
+
+def _avaliar_similaridade_polls(assinatura_manual: dict, assinatura_oficial: dict) -> tuple[int, float | None]:
+    if not assinatura_manual or not assinatura_oficial:
+        return 0, None
+
+    itens_comuns = sorted(set(assinatura_manual.keys()) & set(assinatura_oficial.keys()))
+    if not itens_comuns:
+        return 0, None
+
+    erros = [abs(assinatura_manual[k] - assinatura_oficial[k]) for k in itens_comuns]
+    mae = sum(erros) / len(erros)
+    return len(itens_comuns), float(mae)
+
+
+def reconciliar_manuais_com_oficiais(
+    df_p_existente: pd.DataFrame,
+    df_r_existente: pd.DataFrame,
+    df_p_novo: pd.DataFrame,
+    df_r_novo: pd.DataFrame,
+    janela_dias_fallback: int = 3,
+    mae_max_fallback: float = 1.5,
+):
+    """
+    Remove entradas manuais já cobertas por entrada oficial recém-coletada.
+    Regras:
+    1) Match forte: mesmo registro_tse + escopo (uf/cargo/turno);
+    2) Fallback: mesmo instituto + escopo + data próxima + resultados parecidos.
+    """
+    if df_p_existente is None:
+        df_p_existente = pd.DataFrame()
+    if df_r_existente is None:
+        df_r_existente = pd.DataFrame()
+    if df_p_novo is None:
+        df_p_novo = pd.DataFrame()
+    if df_r_novo is None:
+        df_r_novo = pd.DataFrame()
+
+    if df_p_existente.empty or df_p_novo.empty:
+        return df_p_existente, df_r_existente, pd.DataFrame()
+
+    p_exist = df_p_existente.copy()
+    p_novo = df_p_novo.copy()
+
+    for df in [p_exist, p_novo]:
+        for col in ["poll_id", "uf", "cargo", "turno", "instituto", "registro_tse", "data_campo", "conferida"]:
+            if col not in df.columns:
+                df[col] = ""
+
+    p_exist["_is_manual"] = p_exist["conferida"].apply(_eh_linha_manual)
+    p_novo["_is_manual"] = p_novo["conferida"].apply(_eh_linha_manual)
+
+    p_manual = (
+        p_exist[p_exist["_is_manual"]]
+        .sort_values(by=["poll_id", "scenario_id"] if "scenario_id" in p_exist.columns else ["poll_id"])
+        .drop_duplicates(subset=["poll_id"], keep="first")
+        .copy()
+    )
+    p_oficial = (
+        p_novo[~p_novo["_is_manual"]]
+        .sort_values(by=["poll_id", "scenario_id"] if "scenario_id" in p_novo.columns else ["poll_id"])
+        .drop_duplicates(subset=["poll_id"], keep="first")
+        .copy()
+    )
+
+    if p_manual.empty or p_oficial.empty:
+        return df_p_existente, df_r_existente, pd.DataFrame()
+
+    for df in [p_manual, p_oficial]:
+        df["_uf_key"] = df["uf"].apply(_norm_key_text)
+        df["_cargo_key"] = df["cargo"].apply(_norm_key_text)
+        df["_turno_key"] = df["turno"].apply(_norm_key_text)
+        df["_inst_key"] = df["instituto"].apply(_norm_key_text)
+        df["_registro_key"] = df["registro_tse"].apply(lambda x: _norm_ws(x).upper())
+        df["_registro_ok"] = df["registro_tse"].apply(_registro_tse_valido)
+        df["_data_dt"] = df["data_campo"].apply(_parse_data_yyyy_mm_dd)
+
+    remover_poll_ids = set()
+    detalhes = []
+    cache_assin_manual = {}
+    cache_assin_oficial = {}
+
+    def assinatura_manual(pid: str) -> dict:
+        if pid not in cache_assin_manual:
+            cache_assin_manual[pid] = _assinatura_poll(df_r_existente, pid)
+        return cache_assin_manual[pid]
+
+    def assinatura_oficial(pid: str) -> dict:
+        if pid not in cache_assin_oficial:
+            cache_assin_oficial[pid] = _assinatura_poll(df_r_novo, pid)
+        return cache_assin_oficial[pid]
+
+    for _, off in p_oficial.iterrows():
+        off_poll_id = _norm_ws(off.get("poll_id", ""))
+        if not off_poll_id:
+            continue
+
+        base_escopo = (
+            p_manual["_uf_key"].eq(off["_uf_key"])
+            & p_manual["_cargo_key"].eq(off["_cargo_key"])
+            & p_manual["_turno_key"].eq(off["_turno_key"])
+        )
+        cand = p_manual[base_escopo].copy()
+        if cand.empty:
+            continue
+
+        # Regra 1: match forte por registro TSE
+        if bool(off.get("_registro_ok")):
+            cand_reg = cand[
+                cand["_registro_ok"] & cand["_registro_key"].eq(off["_registro_key"])
+            ].copy()
+            if not cand_reg.empty:
+                for _, man in cand_reg.iterrows():
+                    man_poll_id = _norm_ws(man.get("poll_id", ""))
+                    if not man_poll_id or man_poll_id in remover_poll_ids:
+                        continue
+                    remover_poll_ids.add(man_poll_id)
+                    detalhes.append({
+                        "poll_id_manual_removido": man_poll_id,
+                        "poll_id_oficial": off_poll_id,
+                        "regra_match": "registro_tse_igual",
+                        "itens_em_comum": "",
+                        "mae_percentual": "",
+                        "dif_dias_data_campo": "",
+                    })
+                continue
+
+        # Regra 2: fallback por instituto + data próxima + similaridade
+        cand_fb = cand[cand["_inst_key"].eq(off["_inst_key"])].copy()
+        if cand_fb.empty:
+            continue
+
+        data_off = off.get("_data_dt")
+        if data_off is not None:
+            cand_fb["_dif_dias"] = cand_fb["_data_dt"].apply(
+                lambda d: abs((d - data_off).days) if d is not None else None
+            )
+            cand_fb = cand_fb[
+                cand_fb["_dif_dias"].notna() & cand_fb["_dif_dias"].le(janela_dias_fallback)
+            ].copy()
+        else:
+            cand_fb["_dif_dias"] = None
+
+        if cand_fb.empty:
+            continue
+
+        assinatura_off = assinatura_oficial(off_poll_id)
+        melhor = None
+        for _, man in cand_fb.iterrows():
+            man_poll_id = _norm_ws(man.get("poll_id", ""))
+            if not man_poll_id or man_poll_id in remover_poll_ids:
+                continue
+            assinatura_man = assinatura_manual(man_poll_id)
+            itens_comuns, mae = _avaliar_similaridade_polls(assinatura_man, assinatura_off)
+            if itens_comuns == 0 or mae is None:
+                continue
+            if mae > mae_max_fallback:
+                continue
+
+            cand_item = {
+                "man_poll_id": man_poll_id,
+                "itens_comuns": itens_comuns,
+                "mae": mae,
+                "dif_dias": man.get("_dif_dias"),
+            }
+            if melhor is None:
+                melhor = cand_item
+            else:
+                # prioriza menor erro; empate: mais itens comuns
+                if (cand_item["mae"] < melhor["mae"]) or (
+                    cand_item["mae"] == melhor["mae"] and cand_item["itens_comuns"] > melhor["itens_comuns"]
+                ):
+                    melhor = cand_item
+
+        if melhor is not None:
+            remover_poll_ids.add(melhor["man_poll_id"])
+            detalhes.append({
+                "poll_id_manual_removido": melhor["man_poll_id"],
+                "poll_id_oficial": off_poll_id,
+                "regra_match": "fallback_instituto_data_similaridade",
+                "itens_em_comum": melhor["itens_comuns"],
+                "mae_percentual": round(melhor["mae"], 3),
+                "dif_dias_data_campo": int(melhor["dif_dias"]) if pd.notna(melhor["dif_dias"]) else "",
+            })
+
+    if not remover_poll_ids:
+        return df_p_existente, df_r_existente, pd.DataFrame()
+
+    p_limpo = df_p_existente[~df_p_existente["poll_id"].astype(str).str.strip().isin(remover_poll_ids)].copy()
+    r_limpo = df_r_existente[~df_r_existente["poll_id"].astype(str).str.strip().isin(remover_poll_ids)].copy()
+    df_det = pd.DataFrame(detalhes).drop_duplicates().reset_index(drop=True)
+    return p_limpo, r_limpo, df_det
+
+
+def append_log_resultados_manual(gc, spreadsheet_id: str, df_log: pd.DataFrame, aba_nome: str = "resultados_manual") -> int:
+    """
+    Registra histórico manual em aba append-only.
+    Não interfere nas abas operacionais (`pesquisas`, `resultados`, `resultados_bi`).
+    """
+    if df_log is None or df_log.empty:
+        return 0
+
+    sh = gc.open_by_key(spreadsheet_id)
+    aba = garantir_aba(sh, aba_nome, rows=50000, cols=50)
+
+    values = aba.get_all_values()
+    header_novo = df_log.columns.tolist()
+
+    if _aba_vazia(values):
+        aba.clear()
+        aba.update([header_novo])
+        header_final = header_novo
+    else:
+        header_atual = values[0]
+        cols_novas = [c for c in header_novo if c not in header_atual]
+        header_final = header_atual + cols_novas
+        if header_final != header_atual:
+            aba.update([header_final], range_name="A1")
+            print(f"  [schema:{aba_nome}] {len(cols_novas)} coluna(s) nova(s): {cols_novas}")
+
+    df_export = (
+        df_log.reindex(columns=header_final, fill_value="")
+        .astype(object)
+        .where(pd.notna(df_log.reindex(columns=header_final, fill_value="")), "")
+        .astype(str)
+    )
+
+    aba.append_rows(df_export.values.tolist(), value_input_option="USER_ENTERED")
+    print(f"  [append:{aba_nome}] {len(df_export)} linha(s) adicionadas")
+    return len(df_export)
+
+
 def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame):
     if (df_p is None or df_p.empty) and (df_r is None or df_r.empty):
         print("[-] nada para salvar")
@@ -1706,6 +1996,36 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
     aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=35)
     aba_resultados = garantir_aba(sh, "resultados", rows=20000, cols=35)
     aba_resultados_bi = garantir_aba(sh, "resultados_bi", rows=20000, cols=40)
+
+    # Reconciliação automática: quando entra dado oficial, remove duplicata manual equivalente.
+    if df_p is not None and not df_p.empty:
+        df_p_chk = df_p.copy()
+        if "conferida" not in df_p_chk.columns:
+            df_p_chk["conferida"] = ""
+        tem_linha_oficial_entrante = (~df_p_chk["conferida"].apply(_eh_linha_manual)).any()
+
+        if tem_linha_oficial_entrante:
+            df_p_existente = carregar_df_da_aba(aba_pesquisas)
+            df_r_existente = carregar_df_da_aba(aba_resultados)
+            df_p_limpo, df_r_limpo, df_recon = reconciliar_manuais_com_oficiais(
+                df_p_existente=df_p_existente,
+                df_r_existente=df_r_existente,
+                df_p_novo=df_p,
+                df_r_novo=df_r if df_r is not None else pd.DataFrame(),
+            )
+            if not df_recon.empty:
+                sobrescrever_aba(aba_pesquisas, df_p_limpo)
+                sobrescrever_aba(aba_resultados, df_r_limpo)
+                print(
+                    "[reconciliacao] removidas "
+                    f"{len(df_recon)} pesquisa(s) manual(is) substituída(s) por entrada oficial"
+                )
+                for _, row in df_recon.iterrows():
+                    print(
+                        "  - manual: "
+                        f"{row.get('poll_id_manual_removido', '')} -> oficial: {row.get('poll_id_oficial', '')} "
+                        f"[{row.get('regra_match', '')}]"
+                    )
 
     if df_p is not None and not df_p.empty:
         novos, exist = dedup_e_salvar(aba_pesquisas, df_p, key_col="scenario_id")
