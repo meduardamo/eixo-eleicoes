@@ -337,7 +337,7 @@ def parse_url_meta(url: str):
         }
 
     m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)|(?P<turno2>t\d)/?$)",
+        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)(?:\.html)?$|(?P<turno2>t\d)/?$)",
         u, re.I
     )
     if m:
@@ -465,7 +465,7 @@ def obter_spreadsheet_id():
 
 def urls_presidente_2026_t1(ufs):
     return [
-        f"https://www.pollingdata.com.br/2026/presidente/{uf}/t1/"
+        f"https://www.pollingdata.com.br/2026/presidente/{uf}/2026_presidente_{uf}_t1.html"
         for uf in ufs
     ]
 
