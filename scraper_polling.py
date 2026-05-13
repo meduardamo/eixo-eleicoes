@@ -337,15 +337,16 @@ def parse_url_meta(url: str):
         }
 
     m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>br)/\d{4}_presidente_br_(?P<turno>t\d)",
+        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)|(?P<turno2>t\d)/?$)",
         u, re.I
     )
     if m:
+        turno = m.group("turno") or m.group("turno2")
         return {
             "ano": int(m.group("ano")),
             "cargo": "presidente",
-            "uf": "BR",
-            "turno": m.group("turno").lower()
+            "uf": m.group("uf").upper(),
+            "turno": turno.lower()
         }
 
     m = re.search(
@@ -462,6 +463,13 @@ def obter_spreadsheet_id():
     raise RuntimeError("SPREADSHEET_ID_POLLINGDATA não definido.")
 
 
+def urls_presidente_2026_t1(ufs):
+    return [
+        f"https://www.pollingdata.com.br/2026/presidente/{uf}/t1/"
+        for uf in ufs
+    ]
+
+
 def urls_governador_2026_t1(ufs):
     return [
         f"https://www.pollingdata.com.br/2026/governador/{uf}/2026_governador_{uf}_t1.html"
@@ -487,6 +495,7 @@ def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presiden
 
     if incluir_presidente:
         urls += list(PRESIDENTE_URLS_DEFAULT)
+        urls += urls_presidente_2026_t1(UFS)
 
     return urls
 
