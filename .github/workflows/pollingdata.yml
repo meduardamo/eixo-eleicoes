@@ -1,16 +1,17 @@
 name: pollingdata-daily
+
 on:
   workflow_dispatch:
   schedule:
     # GitHub Actions roda em UTC.
-    # Horários em Recife (UTC-3): 08:23, 14:47 e 20:12.
-    - cron: "23 11 * * *"
-    - cron: "47 17 * * *"
-    - cron: "12 23 * * *"
+    # Horários em Recife (UTC-3): 08:00, 14:00 e 23:00.
+    - cron: "0 2,11,17 * * *"
+
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+
     env:
       TZ: "America/Recife"
       INCLUIR_GOVERNADOR: "true"
@@ -18,17 +19,21 @@ jobs:
       INCLUIR_PRESIDENTE: "true"
       SPREADSHEET_ID_POLLINGDATA: ${{ secrets.SPREADSHEET_ID_POLLINGDATA }}
       GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run scraper
         run: |
           python scraper_polling.py
