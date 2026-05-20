@@ -6,6 +6,7 @@ import hashlib
 import unicodedata
 from datetime import datetime
 import zoneinfo
+import numpy as np
 import pandas as pd
 import gspread
 from gspread import Cell
@@ -247,6 +248,70 @@ METODOLOGIA_INSTITUTOS = {
     "American Analytics": "Pesquisa quantitativa, com coleta, organização e análise de dados para suporte à tomada de decisão estratégica.",
     "Datasonda": "Pesquisa quantitativa, por amostragem por cotas representativas do eleitorado (gênero, faixa etária, escolaridade, renda e bairros).",
     "Delta Agência de Pesquisa": "Pesquisa quantitativa, por amostragem por cotas, com entrevistas presenciais face a face e aplicação de questionário estruturado por entrevistadores treinados.",
+}
+
+# Score numérico por classificação — usado como peso na média ponderada
+SCORE_MAP = {
+    'A+': 1.00, 'A': 0.85, 'A-': 0.70,
+    'B+': 0.55, 'B': 0.50, 'B-': 0.40,
+    'C+': 0.30, 'C': 0.20, 'C-': 0.10,
+    'Ainda não foi avaliado': 0.25,
+}
+
+# Método de coleta por instituto — usado para desagregação no BI
+METODO_GRUPO = {
+    # Online
+    'AtlasIntel': 'Online',
+    # Presencial
+    'Datafolha': 'Presencial',
+    'Quaest': 'Presencial',
+    'Nexus': 'Presencial',
+    'DMP': 'Presencial',
+    'Instituto Econométrica': 'Presencial',
+    '6 Sigma': 'Presencial',
+    'Colectta Consultoria': 'Presencial',
+    'Instituto França': 'Presencial',
+    'Instituto Vope': 'Presencial',
+    'Vox Opinião Pública (SP)': 'Presencial',
+    'Ágora Pesquisa (RJ)': 'Presencial',
+    'Exata Pesquisa (MA)': 'Presencial',
+    'Instituto Datailha': 'Presencial',
+    'Instituto Seta': 'Presencial',
+    'Tendência Pesquisa (SC)': 'Presencial',
+    'Sensus': 'Presencial',
+    'Doxa': 'Presencial',
+    'Instituto Gasparetto de Pesquisas': 'Presencial',
+    'MDA': 'Presencial',
+    'Ranking Pesquisa': 'Presencial',
+    'Delta Agência de Pesquisa': 'Presencial',
+    'Datasonda': 'Presencial',
+    'EPP': 'Presencial',
+    'Vox Populi': 'Presencial',
+    'Pontual Pesquisas (AM)': 'Presencial',
+    'Jornal Girassol': 'Presencial',
+    'Jornal Stylo': 'Presencial',
+    'Gazeta Dados': 'Presencial',
+    # Telefônica
+    'Paraná Pesquisas': 'Telefônica',
+    'Real Time Big Data': 'Telefônica',
+    'Futura': 'Telefônica',
+    'Ideia Inteligência': 'Telefônica',
+    'GERP': 'Telefônica',
+    'Gerp': 'Telefônica',
+    'Ibope': 'Telefônica',
+    'Brand Consultoria': 'Telefônica',
+    'Voice Pesquisas (MT)': 'Telefônica',
+    'IRG Consultoria': 'Telefônica',
+    'F5 Atualiza Dados': 'Telefônica',
+    'Instituto de Pesquisa Resultado (MS)': 'Telefônica',
+    'Ideia Big Data': 'Telefônica',
+    'FSB Pesquisa': 'Telefônica',
+    'MBO': 'Telefônica',
+    'Ipespe': 'Telefônica',
+    'IPESPE': 'Telefônica',
+    'Consult Pesquisa (RN)': 'Telefônica',
+    'Badra Comunicação': 'Telefônica',
+    'MAS Opinião': 'Telefônica',
 }
 
 
@@ -1472,6 +1537,8 @@ def deduplicar_resultados_bi_preferindo_cenario_media(df: pd.DataFrame) -> pd.Da
 def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
     """
     Agrega a base de BI no grão diário antes do cálculo da média móvel.
+    Usa média ponderada pelo score do instituto (SCORE_MAP).
+    Inclui desvio padrão, mínimo e máximo do dia e desagregação por método.
     """
     if df.empty:
         return df
@@ -1486,7 +1553,7 @@ def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
         "ano", "uf", "cargo", "turno", "data_campo", "tipo", "candidato",
         "partido", "candidato_partido", "instituto", "classificacao_instituto",
         "registro_tse", "origem_percentual_base", "cenario_usado_no_calculo",
-        "fonte_url", "poll_id", "horario_raspagem"
+        "fonte_url", "poll_id", "horario_raspagem", "metodo_coleta"
     ]:
         if col not in df.columns:
             df[col] = ""
@@ -1498,6 +1565,9 @@ def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
         .map(lambda x: prioridade_origem.get(x, 9))
     )
 
+    # Score numérico para ponderação
+    df["_score"] = df["classificacao_instituto"].map(SCORE_MAP).fillna(0.25)
+
     dims = [
         "ano", "uf", "cargo", "turno", "data_campo", "tipo",
         "candidato", "partido", "candidato_partido"
@@ -1507,22 +1577,38 @@ def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
         valores = sorted({_norm_ws(v) for v in series if _norm_ws(v)})
         return " | ".join(valores)
 
+    def media_ponderada_grupo(grupo):
+        pesos = grupo["_score"]
+        if pesos.sum() == 0:
+            return grupo["percentual_base"].mean()
+        return float(np.average(grupo["percentual_base"], weights=pesos))
+
     df = df.sort_values(
         by=dims + ["_prioridade_origem_bi", "poll_id"],
         ascending=[True] * len(dims) + [True, True],
         na_position="last",
     )
 
+    # Média ponderada calculada separadamente e depois mesclada
+    pct_ponderado = (
+        df.groupby(dims, dropna=False)
+        .apply(media_ponderada_grupo)
+        .reset_index(name="percentual_base")
+    )
+
     df_diario = (
         df.groupby(dims, dropna=False)
         .agg(
-            percentual_base=("percentual_base", "mean"),
+            desvio_padrao_dia=("percentual_base", "std"),
+            minimo_dia=("percentual_base", "min"),
+            maximo_dia=("percentual_base", "max"),
             qtd_pesquisas_dia=("poll_id", "nunique"),
             qtd_cenarios_considerados=("qtd_cenarios_considerados", "sum"),
             origem_percentual_base=("origem_percentual_base", "first"),
             cenario_usado_no_calculo=("cenario_usado_no_calculo", "first"),
             institutos_no_dia=("instituto", juntar_unicos),
             classificacoes_instituto_no_dia=("classificacao_instituto", juntar_unicos),
+            metodos_no_dia=("metodo_coleta", juntar_unicos),
             registros_tse_no_dia=("registro_tse", juntar_unicos),
             fontes_no_dia=("fonte_url", juntar_unicos),
             poll_ids_agregados=("poll_id", juntar_unicos),
@@ -1530,6 +1616,8 @@ def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
         )
         .reset_index()
     )
+
+    df_diario = df_diario.merge(pct_ponderado, on=dims, how="left")
 
     return df_diario
 
@@ -1542,13 +1630,14 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     """
     cols = [
         "ano", "uf", "cargo", "turno", "data_campo", "candidato", "partido",
-        "candidato_partido", "tipo", "percentual_base", "qtd_pesquisas_dia",
+        "candidato_partido", "tipo", "percentual_base", "desvio_padrao_dia",
+        "minimo_dia", "maximo_dia", "qtd_pesquisas_dia",
         "qtd_cenarios_considerados",
         "origem_percentual_base", "cenario_usado_no_calculo",
         "media_movel_13d", "posicao_candidato", "eh_lider", "eh_segundo",
         "institutos_no_dia", "classificacoes_instituto_no_dia",
-        "registros_tse_no_dia", "poll_ids_agregados", "fontes_no_dia",
-        "horario_raspagem"
+        "metodos_no_dia", "registros_tse_no_dia", "poll_ids_agregados",
+        "fontes_no_dia", "horario_raspagem"
     ]
 
     if df_resultados is None or df_resultados.empty:
@@ -1613,6 +1702,7 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     ] = "media_calculada_no_codigo"
 
     df_candidatos = df_base[df_base["tipo"].astype(str).str.lower().eq("candidato")].copy()
+    df_candidatos["metodo_coleta"] = df_candidatos["instituto"].map(METODO_GRUPO).fillna("Não especificado")
     df_candidatos = deduplicar_resultados_bi_preferindo_cenario_media(df_candidatos)
     df_candidatos = agregar_resultados_bi_diario(df_candidatos)
 
@@ -2065,6 +2155,9 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
     corrigir_coluna_numerica_na_aba(aba_resultados, "percentual_media_cenarios")
     corrigir_coluna_numerica_na_aba(aba_resultados_bi, "percentual_base")
     corrigir_coluna_numerica_na_aba(aba_resultados_bi, "media_movel_13d")
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "desvio_padrao_dia")
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "minimo_dia")
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "maximo_dia")
 
 
 def main():
