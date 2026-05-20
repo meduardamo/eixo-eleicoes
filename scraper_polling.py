@@ -1701,11 +1701,6 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     df_candidatos = df_base[df_base["tipo"].astype(str).str.lower().eq("candidato")].copy()
     df_candidatos["metodo_coleta"] = df_candidatos["instituto"].map(METODO_GRUPO).fillna("Não especificado")
 
-    # Filtro 2026 — média móvel calculada apenas com dados do ano eleitoral
-    df_candidatos = df_candidatos[
-        df_candidatos["data_campo"].astype(str).str.startswith("2026")
-    ].copy()
-
     df_candidatos = deduplicar_resultados_bi_preferindo_cenario_media(df_candidatos)
     df_candidatos = agregar_resultados_bi_diario(df_candidatos)
 
