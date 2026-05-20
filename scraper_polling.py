@@ -1592,7 +1592,7 @@ def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
     # Média ponderada calculada separadamente e depois mesclada
     pct_ponderado = (
         df.groupby(dims, dropna=False)
-        .apply(media_ponderada_grupo)
+        .apply(media_ponderada_grupo, include_groups=False)
         .reset_index(name="percentual_base")
     )
 
@@ -1629,15 +1629,12 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     agrega por dia e só então calcula a média móvel.
     """
     cols = [
-        "ano", "uf", "cargo", "turno", "data_campo", "candidato", "partido",
-        "candidato_partido", "tipo", "percentual_base", "desvio_padrao_dia",
-        "minimo_dia", "maximo_dia", "qtd_pesquisas_dia",
-        "qtd_cenarios_considerados",
-        "origem_percentual_base", "cenario_usado_no_calculo",
-        "media_movel_13d", "posicao_candidato", "eh_lider", "eh_segundo",
-        "institutos_no_dia", "classificacoes_instituto_no_dia",
-        "metodos_no_dia", "registros_tse_no_dia", "poll_ids_agregados",
-        "fontes_no_dia", "horario_raspagem"
+        "uf", "cargo", "turno", "data_campo", "candidato_partido",
+        "percentual_base", "desvio_padrao_dia", "minimo_dia", "maximo_dia",
+        "qtd_pesquisas_dia", "cenario_usado_no_calculo",
+        "media_movel_13d", "eh_lider", "eh_segundo",
+        "institutos_no_dia", "classificacoes_instituto_no_dia", "metodos_no_dia",
+        "fontes_no_dia",
     ]
 
     if df_resultados is None or df_resultados.empty:
@@ -1703,10 +1700,16 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
 
     df_candidatos = df_base[df_base["tipo"].astype(str).str.lower().eq("candidato")].copy()
     df_candidatos["metodo_coleta"] = df_candidatos["instituto"].map(METODO_GRUPO).fillna("Não especificado")
+
+    # Filtro 2026 — média móvel calculada apenas com dados do ano eleitoral
+    df_candidatos = df_candidatos[
+        df_candidatos["data_campo"].astype(str).str.startswith("2026")
+    ].copy()
+
     df_candidatos = deduplicar_resultados_bi_preferindo_cenario_media(df_candidatos)
     df_candidatos = agregar_resultados_bi_diario(df_candidatos)
 
-    chaves_posicao = ["ano", "uf", "cargo", "turno", "data_campo"]
+    chaves_posicao = ["uf", "cargo", "turno", "data_campo"]
     df_candidatos["posicao_candidato"] = (
         df_candidatos.groupby(chaves_posicao)["percentual_base"]
         .rank(method="min", ascending=False)
@@ -1722,8 +1725,8 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
 
     df_candidatos = df_candidatos[cols].copy()
     df_candidatos = df_candidatos.sort_values(
-        by=["cargo", "uf", "turno", "data_campo", "posicao_candidato", "candidato_partido"],
-        ascending=[True, True, True, False, True, True],
+        by=["cargo", "uf", "turno", "data_campo", "candidato_partido"],
+        ascending=[True, True, True, False, True],
         na_position="last",
     ).reset_index(drop=True)
 
