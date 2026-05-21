@@ -255,9 +255,17 @@ METODOLOGIA_INSTITUTOS = {
 # é o nome alternativo, o valor é o nome canônico que deve aparecer na planilha
 # e ser usado para classificação/metodologia.
 ALIASES_INSTITUTO = {
+    # Quaest em parcerias
     "Genial/Quaest": "Quaest",
     "Quaest/Genial": "Quaest",
     "Genial Quaest": "Quaest",
+    # GERP — METODOLOGIA_INSTITUTOS já usa caixa alta
+    "Gerp": "GERP",
+    "gerp": "GERP",
+    # Datamax — maioria dos registros sem espaço
+    "Data Max": "Datamax",
+    "DataMax": "Datamax",
+    "data max": "Datamax",
 }
 
 
