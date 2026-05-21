@@ -254,6 +254,32 @@ def classificar_instituto(nome):
     return CLASSIFICACAO_INSTITUTOS.get(_norm_ws(nome), "Ainda não foi avaliado")
 
 
+# Score de confiabilidade por classificação, conforme nota metodológica
+# "Cálculo da Média das Pesquisas Presidenciais 2026". B (sem + ou -) usa o
+# ponto médio entre B+ e B- (0,475) para preservar a ordinalidade da escala.
+SCORE_INSTITUTO = {
+    "A+": 1.00,
+    "A":  0.85,
+    "A-": 0.70,
+    "B+": 0.55,
+    "B":  0.475,
+    "B-": 0.40,
+    "C+": 0.30,
+    "C":  0.20,
+    "C-": 0.10,
+    "Ainda não foi avaliado": 0.25,
+}
+
+
+def score_instituto(classificacao) -> float:
+    """Retorna o peso (0–1) de uma classificação de instituto.
+
+    Classificações desconhecidas (ou vazias) caem no mesmo score de
+    "Ainda não foi avaliado" (0,25) — valor conservador da nota metodológica.
+    """
+    return SCORE_INSTITUTO.get(_norm_ws(classificacao), 0.25)
+
+
 def obter_metodologia(nome):
     return METODOLOGIA_INSTITUTOS.get(_norm_ws(nome), "")
 
@@ -1211,6 +1237,15 @@ def carregar_df_da_aba(aba) -> pd.DataFrame:
 def sobrescrever_aba(aba, df: pd.DataFrame):
     df = reordenar_metodologia_para_ultima_coluna(df)
     aba.clear()
+    n_cols_schema = max(1, len(df.columns))
+    n_rows_desejado = max(2, len(df) + 1)  # +1 do header, mínimo 2 para não rejeitar
+
+    try:
+        if aba.col_count != n_cols_schema or aba.row_count > max(n_rows_desejado, 100):
+            aba.resize(rows=n_rows_desejado, cols=n_cols_schema)
+    except Exception as e:
+        print(f"  [rewrite] não foi possível redimensionar '{aba.title}': {e}")
+
     if df.empty:
         aba.update([df.columns.tolist()])
         print(f"  [rewrite] aba '{aba.title}' limpa e mantido apenas header")
@@ -1218,7 +1253,7 @@ def sobrescrever_aba(aba, df: pd.DataFrame):
 
     df_export = df.astype(object).where(pd.notna(df), "")
     aba.update([df.columns.tolist()] + df_export.astype(str).values.tolist())
-    print(f"  [rewrite] aba '{aba.title}' regravada com {len(df)} linhas")
+    print(f"  [rewrite] aba '{aba.title}' regravada com {len(df)} linhas × {n_cols_schema} colunas")
 
 
 def corrigir_coluna_numerica_na_aba(aba, nome_coluna: str, padrao: str = "0.0"):
@@ -1286,6 +1321,11 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     Expande cada série para o grão diário e calcula uma média móvel de 13 dias
     por candidato em cada combinação de ano/cargo/uf/turno/tipo/candidato_partido.
 
+    A média móvel é **ponderada pelo score do instituto**: para cada janela de
+    13 dias, mm = Σ(pct_dia × peso_total_dia) / Σ(peso_total_dia). Quando
+    peso_total_dia não está disponível (ex.: dados antigos), cai para média
+    aritmética simples para preservar compatibilidade.
+
     Nos dias sem pesquisa, percentual_base e demais métricas diárias permanecem
     vazios, mas media_movel_13d continua preenchida para permitir linha contínua
     no BI.
@@ -1300,6 +1340,9 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
 
     if "data_campo" not in df.columns or "percentual_base" not in df.columns:
         return df
+
+    if "peso_total_dia" not in df.columns:
+        df["peso_total_dia"] = pd.NA
 
     for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato", "partido", "candidato_partido"]:
         if col not in df.columns:
@@ -1324,6 +1367,10 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     df["_data_campo_dt"] = pd.to_datetime(df["data_campo"], errors="coerce")
     df["_percentual_base_num"] = pd.to_numeric(
         df["percentual_base"].astype(str).str.replace(",", ".", regex=False),
+        errors="coerce",
+    )
+    df["_peso_total_dia_num"] = pd.to_numeric(
+        df["peso_total_dia"].astype(str).str.replace(",", ".", regex=False),
         errors="coerce",
     )
 
@@ -1360,13 +1407,29 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
         faixa_datas = pd.date_range(datas_validas.iloc[0], data_final_escopo, freq="D")
         base_datas = pd.DataFrame({"_data_campo_dt": faixa_datas})
 
-        media_diaria = (
-            grupo.groupby("_data_campo_dt")["_percentual_base_num"]
-            .mean()
-            .reindex(faixa_datas)
+        # Ponderação por score do instituto: na janela rolling de 13 dias,
+        # mm = Σ(pct_dia × peso_dia) / Σ(peso_dia). Se peso_total_dia não
+        # estiver disponível para uma linha (NaN ou 0), assumimos peso 1
+        # — fallback para média aritmética simples, preservando compatibilidade
+        # com séries antigas que ainda não tinham peso_total_dia.
+        grupo_diario = (
+            grupo.groupby("_data_campo_dt")
+            .agg(
+                _pct=("_percentual_base_num", "mean"),
+                _peso=("_peso_total_dia_num", "sum"),
+            )
         )
-        media_diaria.index = pd.to_datetime(media_diaria.index, utc=True).tz_localize(None)
-        mm_diaria = media_diaria.rolling(window="13D", min_periods=1).mean()
+        peso_vazio = grupo_diario["_peso"].isna() | grupo_diario["_peso"].eq(0)
+        grupo_diario.loc[peso_vazio & grupo_diario["_pct"].notna(), "_peso"] = 1.0
+
+        num = (grupo_diario["_pct"] * grupo_diario["_peso"]).reindex(faixa_datas, fill_value=0.0)
+        den = grupo_diario["_peso"].reindex(faixa_datas, fill_value=0.0)
+        num.index = pd.to_datetime(num.index, utc=True).tz_localize(None)
+        den.index = pd.to_datetime(den.index, utc=True).tz_localize(None)
+
+        roll_num = num.rolling(window="13D", min_periods=1).sum()
+        roll_den = den.rolling(window="13D", min_periods=1).sum()
+        mm_diaria = roll_num / roll_den.where(roll_den > 0, other=pd.NA)
 
         grupo_merge = (
             grupo.drop(columns=["media_movel_13d"], errors="ignore")
@@ -1388,7 +1451,10 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     if not df_sem_serie.empty:
         frames_concat.append(df_sem_serie)
     df_expandido = pd.concat(frames_concat, ignore_index=True, sort=False) if frames_concat else df.copy()
-    return df_expandido.drop(columns=["_data_campo_dt", "_percentual_base_num"], errors="ignore")
+    return df_expandido.drop(
+        columns=["_data_campo_dt", "_percentual_base_num", "_peso_total_dia_num"],
+        errors="ignore",
+    )
 
 
 def deduplicar_resultados_bi_preferindo_cenario_media(df: pd.DataFrame) -> pd.DataFrame:
@@ -1472,6 +1538,12 @@ def deduplicar_resultados_bi_preferindo_cenario_media(df: pd.DataFrame) -> pd.Da
 def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
     """
     Agrega a base de BI no grão diário antes do cálculo da média móvel.
+
+    A média diária por candidato é **ponderada pelo score do instituto**
+    (ver SCORE_INSTITUTO). Cada pesquisa contribui com uma observação
+    (já consolidada por cenário em adicionar_metricas_media_cenarios)
+    multiplicada pelo seu peso. Também devolve peso_total_dia
+    (Σ w_i no dia), usado depois pela média móvel ponderada.
     """
     if df.empty:
         return df
@@ -1498,6 +1570,13 @@ def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
         .map(lambda x: prioridade_origem.get(x, 9))
     )
 
+    df["_peso"] = df["classificacao_instituto"].apply(score_instituto).astype(float)
+    df["_pct_num"] = pd.to_numeric(df["percentual_base"], errors="coerce")
+    df["_pct_x_peso"] = df["_pct_num"] * df["_peso"]
+    # Linhas sem percentual válido não devem entrar no denominador
+    df.loc[df["_pct_num"].isna(), "_peso"] = 0.0
+    df["_pct_x_peso"] = df["_pct_x_peso"].fillna(0.0)
+
     dims = [
         "ano", "uf", "cargo", "turno", "data_campo", "tipo",
         "candidato", "partido", "candidato_partido"
@@ -1516,7 +1595,8 @@ def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
     df_diario = (
         df.groupby(dims, dropna=False)
         .agg(
-            percentual_base=("percentual_base", "mean"),
+            _peso_total=("_peso", "sum"),
+            _pct_x_peso_sum=("_pct_x_peso", "sum"),
             qtd_pesquisas_dia=("poll_id", "nunique"),
             qtd_cenarios_considerados=("qtd_cenarios_considerados", "sum"),
             origem_percentual_base=("origem_percentual_base", "first"),
@@ -1531,7 +1611,16 @@ def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
 
-    return df_diario
+    peso_total = df_diario["_peso_total"].astype(float)
+    df_diario["percentual_base"] = (
+        df_diario["_pct_x_peso_sum"] / peso_total.where(peso_total > 0, other=pd.NA)
+    )
+    df_diario["peso_total_dia"] = peso_total.round(4)
+    df_diario["score_medio_dia"] = (
+        peso_total / df_diario["qtd_pesquisas_dia"].replace(0, pd.NA)
+    ).round(4)
+
+    return df_diario.drop(columns=["_peso_total", "_pct_x_peso_sum"])
 
 
 def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
@@ -1540,15 +1629,17 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     Primeiro consolida cada pesquisa usando a média dos cenários; depois
     agrega por dia e só então calcula a média móvel.
     """
+    # Apenas colunas consumidas pelo painel Streamlit. Para auditoria detalhada
+    # (poll_ids, registros TSE, fontes, peso de cada dia, origem do cálculo)
+    # consulte a aba `resultados`, que mantém o grão por scenario_id.
     cols = [
-        "ano", "uf", "cargo", "turno", "data_campo", "candidato", "partido",
-        "candidato_partido", "tipo", "percentual_base", "qtd_pesquisas_dia",
-        "qtd_cenarios_considerados",
-        "origem_percentual_base", "cenario_usado_no_calculo",
-        "media_movel_13d", "posicao_candidato", "eh_lider", "eh_segundo",
+        "ano", "uf", "cargo", "turno", "data_campo",
+        "candidato", "partido", "candidato_partido", "tipo",
+        "percentual_base", "media_movel_13d",
+        "qtd_pesquisas_dia",
+        "cenario_usado_no_calculo",
+        "eh_lider", "eh_segundo",
         "institutos_no_dia", "classificacoes_instituto_no_dia",
-        "registros_tse_no_dia", "poll_ids_agregados", "fontes_no_dia",
-        "horario_raspagem"
     ]
 
     if df_resultados is None or df_resultados.empty:
@@ -1631,9 +1722,11 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
             df_candidatos[col] = ""
 
     df_candidatos = df_candidatos[cols].copy()
+    # Ordenação por percentual_base desc é equivalente a ordenar por posicao_candidato asc
+    # (líder vem primeiro), e permite remover posicao_candidato do schema exportado.
     df_candidatos = df_candidatos.sort_values(
-        by=["cargo", "uf", "turno", "data_campo", "posicao_candidato", "candidato_partido"],
-        ascending=[True, True, True, False, True, True],
+        by=["cargo", "uf", "turno", "data_campo", "percentual_base", "candidato_partido"],
+        ascending=[True, True, True, False, False, True],
         na_position="last",
     ).reset_index(drop=True)
 
