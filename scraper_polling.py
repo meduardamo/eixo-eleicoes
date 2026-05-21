@@ -250,8 +250,26 @@ METODOLOGIA_INSTITUTOS = {
 }
 
 
+# Aliases de instituto: nomes alternativos que devem ser tratados como o
+# instituto canônico (ex.: pesquisas em parceria, grafias variantes). A chave
+# é o nome alternativo, o valor é o nome canônico que deve aparecer na planilha
+# e ser usado para classificação/metodologia.
+ALIASES_INSTITUTO = {
+    "Genial/Quaest": "Quaest",
+    "Quaest/Genial": "Quaest",
+    "Genial Quaest": "Quaest",
+}
+
+
+def normalizar_instituto(nome) -> str:
+    """Resolve um nome de instituto via tabela de aliases. Se não houver alias,
+    retorna o nome original (com espaços normalizados)."""
+    nome_norm = _norm_ws(nome)
+    return ALIASES_INSTITUTO.get(nome_norm, nome_norm)
+
+
 def classificar_instituto(nome):
-    return CLASSIFICACAO_INSTITUTOS.get(_norm_ws(nome), "Ainda não foi avaliado")
+    return CLASSIFICACAO_INSTITUTOS.get(normalizar_instituto(nome), "Ainda não foi avaliado")
 
 
 # Score de confiabilidade por classificação, conforme nota metodológica
@@ -281,7 +299,7 @@ def score_instituto(classificacao) -> float:
 
 
 def obter_metodologia(nome):
-    return METODOLOGIA_INSTITUTOS.get(_norm_ws(nome), "")
+    return METODOLOGIA_INSTITUTOS.get(normalizar_instituto(nome), "")
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -625,7 +643,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
     resultados_rows = []
 
     for i in range(len(institutos)):
-        instituto = _norm_ws(institutos[i])
+        instituto = normalizar_instituto(institutos[i])
         link_fonte = _norm_ws(urls_fonte[i]) if i < len(urls_fonte) else ""
         modo = _norm_ws(_strip_html(modos[i])) if i < len(modos) else ""
         amostra_raw = entrevistas[i] if i < len(entrevistas) else None
@@ -852,7 +870,7 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
     resultados_rows = []
 
     for _, row in df_raw.iterrows():
-        instituto = _norm_ws(row.get("instituto", ""))
+        instituto = normalizar_instituto(row.get("instituto", ""))
         registro_tse = _norm_ws(row.get("registro_tse", ""))
         data_campo = _norm_ws(row.get("data_campo", ""))
         modo = _norm_ws(row.get("Modo Pesquisa", ""))
@@ -2084,6 +2102,50 @@ def append_log_resultados_manual(gc, spreadsheet_id: str, df_log: pd.DataFrame, 
     return len(df_export)
 
 
+def normalizar_institutos_retroativo(aba_pesquisas, aba_resultados):
+    """Aplica ALIASES_INSTITUTO em entradas já gravadas. Idempotente: se a
+    planilha já está normalizada, não toca em nada.
+
+    Para pesquisas: também recomputa classificacao_instituto e metodologia
+    quando o instituto canônico tem entrada nos dicts estáticos.
+    """
+    def _aplicar(df: pd.DataFrame, recomputar_classif_e_metod: bool) -> tuple[pd.DataFrame, int]:
+        if df.empty or "instituto" not in df.columns:
+            return df, 0
+        df = df.copy()
+        original = df["instituto"].astype(str)
+        novo = original.apply(normalizar_instituto)
+        mudou = (original != novo)
+        if not mudou.any():
+            return df, 0
+        df["instituto"] = novo
+        if recomputar_classif_e_metod:
+            if "classificacao_instituto" in df.columns:
+                df.loc[mudou, "classificacao_instituto"] = df.loc[mudou, "instituto"].apply(classificar_instituto)
+            if "metodologia" in df.columns:
+                # só sobrescreve quando o canônico tem metodologia conhecida;
+                # caso contrário mantém o texto anterior (pode ser texto livre do polling manual)
+                def _metod_se_conhecida(inst):
+                    m = obter_metodologia(inst)
+                    return m if m else None
+                metod_nova = df.loc[mudou, "instituto"].apply(_metod_se_conhecida)
+                idx_validos = metod_nova.dropna().index
+                df.loc[idx_validos, "metodologia"] = metod_nova.loc[idx_validos]
+        return df, int(mudou.sum())
+
+    df_p_existente = carregar_df_da_aba(aba_pesquisas)
+    df_p_norm, n_p = _aplicar(df_p_existente, recomputar_classif_e_metod=True)
+    if n_p > 0:
+        sobrescrever_aba(aba_pesquisas, df_p_norm)
+        print(f"[normalizacao] aba 'pesquisas': {n_p} linha(s) com instituto normalizado")
+
+    df_r_existente = carregar_df_da_aba(aba_resultados)
+    df_r_norm, n_r = _aplicar(df_r_existente, recomputar_classif_e_metod=True)
+    if n_r > 0:
+        sobrescrever_aba(aba_resultados, df_r_norm)
+        print(f"[normalizacao] aba 'resultados': {n_r} linha(s) com instituto normalizado")
+
+
 def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame):
     if (df_p is None or df_p.empty) and (df_r is None or df_r.empty):
         print("[-] nada para salvar")
@@ -2099,6 +2161,10 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
     aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=35)
     aba_resultados = garantir_aba(sh, "resultados", rows=20000, cols=35)
     aba_resultados_bi = garantir_aba(sh, "resultados_bi", rows=20000, cols=40)
+
+    # Passada de normalização retroativa: aplica ALIASES_INSTITUTO em entradas
+    # já gravadas. Idempotente; só reescreve se algo de fato mudou.
+    normalizar_institutos_retroativo(aba_pesquisas, aba_resultados)
 
     # Reconciliação automática: quando entra dado oficial, remove duplicata manual equivalente.
     if df_p is not None and not df_p.empty:
