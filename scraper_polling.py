@@ -1630,11 +1630,12 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     agrega por dia e só então calcula a média móvel.
     """
     # Apenas colunas consumidas pelo painel Streamlit. Para auditoria detalhada
-    # (poll_ids, registros TSE, fontes, peso de cada dia, origem do cálculo)
-    # consulte a aba `resultados`, que mantém o grão por scenario_id.
+    # (poll_ids, registros TSE, fontes, peso de cada dia, origem do cálculo,
+    # candidato/partido separados, ano) consulte a aba `resultados`, que mantém
+    # o grão por scenario_id.
     cols = [
-        "ano", "uf", "cargo", "turno", "data_campo",
-        "candidato", "partido", "candidato_partido", "tipo",
+        "uf", "cargo", "turno", "data_campo",
+        "candidato_partido", "tipo",
         "percentual_base", "media_movel_13d",
         "qtd_pesquisas_dia",
         "cenario_usado_no_calculo",
