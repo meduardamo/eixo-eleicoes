@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # 07:00 Recife (UTC-3) = 10:00 UTC
-    - cron: "0 10 * * *"
+    - cron: '7 10 * * *'
 
 jobs:
   run:
