@@ -4,8 +4,10 @@ on:
   workflow_dispatch:
   schedule:
     # GitHub Actions roda em UTC.
-    # Horários em Recife (UTC-3): 08:00, 14:00 e 23:00.
-    - cron: "0 2,11,17 * * *"
+    # Horários em Recife (UTC-3): 08:23, 14:47 e 23:12.
+    - cron: "23 11 * * *"
+    - cron: "47 17 * * *"
+    - cron: "12 2 * * *"
 
 jobs:
   run:
