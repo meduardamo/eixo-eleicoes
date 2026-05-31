@@ -2268,30 +2268,27 @@ def _buscar_urls_no_json(obj, urls: set, pattern: str):
 
 def descobrir_urls_presidente_t2(driver) -> list[str]:
     """
-    Carrega o índice do PollingData, clica na aba '2º Turno (Todos)' e
-    coleta todos os slugs de presidente 2º turno via JSON embutido ou HTML.
+    Carrega a página de 2º turno do PollingData e coleta todos os slugs
+    de presidente via JSON embutido ou HTML.
     """
     PATTERN = r"/presidente/[a-z]{2}/t\d_[^/\s\"'>]+"
     BASE = "https://www.pollingdata.com.br"
+    URL_T2 = "https://www.pollingdata.com.br/capa2026/previsao_brasil2026.html"
 
-    print("[descoberta t2] carregando índice pollingdata...")
-    driver.get(BASE)
-    time.sleep(3)
+    print("[descoberta t2] carregando página de 2º turno...")
+    driver.get(URL_T2)
 
     try:
-        tab = WebDriverWait(driver, 15).until(
-            EC.element_to_be_clickable((By.XPATH,
-                "//a[contains(., 'Turno') and contains(., 'Todos')]"
-            ))
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "script[type='application/json']"))
         )
-        driver.execute_script("arguments[0].click();", tab)
-        time.sleep(2)
-    except Exception as e:
-        print(f"  [!] aba 2º Turno não encontrada, buscando no HTML completo: {e}")
+    except Exception:
+        pass
+    time.sleep(4)
 
     encontradas: set[str] = set()
 
-    # Abordagem 1: JSON embutido nos script tags (mesmo mecanismo das páginas individuais)
+    # Abordagem 1: JSON embutido nos script tags
     for script in driver.find_elements(By.CSS_SELECTOR, "script[type='application/json']"):
         try:
             raw = script.get_attribute("innerHTML") or script.text
@@ -2301,10 +2298,9 @@ def descobrir_urls_presidente_t2(driver) -> list[str]:
 
     # Abordagem 2: busca em todo o HTML da página
     if not encontradas:
-        matches = re.findall(PATTERN, driver.page_source, re.I)
+        matches = re.findall(r'(/2026/presidente/[a-z]{2}/t\d_[^/"\'\s>]+)', driver.page_source, re.I)
         encontradas.update(matches)
 
-    # Normaliza para URLs completas e únicas
     urls_completas = sorted({
         BASE + p.rstrip("/") + "/"
         if not p.startswith("http") else p.rstrip("/") + "/"
@@ -2344,6 +2340,9 @@ def main():
             urls_t2 = descobrir_urls_presidente_t2(driver)
         except Exception as e:
             print(f"[!] descoberta de t2 falhou, usando lista padrão: {e}")
+            urls_t2 = list(PRESIDENTE_T2_URLS_DEFAULT)
+        if not urls_t2:
+            print("[!] descoberta de t2 retornou vazio, usando lista padrão")
             urls_t2 = list(PRESIDENTE_T2_URLS_DEFAULT)
         urls += urls_t2
 
