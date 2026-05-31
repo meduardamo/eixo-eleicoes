@@ -1519,10 +1519,12 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
         expandido["media_movel_13d"] = mm_diaria.to_numpy()
         partes_expandidas.append(expandido)
 
-    frames_concat = [parte for parte in partes_expandidas if not parte.empty]
+    frames_concat = [parte for parte in partes_expandidas if parte is not None and not parte.empty]
     if not df_sem_serie.empty:
         frames_concat.append(df_sem_serie)
     df_expandido = pd.concat(frames_concat, ignore_index=True, sort=False) if frames_concat else df.copy()
+    if not df_expandido.empty:
+        df_expandido = df_expandido.convert_dtypes(convert_string=False)
     return df_expandido.drop(
         columns=["_data_campo_dt", "_percentual_base_num", "_peso_total_dia_num"],
         errors="ignore",
@@ -2396,6 +2398,8 @@ def main():
     finally:
         driver.quit()
 
+    all_p = [df for df in all_p if df is not None and not df.empty]
+    all_r = [df for df in all_r if df is not None and not df.empty]
     df_p_all = pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame()
     df_r_all = pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame()
 
