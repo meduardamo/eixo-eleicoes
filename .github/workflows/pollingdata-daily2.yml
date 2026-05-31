@@ -1,0 +1,40 @@
+name: pollingdata-t2
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub Actions roda em UTC.
+    - cron: "0 14 * * *"    
+    - cron: "0 23 * * *"    # 20:00 BRT
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      TZ: "America/Recife"
+      INCLUIR_GOVERNADOR: "false"
+      INCLUIR_SENADO: "false"
+      INCLUIR_PRESIDENTE: "false"
+      INCLUIR_PRESIDENTE_T2: "true"
+      SPREADSHEET_ID_POLLINGDATA_T2: ${{ secrets.SPREADSHEET_ID_POLLINGDATA_T2 }}
+      GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run scraper (2º turno)
+        run: |
+          python scraper_polling.py
