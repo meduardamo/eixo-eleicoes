@@ -35,6 +35,15 @@ PRESIDENTE_URLS_DEFAULT = [
     "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html"
 ]
 
+PRESIDENTE_T2_URLS_DEFAULT = [
+    "https://www.pollingdata.com.br/2026/presidente/br/t2_flavio-lula/",
+    # Adicione outros duelos conforme aparecerem no pollingdata:
+    # "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-caiado/",
+    # "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-zema/",
+    # "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-michelle/",
+    # "https://www.pollingdata.com.br/2026/presidente/br/t2_joaquim-lula/",
+]
+
 WAIT_CSS = "div#dados-das-pesquisas"
 FORCAR_LOCALE_PLANILHA = True
 LOCALE_PLANILHA = "en_US"
@@ -389,7 +398,7 @@ def parse_url_meta(url: str):
         }
 
     m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)(?:\.html)?$|(?P<turno2>t\d)/?$)",
+        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)(?:\.html)?$|(?P<turno2>t\d)(?:_[^/]*)?/?$)",
         u, re.I
     )
     if m:
@@ -515,6 +524,13 @@ def obter_spreadsheet_id():
     raise RuntimeError("SPREADSHEET_ID_POLLINGDATA não definido.")
 
 
+def obter_spreadsheet_id_t2():
+    sid = (os.getenv("SPREADSHEET_ID_POLLINGDATA_T2", "") or "").strip()
+    if sid:
+        return sid
+    raise RuntimeError("SPREADSHEET_ID_POLLINGDATA_T2 não definido.")
+
+
 def urls_presidente_2026_t1(ufs):
     return [
         f"https://www.pollingdata.com.br/2026/presidente/{uf}/2026_presidente_{uf}_t1.html"
@@ -536,7 +552,7 @@ def urls_senado_2026_t1(ufs):
     ]
 
 
-def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool):
+def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool, incluir_presidente_t2: bool = True):
     urls = []
 
     if incluir_governador:
@@ -548,6 +564,9 @@ def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presiden
     if incluir_presidente:
         urls += list(PRESIDENTE_URLS_DEFAULT)
         urls += urls_presidente_2026_t1(UFS)
+
+    if incluir_presidente_t2:
+        urls += list(PRESIDENTE_T2_URLS_DEFAULT)
 
     return urls
 
@@ -2235,15 +2254,78 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
     corrigir_coluna_numerica_na_aba(aba_resultados_bi, "media_movel_13d")
 
 
+def _buscar_urls_no_json(obj, urls: set, pattern: str):
+    if isinstance(obj, str):
+        if re.search(pattern, obj, re.I):
+            urls.add(obj)
+    elif isinstance(obj, list):
+        for item in obj:
+            _buscar_urls_no_json(item, urls, pattern)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _buscar_urls_no_json(v, urls, pattern)
+
+
+def descobrir_urls_presidente_t2(driver) -> list[str]:
+    """
+    Carrega o índice do PollingData, clica na aba '2º Turno (Todos)' e
+    coleta todos os slugs de presidente 2º turno via JSON embutido ou HTML.
+    """
+    PATTERN = r"/presidente/[a-z]{2}/t\d_[^/\s\"'>]+"
+    BASE = "https://www.pollingdata.com.br"
+
+    print("[descoberta t2] carregando índice pollingdata...")
+    driver.get(BASE)
+    time.sleep(3)
+
+    try:
+        tab = WebDriverWait(driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH,
+                "//a[contains(., 'Turno') and contains(., 'Todos')]"
+            ))
+        )
+        driver.execute_script("arguments[0].click();", tab)
+        time.sleep(2)
+    except Exception as e:
+        print(f"  [!] aba 2º Turno não encontrada, buscando no HTML completo: {e}")
+
+    encontradas: set[str] = set()
+
+    # Abordagem 1: JSON embutido nos script tags (mesmo mecanismo das páginas individuais)
+    for script in driver.find_elements(By.CSS_SELECTOR, "script[type='application/json']"):
+        try:
+            raw = script.get_attribute("innerHTML") or script.text
+            _buscar_urls_no_json(json.loads(raw), encontradas, PATTERN)
+        except Exception:
+            pass
+
+    # Abordagem 2: busca em todo o HTML da página
+    if not encontradas:
+        matches = re.findall(PATTERN, driver.page_source, re.I)
+        encontradas.update(matches)
+
+    # Normaliza para URLs completas e únicas
+    urls_completas = sorted({
+        BASE + p.rstrip("/") + "/"
+        if not p.startswith("http") else p.rstrip("/") + "/"
+        for p in encontradas
+    })
+
+    print(f"  [descoberta t2] {len(urls_completas)} URL(s) encontrada(s)")
+    return urls_completas
+
+
 def main():
     incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
     incluir_senado = env_bool("INCLUIR_SENADO", True)
     incluir_presidente = env_bool("INCLUIR_PRESIDENTE", True)
+    incluir_presidente_t2 = env_bool("INCLUIR_PRESIDENTE_T2", True)
 
     spreadsheet_id = obter_spreadsheet_id()
-    urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente)
+    # URLs de t2 são descobertas dinamicamente após iniciar o driver; passa False aqui
+    urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente, incluir_presidente_t2=False)
 
-    if not urls:
+    if not urls and not incluir_presidente_t2:
         print("[-] Nenhuma URL selecionada. Ajuste INCLUIR_*.")
         return
 
@@ -2256,6 +2338,19 @@ def main():
 
     print("[+] Iniciando Chrome...")
     driver = criar_driver()
+
+    if incluir_presidente_t2:
+        try:
+            urls_t2 = descobrir_urls_presidente_t2(driver)
+        except Exception as e:
+            print(f"[!] descoberta de t2 falhou, usando lista padrão: {e}")
+            urls_t2 = list(PRESIDENTE_T2_URLS_DEFAULT)
+        urls += urls_t2
+
+    if not urls:
+        print("[-] Nenhuma URL selecionada. Ajuste INCLUIR_*.")
+        driver.quit()
+        return
 
     all_p = []
     all_r = []
@@ -2278,7 +2373,27 @@ def main():
     df_p_all = pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame()
     df_r_all = pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame()
 
-    salvar_tudo(gc, spreadsheet_id, df_p_all, df_r_all)
+    def _filtrar_turno(df: pd.DataFrame, turno: str) -> pd.DataFrame:
+        if df.empty or "turno" not in df.columns:
+            return pd.DataFrame()
+        return df[df["turno"].astype(str).str.lower() == turno].reset_index(drop=True)
+
+    df_p_t1 = _filtrar_turno(df_p_all, "t1") if not df_p_all.empty else df_p_all
+    df_r_t1 = _filtrar_turno(df_r_all, "t1") if not df_r_all.empty else df_r_all
+    df_p_t2 = _filtrar_turno(df_p_all, "t2") if not df_p_all.empty else df_p_all
+    df_r_t2 = _filtrar_turno(df_r_all, "t2") if not df_r_all.empty else df_r_all
+
+    # Planilha principal — tudo que não é t2
+    if not df_p_all.empty and "turno" not in df_p_all.columns:
+        df_p_t1, df_r_t1 = df_p_all, df_r_all
+
+    salvar_tudo(gc, spreadsheet_id, df_p_t1, df_r_t1)
+
+    if incluir_presidente_t2 and (not df_p_t2.empty or not df_r_t2.empty):
+        print("[+] Salvando 2º turno na planilha separada...")
+        spreadsheet_id_t2 = obter_spreadsheet_id_t2()
+        salvar_tudo(gc, spreadsheet_id_t2, df_p_t2, df_r_t2)
+
     print("[+] OK")
 
 
