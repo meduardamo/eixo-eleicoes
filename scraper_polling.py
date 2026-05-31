@@ -592,6 +592,29 @@ def criar_driver():
 
 
 def esperar_tabela(driver, timeout=40):
+    # Tenta no frame principal primeiro
+    try:
+        WebDriverWait(driver, min(timeout, 10)).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
+        )
+        time.sleep(2)
+        return
+    except Exception:
+        pass
+
+    # Procura a tabela dentro de iframes
+    for iframe in driver.find_elements(By.TAG_NAME, "iframe"):
+        try:
+            driver.switch_to.frame(iframe)
+            WebDriverWait(driver, min(timeout, 8)).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
+            )
+            time.sleep(2)
+            return  # permanece no iframe para o scraping
+        except Exception:
+            driver.switch_to.default_content()
+
+    # Fallback: espera com timeout completo no frame principal
     WebDriverWait(driver, timeout).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
     )
@@ -993,18 +1016,22 @@ def scrape_url(driver, url, horario_raspagem):
 
     print(f"[+] {meta['cargo'].upper()} {meta['uf']} {meta['turno']} -> {url}")
 
+    driver.switch_to.default_content()
     driver.get(url)
-    esperar_tabela(driver)
+    esperar_tabela(driver)  # pode trocar para iframe internamente
 
-    layout = decidir_layout(driver)
+    try:
+        layout = decidir_layout(driver)
 
-    if layout == "novo":
-        if not detectar_layout_novo_json(driver):
-            print("  [-] headers indicaram novo, mas o JSON do novo não apareceu")
-            return None, None
-        return scrape_novo_layout(driver, url, horario_raspagem, meta)
+        if layout == "novo":
+            if not detectar_layout_novo_json(driver):
+                print("  [-] headers indicaram novo, mas o JSON do novo não apareceu")
+                return None, None
+            return scrape_novo_layout(driver, url, horario_raspagem, meta)
 
-    return scrape_antigo_layout(driver, url, horario_raspagem, meta)
+        return scrape_antigo_layout(driver, url, horario_raspagem, meta)
+    finally:
+        driver.switch_to.default_content()
 
 
 def gs_client_from_env():
