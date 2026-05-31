@@ -2346,7 +2346,8 @@ def main():
     incluir_presidente = env_bool("INCLUIR_PRESIDENTE", True)
     incluir_presidente_t2 = env_bool("INCLUIR_PRESIDENTE_T2", True)
 
-    spreadsheet_id = obter_spreadsheet_id()
+    tem_t1 = incluir_governador or incluir_senado or incluir_presidente
+    spreadsheet_id = obter_spreadsheet_id() if tem_t1 else None
     # URLs de t2 são descobertas dinamicamente após iniciar o driver; passa False aqui
     urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente, incluir_presidente_t2=False)
 
@@ -2417,7 +2418,8 @@ def main():
     if not df_p_all.empty and "turno" not in df_p_all.columns:
         df_p_t1, df_r_t1 = df_p_all, df_r_all
 
-    salvar_tudo(gc, spreadsheet_id, df_p_t1, df_r_t1)
+    if tem_t1 and spreadsheet_id:
+        salvar_tudo(gc, spreadsheet_id, df_p_t1, df_r_t1)
 
     if incluir_presidente_t2 and (not df_p_t2.empty or not df_r_t2.empty):
         print("[+] Salvando 2º turno na planilha separada...")
