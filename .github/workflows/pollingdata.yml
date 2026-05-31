@@ -1,4 +1,4 @@
-name: pollingdata-daily
+name: pollingdata-t1
 
 on:
   workflow_dispatch:
