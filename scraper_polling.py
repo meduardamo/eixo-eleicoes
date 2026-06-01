@@ -398,16 +398,19 @@ def parse_url_meta(url: str):
         }
 
     m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)(?:\.html)?$|(?P<turno2>t\d)(?:_[^/]*)?/?$)",
+        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)(?:\.html)?$|(?P<turno2>t\d)(?:_(?P<slug>[^/]*))?/?$)",
         u, re.I
     )
     if m:
         turno = m.group("turno") or m.group("turno2")
+        slug = m.group("slug") or ""
+        disputa = f"{turno.lower()}_{slug}" if slug else ""
         return {
             "ano": int(m.group("ano")),
             "cargo": "presidente",
             "uf": m.group("uf").upper(),
-            "turno": turno.lower()
+            "turno": turno.lower(),
+            "disputa": disputa,
         }
 
     m = re.search(
@@ -423,7 +426,7 @@ def parse_url_meta(url: str):
             "turno": turno.lower()
         }
 
-    return {"ano": None, "cargo": None, "uf": None, "turno": None}
+    return {"ano": None, "cargo": None, "uf": None, "turno": None, "disputa": None}
 
 
 def parsear_pesquisa(texto):
@@ -667,6 +670,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
     cargo = meta["cargo"]
     uf = meta["uf"]
     turno = meta["turno"]
+    disputa = meta.get("disputa") or ""
 
     try:
         el = driver.find_element(
@@ -731,6 +735,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
                 "uf": uf,
                 "cargo": cargo,
                 "turno": turno,
+                "disputa": disputa,
                 "instituto": instituto,
                 "classificacao_instituto": classificacao,
                 "registro_tse": registro,
@@ -774,6 +779,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
                     "uf": uf,
                     "cargo": cargo,
                     "turno": turno,
+                    "disputa": disputa,
                     "data_campo": data_campo,
                     "instituto": instituto,
                     "classificacao_instituto": classificacao,
@@ -881,6 +887,7 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
     cargo = meta["cargo"]
     uf = meta["uf"]
     turno = meta["turno"]
+    disputa = meta.get("disputa") or ""
 
     secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
     expandir_todos_antigo(driver, secao)
@@ -949,6 +956,7 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
             "uf": uf,
             "cargo": cargo,
             "turno": turno,
+            "disputa": disputa,
             "instituto": instituto,
             "classificacao_instituto": classificacao,
             "registro_tse": registro_tse,
@@ -986,6 +994,7 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
                 "uf": uf,
                 "cargo": cargo,
                 "turno": turno,
+                "disputa": disputa,
                 "data_campo": data_campo,
                 "instituto": instituto,
                 "classificacao_instituto": classificacao,
