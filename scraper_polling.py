@@ -500,15 +500,19 @@ def inferir_margem_erro(s):
     return None
 
 
-def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_block_hash):
+def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_block_hash, disputa=""):
     uf = uf.upper()
     data_campo = _norm_ws(data_campo)
     instituto_slug = _slug(instituto)
 
-    if id_pesquisa and id_pesquisa.lower() not in ("sem registro", "sem_registro", "semregistro", "nan", ""):
-        return f"{uf}|{cargo}|{turno}|{id_pesquisa}|{data_campo}"
+    # Para t2, inclui a disputa na chave para diferenciar o mesmo poll
+    # publicado em múltiplos matchups (ex.: AtlasIntel em t2_lula-zema e t2_flavio-lula)
+    turno_key = disputa if disputa else turno
 
-    return f"{uf}|{cargo}|{turno}|{instituto_slug}|{data_campo}"
+    if id_pesquisa and id_pesquisa.lower() not in ("sem registro", "sem_registro", "semregistro", "nan", ""):
+        return f"{uf}|{cargo}|{turno_key}|{id_pesquisa}|{data_campo}"
+
+    return f"{uf}|{cargo}|{turno_key}|{instituto_slug}|{data_campo}"
 
 
 def gerar_scenario_id(poll_id, scenario_label):
@@ -719,7 +723,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
         metodologia = obter_metodologia(instituto)
 
         block_hash = _sha1_short(f"{instituto}|{registro}|{data_campo}", 10)
-        poll_id = gerar_poll_id(uf, instituto, registro_norm, data_campo, cargo, turno, block_hash)
+        poll_id = gerar_poll_id(uf, instituto, registro_norm, data_campo, cargo, turno, block_hash, disputa=disputa)
 
         cenarios_dict = cenarios_lst[i] if i < len(cenarios_lst) else {}
         cenario_nums = cenarios_dict.get("cenario", [1])
@@ -939,7 +943,7 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
         classificacao = classificar_instituto(instituto)
         metodologia = obter_metodologia(instituto)
 
-        poll_id = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash)
+        poll_id = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash, disputa=disputa)
         scenario_id = gerar_scenario_id(poll_id, scenario_label)
 
         amostra = None
