@@ -32,7 +32,8 @@ UFS = [
 ]
 
 PRESIDENTE_URLS_DEFAULT = [
-    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html"
+    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1.html",
+    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html",
 ]
 
 PRESIDENTE_T2_URLS_DEFAULT = [
@@ -398,11 +399,11 @@ def parse_url_meta(url: str):
         }
 
     m = re.search(
-        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)(?:\.html)?$|(?P<turno2>t\d)(?:_(?P<slug>[^/]*))?/?$)",
+        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>[a-z]{2})/(?:[^/]*_)?(?P<turno>t\d)(?:_(?P<slug>[^/.]+))?(?:\.html)?/?$",
         u, re.I
     )
     if m:
-        turno = m.group("turno") or m.group("turno2")
+        turno = m.group("turno")
         slug = m.group("slug") or ""
         disputa = f"{turno.lower()}_{slug}" if slug else ""
         return {
