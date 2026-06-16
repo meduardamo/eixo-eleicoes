@@ -32,17 +32,15 @@ UFS = [
 ]
 
 PRESIDENTE_URLS_DEFAULT = [
-    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1.html",
     "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html",
 ]
 
 PRESIDENTE_T2_URLS_DEFAULT = [
     "https://www.pollingdata.com.br/2026/presidente/br/t2_flavio-lula/",
-    # Adicione outros duelos conforme aparecerem no pollingdata:
-    # "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-caiado/",
-    # "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-zema/",
-    # "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-michelle/",
-    # "https://www.pollingdata.com.br/2026/presidente/br/t2_joaquim-lula/",
+    "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-caiado/",
+    "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-zema/",
+    "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-michelle/",
+    "https://www.pollingdata.com.br/2026/presidente/br/t2_joaquim-lula/",
 ]
 
 WAIT_CSS = "div#dados-das-pesquisas"
