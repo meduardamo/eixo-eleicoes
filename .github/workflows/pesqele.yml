@@ -3,7 +3,6 @@ name: pesqele-daily
 on:
   workflow_dispatch:
   schedule:
-    # 07:00 Recife (UTC-3) = 10:00 UTC
     - cron: '7 10 * * *'
 
 jobs:
@@ -33,6 +32,8 @@ jobs:
 
       - name: Set up Chrome
         uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: '136'
 
       - name: Write Google credentials
         env:
