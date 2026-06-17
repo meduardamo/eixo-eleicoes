@@ -65,7 +65,7 @@ def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = 
     opts.add_argument("--disable-setuid-sandbox")
 
     if headless or os.getenv("CI"):
-        opts.add_argument("--headless=new")
+        opts.add_argument("--headless")
         opts.add_argument("--window-size=1920,1080")
     else:
         opts.add_argument("--start-maximized")
