@@ -73,9 +73,6 @@ def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = 
         opts.add_argument("--start-maximized")
         opts.add_argument(f"--user-data-dir={os.path.abspath(profile_dir)}")
 
-    if os.getenv("CI"):
-        opts.binary_location = "/usr/bin/chromium-browser"
-
     driver = webdriver.Chrome(options=opts)
     driver.set_page_load_timeout(120)
     return driver
