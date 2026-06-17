@@ -58,22 +58,27 @@ SKIP_SHEETS = {"Dashboard"}
 
 def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = False) -> webdriver.Chrome:
     opts = webdriver.ChromeOptions()
-    opts.add_argument("--start-maximized")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
+    opts.add_argument("--disable-extensions")
+    opts.add_argument("--disable-setuid-sandbox")
 
     if headless or os.getenv("CI"):
         opts.add_argument("--headless=new")
-
-    if not os.getenv("CI"):
+        opts.add_argument("--window-size=1920,1080")
+        opts.add_argument("--no-zygote")
+        opts.add_argument("--single-process")
+    else:
+        opts.add_argument("--start-maximized")
         opts.add_argument(f"--user-data-dir={os.path.abspath(profile_dir)}")
 
     if os.getenv("CI"):
         opts.binary_location = "/usr/bin/chromium-browser"
-        return webdriver.Chrome(options=opts)
 
-    return webdriver.Chrome(options=opts)
+    driver = webdriver.Chrome(options=opts)
+    driver.set_page_load_timeout(120)
+    return driver
 
 
 def wait_dom_ready(driver: webdriver.Chrome, timeout: int = 30) -> None:
