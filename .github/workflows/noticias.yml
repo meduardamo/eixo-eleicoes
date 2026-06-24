@@ -1,4 +1,4 @@
-name: Scraper Notícias Eleições 2026
+name: scraper-noticias
 
 on:
   schedule:
