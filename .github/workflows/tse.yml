@@ -1,0 +1,23 @@
+name: TSE
+
+on:
+  workflow_dispatch:
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install gspread requests pandas
+
+      - name: Escrever credentials.json
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
+
+      - run: python automacao_tse.py
+        env:
+          SHEETS_ID: ${{ secrets.SPREADSHEET_ID_TSE }}
