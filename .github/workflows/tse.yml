@@ -1,4 +1,4 @@
-name: TSE
+name: automacao-tse
 
 on:
   workflow_dispatch:
