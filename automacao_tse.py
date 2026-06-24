@@ -20,7 +20,7 @@ import gspread
 import requests
 import pandas as pd
 
-ANO = 2022
+ANO = 2026
 
 API = "https://divulgacandcontas.tse.jus.br/divulga/rest/v1"
 DOC = "https://divulgacandcontas.tse.jus.br/divulga/rest/arquivo/doc"
