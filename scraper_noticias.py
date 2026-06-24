@@ -11,6 +11,8 @@ import os
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
+from datetime import timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 import requests
 
@@ -58,6 +60,19 @@ UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB
        'PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']
 
 
+BRT = timezone(timedelta(hours=-3))
+
+
+def _formatar_data(pubdate):
+    """Converte a data do RSS (GMT) para 'dd/mm/aaaa HH:MM' no horário de Brasília."""
+    if not pubdate:
+        return ""
+    try:
+        return parsedate_to_datetime(pubdate).astimezone(BRT).strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return pubdate
+
+
 def google_news_rss(busca, max_itens=20):
     """Retorna as notícias de uma busca (título, fonte, data, link)."""
     q = urllib.parse.quote(busca)
@@ -71,18 +86,24 @@ def google_news_rss(busca, max_itens=20):
         itens.append({
             "titulo": item.findtext("title", ""),
             "fonte": fonte.text if fonte is not None else "",
-            "data": item.findtext("pubDate", ""),
+            "data": _formatar_data(item.findtext("pubDate", "")),
             "link": item.findtext("link", ""),
         })
     return itens
 
 
-def gerar_buscas(cargos=('governador', 'senador')):
-    return [f"eleições 2026 {cargo} {uf} (convenção OR pré-candidato)"
-            for cargo in cargos for uf in UFS]
+def gerar_buscas(cargos=('presidente', 'governador', 'senador')):
+    buscas = []
+    for cargo in cargos:
+        if cargo == 'presidente':            # presidente é nacional, sem UF
+            buscas.append("eleições 2026 presidente (convenção OR pré-candidato)")
+        else:
+            buscas += [f"eleições 2026 {cargo} {uf} (convenção OR pré-candidato)"
+                       for uf in UFS]
+    return buscas
 
 
-def coletar(cargos=('governador', 'senador'), pausa=1.0):
+def coletar(cargos=('presidente', 'governador', 'senador'), pausa=1.0):
     """Roda todas as buscas e junta as notícias, sem repetir título."""
     vistos, resultado = set(), []
     for busca in gerar_buscas(cargos):
@@ -99,23 +120,6 @@ def coletar(cargos=('governador', 'senador'), pausa=1.0):
     return resultado
 
 
-def buscar_primeiro_paragrafo(link, max_chars=600, timeout=10):
-    """Segue o redirect do Google News e retorna o início do texto do artigo."""
-    try:
-        from bs4 import BeautifulSoup
-        r = requests.get(link, headers=HEADERS, timeout=timeout, allow_redirects=True)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-        paragrafos = [
-            p.get_text(strip=True)
-            for p in soup.find_all("p")
-            if len(p.get_text(strip=True)) > 60
-        ]
-        return " ".join(paragrafos[:3])[:max_chars]
-    except Exception:
-        return ""
-
-
 def classificar_com_gemini(titulo, trecho=""):
     """Lê a manchete (e trecho do artigo) e extrai os campos estruturados (JSON) via Gemini."""
     contexto = f"Manchete: {titulo}"
@@ -129,7 +133,7 @@ def classificar_com_gemini(titulo, trecho=""):
         '  "candidato": "Nome, apelido ou sobrenome da pessoa como aparece no texto (ex: \'Tarcísio\', \'Lula\', \'Romeu Zema\'). Use null SOMENTE se nenhum nome próprio de pessoa aparecer",\n'
         '  "cargo": "governador | senador | presidente | vice-governador | outro | null",\n'
         '  "uf": "Sigla do estado (ex: SP, RJ, MG) ou null se cargo federal ou não identificado",\n'
-        '  "partido": "Sigla oficial do partido (ex: PT, PL, MDB) ou null se não mencionado",\n'
+        '  "partido": "Sigla do partido ou federação (ex: PT, PL, MDB, FE BRASIL) ou null se não mencionado",\n'
         '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | indefinido",\n'
         '  "confianca": "alto | médio | baixo"\n'
         "}\n\n"
@@ -157,8 +161,7 @@ def classificar_noticias(noticias):
     total = len(noticias)
     for i, n in enumerate(noticias, 1):
         try:
-            trecho = buscar_primeiro_paragrafo(n["link"])
-            n.update(classificar_com_gemini(n["titulo"], trecho))
+            n.update(classificar_com_gemini(n["titulo"]))
         except Exception as e:
             print(f"[{i}/{total}] erro ao classificar: {e}")
         if i % 10 == 0 or i == total:
@@ -220,10 +223,13 @@ def salvar_no_sheets(noticias):
     if not headers:
         aba.append_row(COLUNAS_PLANILHA)
         headers = COLUNAS_PLANILHA
-    linhas = [
-        [str(n.get(col) or "") for col in headers]
-        for n in noticias
-    ]
+    def _safe(v):
+        # neutraliza injeção de fórmula em texto que começa com = + - @
+        s = str(v or "")
+        return ("'" + s) if s[:1] in ("=", "+", "-", "@") else s
+
+    linhas = [[_safe(n.get(col)) for col in headers] for n in noticias]
+    # USER_ENTERED deixa a URL clicável; o _safe protege o título
     aba.append_rows(linhas, value_input_option="USER_ENTERED")
     print(f"{len(noticias)} notícias salvas no Google Sheets.")
 
@@ -233,13 +239,10 @@ if __name__ == '__main__':
     titulos_existentes = carregar_titulos_existentes()
     print(f"{len(titulos_existentes)} títulos já na planilha.")
 
-    noticias = coletar(cargos=('governador', 'senador'))
+    noticias = coletar()   # presidente + governador + senador
     novas = [n for n in noticias if n["titulo"].strip().lower() not in titulos_existentes]
     print(f"{len(novas)} notícias novas (de {len(noticias)} coletadas)")
 
     if novas:
         novas = classificar_noticias(novas)
         salvar_no_sheets(novas)
-
-
-
