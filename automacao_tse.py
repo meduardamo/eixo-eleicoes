@@ -6,8 +6,8 @@ Três fontes:
   - candidaturas em tempo real pela API do DivulgaCand (atualiza a cada 60 min)
   - PDFs dos planos de governo (só presidente e governador entregam)
 
-Salva as tabelas no Google Sheets se a variável de ambiente SHEETS_ID estiver
-definida. Autenticação via GOOGLE_APPLICATION_CREDENTIALS (service account JSON).
+Salva as tabelas no Google Sheets se SPREADSHEET_ID_TSE estiver definido.
+Autenticação pelo arquivo credentials.json (service account).
 """
 
 import io
@@ -139,7 +139,7 @@ def _id_plano(detalhe):
 
 
 CREDS_FILE = Path("credentials.json")
-SHEETS_ID  = os.environ["SHEETS_ID"]
+SHEETS_ID  = os.getenv("SPREADSHEET_ID_TSE", "")
 
 
 def salvar_no_sheets(df, aba):
@@ -165,8 +165,3 @@ if __name__ == '__main__':
 
     salvar_no_sheets(df, "candidaturas")
     salvar_no_sheets(base, "base_consolidada")
-
-
-# Pendências:
-# - agendar no GitHub Actions: CSV 1x/dia de manhã; candidaturas de hora em hora no registro
-
