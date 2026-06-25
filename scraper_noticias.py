@@ -11,7 +11,7 @@ import os
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 import requests
@@ -134,7 +134,7 @@ def classificar_com_gemini(titulo, trecho=""):
         '  "cargo": "governador | senador | presidente | vice-governador | outro | null",\n'
         '  "uf": "Sigla do estado (ex: SP, RJ, MG) ou null se cargo federal ou não identificado",\n'
         '  "partido": "Sigla do partido ou federação (ex: PT, PL, MDB, FE BRASIL) ou null se não mencionado",\n'
-        '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | indefinido",\n'
+        '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | não relacionado | indefinido",\n'
         '  "confianca": "alto | médio | baixo"\n'
         "}\n\n"
         "Regras de preenchimento:\n"
@@ -142,7 +142,8 @@ def classificar_com_gemini(titulo, trecho=""):
         "- status='pré-candidato': intenção declarada publicamente, sem oficialização ainda\n"
         "- status='em disputa': partido ou coligação ainda decide entre dois ou mais nomes\n"
         "- status='renúncia' ou 'desistência': candidato que retirou ou perdeu a candidatura\n"
-        "- status='indefinido': manchete ambígua ou sem informação suficiente para classificar\n"
+        "- status='não relacionado': a notícia não trata de candidatura, pré-candidatura ou convenção (declaração, agenda, pesquisa, outro assunto)\n"
+        "- status='indefinido': é sobre candidatura, mas a manchete é ambígua ou falta informação\n"
         "- confianca='alto': candidato, cargo e UF estão todos explícitos no texto\n"
         "- confianca='médio': algum campo foi inferido com boa certeza pelo contexto\n"
         "- confianca='baixo': muita ambiguidade ou faltam dois ou mais campos principais\n"
@@ -213,6 +214,45 @@ def carregar_titulos_existentes():
         return set()
 
 
+def _safe(v):
+    # neutraliza injeção de fórmula em texto que começa com = + - @
+    s = str(v or "")
+    return ("'" + s) if s[:1] in ("=", "+", "-", "@") else s
+
+
+def reclassificar_pendentes(aba):
+    """Reclassifica no Gemini as linhas com a coluna 'status' vazia (ex.: você
+    apagou a classificação à mão pra refazer). Atualiza só as colunas de
+    classificação, mantendo a notícia."""
+    vals = aba.get_all_values()
+    if len(vals) < 2:
+        return
+    headers = vals[0]
+    if "titulo" not in headers or "status" not in headers:
+        return
+    i_titulo, i_status = headers.index("titulo"), headers.index("status")
+    cols = [c for c in ("candidato", "cargo", "uf", "partido", "status", "confianca")
+            if c in headers]
+    idxs = [headers.index(c) for c in cols]
+    ini, fim = chr(65 + min(idxs)), chr(65 + max(idxs))
+
+    updates = []
+    for r, row in enumerate(vals[1:], start=2):
+        titulo = row[i_titulo] if i_titulo < len(row) else ""
+        status = row[i_status] if i_status < len(row) else ""
+        if titulo and not status.strip():
+            try:
+                cl = classificar_com_gemini(titulo)
+            except Exception as e:
+                print(f"  erro ao reclassificar linha {r}: {e}")
+                continue
+            updates.append({"range": f"{ini}{r}:{fim}{r}",
+                            "values": [[_safe(cl.get(c)) for c in cols]]})
+    if updates:
+        aba.batch_update(updates, value_input_option="USER_ENTERED")
+        print(f"{len(updates)} linhas reclassificadas.")
+
+
 def salvar_no_sheets(noticias):
     """Adiciona as notícias novas na aba do Google Sheets."""
     if not noticias:
@@ -223,15 +263,18 @@ def salvar_no_sheets(noticias):
     if not headers:
         aba.append_row(COLUNAS_PLANILHA)
         headers = COLUNAS_PLANILHA
-    def _safe(v):
-        # neutraliza injeção de fórmula em texto que começa com = + - @
-        s = str(v or "")
-        return ("'" + s) if s[:1] in ("=", "+", "-", "@") else s
+    # mais recentes primeiro, pra entrarem no topo
+    def _chave(n):
+        try:
+            return datetime.strptime(n.get("data", ""), "%d/%m/%Y %H:%M")
+        except Exception:
+            return datetime.min
+    noticias = sorted(noticias, key=_chave, reverse=True)
 
     linhas = [[_safe(n.get(col)) for col in headers] for n in noticias]
-    # USER_ENTERED deixa a URL clicável; o _safe protege o título
-    aba.append_rows(linhas, value_input_option="USER_ENTERED")
-    print(f"{len(noticias)} notícias salvas no Google Sheets.")
+    # insere no topo (logo abaixo do cabeçalho); USER_ENTERED deixa a URL clicável
+    aba.insert_rows(linhas, row=2, value_input_option="USER_ENTERED")
+    print(f"{len(noticias)} notícias inseridas no topo do Google Sheets.")
 
 
 if __name__ == '__main__':
@@ -246,3 +289,6 @@ if __name__ == '__main__':
     if novas:
         novas = classificar_noticias(novas)
         salvar_no_sheets(novas)
+
+    # reclassifica linhas cuja classificação foi apagada à mão (status vazio)
+    reclassificar_pendentes(_sheets_aba())
