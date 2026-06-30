@@ -2,7 +2,7 @@ name: extrair-pesquisas
 
 on:
   schedule:
-    - cron: '0 12 * * *'   # 09:00 BRT (depois do alerta)
+    - cron: '0 */2 * * *'   # de 2 em 2 horas; pega os links conforme aparecem
   workflow_dispatch:
 
 jobs:
