@@ -116,10 +116,12 @@ def _html(pesquisas, hoje):
 
 
 def _enviar(subject, html_body):
+    import re
     api_key, sender = os.getenv("BREVO_API_KEY"), os.getenv("EMAIL")
-    dests = [e.strip() for e in os.getenv("DESTINATARIOS", "").split(",") if e.strip()]
+    bruto = re.split(r"[,;\s]+", os.getenv("DESTINATARIOS", ""))
+    dests = [e.strip(" <>") for e in bruto if "@" in e]
     if not (api_key and sender and dests):
-        print("Config de email incompleta; pulando envio.")
+        print("Config de email incompleta ou sem destinatário válido; pulando envio.")
         return
     from brevo_python import ApiClient, Configuration
     from brevo_python.api.transactional_emails_api import TransactionalEmailsApi
