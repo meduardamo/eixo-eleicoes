@@ -99,16 +99,25 @@ def _html(pesquisas, hoje):
         f"<h3 style='margin:18px 0 6px 0'>{g} ({len(por_grupo[g])})</h3>{_tabela(por_grupo[g])}"
         for g in GRUPOS if por_grupo[g]
     )
+    planilha_url = (f"https://docs.google.com/spreadsheets/d/{RELATORIOS_ID}/edit"
+                    if RELATORIOS_ID else "#")
     return f"""
     <html><body style="font-family:Arial,sans-serif;color:#111">
       <h2 style="margin:0 0 6px 0">Pesquisas com divulgação prevista para hoje</h2>
       <div style="color:#374151;margin:0 0 14px 0">{hoje} · {len(pesquisas)} pesquisa(s)</div>
       <div style="background:#eef0f6;border-left:3px solid #192D4E;padding:10px 12px;margin:0 0 16px 0;font-size:13px">
-        <strong style="color:#192D4E">Ação do dia:</strong> baixe o relatório completo de cada pesquisa e salve na pasta
-        <a href="{PASTA_URL}" style="color:#192D4E">Pesquisas Eleitorais</a> do Drive, na subpasta do cargo:
-        Presidente Nacional vai em <b>Presidenciáveis/Nacional</b>;
-        Presidente por UF em <b>Presidenciáveis/Por UF</b>;
-        Governador e Senador em <b>Governadores+Senadores</b>.
+        <strong style="color:#192D4E">Ação do dia</strong>, para cada pesquisa abaixo:
+        <ol style="margin:8px 0 0 0;padding-left:18px">
+          <li>Baixe o relatório completo e salve na pasta
+            <a href="{PASTA_URL}" style="color:#192D4E">Pesquisas Eleitorais</a> do Drive,
+            na subpasta do cargo: Presidente Nacional em <b>Presidenciáveis/Nacional</b>;
+            Presidente por UF em <b>Presidenciáveis/Por UF</b>;
+            Governador e Senador em <b>Governadores+Senadores</b>.</li>
+          <li>Na planilha
+            <a href="{planilha_url}" style="color:#192D4E">Voto por Segmento</a>,
+            aba <b>relatorios</b>, ache a linha do registro (já criada hoje) e cole o link
+            do relatório na coluna <b>link</b>. A extração roda em cima dessas linhas.</li>
+        </ol>
       </div>
       {secoes}
     </body></html>
