@@ -14,9 +14,6 @@ from datetime import datetime, timedelta, timezone
 
 import gspread
 from google.oauth2.service_account import Credentials
-from brevo_python import ApiClient, Configuration
-from brevo_python.api.transactional_emails_api import TransactionalEmailsApi
-from brevo_python.models.send_smtp_email import SendSmtpEmail
 
 SHEET_ID = os.getenv("SPREADSHEET_ID", "1OEmfn_RyTgrkPenzXlc6qvySs8rbVV39qmuHoULwtjQ")
 ABA = os.getenv("PESQELE_ABA", "Consolidado")
@@ -81,9 +78,9 @@ def _html(pesquisas, hoje):
     <html><body style="font-family:Arial,sans-serif;color:#111">
       <h2 style="margin:0 0 6px 0">Pesquisas com divulgação prevista para hoje</h2>
       <div style="color:#374151;margin:0 0 14px 0">{hoje} · {len(pesquisas)} pesquisa(s)</div>
-      <div style="background:#f0f6ff;border-left:3px solid #2563eb;padding:10px 12px;margin:0 0 16px 0;font-size:13px">
-        <strong>Ação do dia:</strong> baixe o relatório completo de cada pesquisa e salve na pasta
-        <a href="{PASTA_URL}">Pesquisas Eleitorais</a> do Drive, na subpasta do cargo:
+      <div style="background:#eef0f6;border-left:3px solid #192D4E;padding:10px 12px;margin:0 0 16px 0;font-size:13px">
+        <strong style="color:#192D4E">Ação do dia:</strong> baixe o relatório completo de cada pesquisa e salve na pasta
+        <a href="{PASTA_URL}" style="color:#192D4E">Pesquisas Eleitorais</a> do Drive, na subpasta do cargo:
         Presidente Nacional vai em <b>Presidenciáveis/Nacional</b>;
         Presidente por UF em <b>Presidenciáveis/Por UF</b>;
         Governador e Senador em <b>Governadores+Senadores</b>.
@@ -99,6 +96,9 @@ def enviar(subject, html_body):
     if not (api_key and sender and dests):
         print("Config de email incompleta; pulando envio.")
         return
+    from brevo_python import ApiClient, Configuration
+    from brevo_python.api.transactional_emails_api import TransactionalEmailsApi
+    from brevo_python.models.send_smtp_email import SendSmtpEmail
     cfg = Configuration()
     cfg.api_key["api-key"] = api_key
     api = TransactionalEmailsApi(ApiClient(configuration=cfg))
