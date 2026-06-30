@@ -115,6 +115,32 @@ def _enviar(subject, html_body):
             print(f"falha para {dest}: {e}")
 
 
+def _preencher_fila(pesquisas):
+    """Cria na aba 'relatorios' uma linha por pesquisa de hoje (link fica manual)."""
+    if not RELATORIOS_ID:
+        print("SPREADSHEET_ID_RELATORIOS não definido; pulando preenchimento da fila.")
+        return
+    fila = _sheets().open_by_key(RELATORIOS_ID).worksheet("relatorios")
+    header = fila.row_values(1)
+    existentes = {str(r.get("registro", "")).strip() for r in fila.get_all_records()}
+    novas = []
+    for p in pesquisas:
+        reg = str(p.get("numero_identificacao", "")).strip()
+        if not reg or reg in existentes:
+            continue
+        valores = {
+            "registro": reg,
+            "cargo": p.get("cargos", ""),
+            "uf": p.get("abrangencia", ""),
+            "instituto": p.get("empresa_contratada", ""),
+        }
+        novas.append([valores.get(c, "") for c in header])
+        existentes.add(reg)
+    if novas:
+        fila.append_rows(novas, value_input_option="RAW")
+    print(f"{len(novas)} linha(s) adicionada(s) à fila de relatórios.")
+
+
 def cmd_alerta():
     if not PESQELE_ID:
         raise RuntimeError("Defina SPREADSHEET_ID (planilha do PesqEle).")
@@ -126,6 +152,7 @@ def cmd_alerta():
     if pesquisas:
         _enviar(f"Pesquisas eleitorais previstas para hoje ({len(pesquisas)})",
                 _html(pesquisas, hoje))
+        _preencher_fila(pesquisas)
 
 
 # ────────────────────────────── EXTRAÇÃO ──────────────────────────────
