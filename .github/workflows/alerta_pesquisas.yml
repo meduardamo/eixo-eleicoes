@@ -21,3 +21,4 @@ jobs:
           EMAIL: ${{ secrets.EMAIL }}
           DESTINATARIOS: ${{ secrets.DESTINATARIOS }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          SPREADSHEET_ID_RELATORIOS: ${{ secrets.SPREADSHEET_ID_RELATORIOS }}
