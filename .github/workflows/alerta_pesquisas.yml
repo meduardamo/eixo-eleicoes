@@ -1,4 +1,4 @@
-name: Alerta Pesquisas do Dia
+name: alerta-pesquisas
 
 on:
   schedule:
