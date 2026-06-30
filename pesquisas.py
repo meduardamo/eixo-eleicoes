@@ -21,12 +21,34 @@ from google.oauth2.service_account import Credentials
 BRT = timezone(timedelta(hours=-3))
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+CABECALHOS = {
+    "relatorios": ["registro", "cargo", "uf", "instituto", "link",
+                   "salvo_drive", "extraido", "data_extracao"],
+    "voto_segmento": ["registro", "cargo", "uf", "instituto",
+                      "cenario", "candidato", "segmento", "valor"],
+    "rejeicao": ["registro", "cargo", "uf", "instituto",
+                 "candidato", "segmento", "valor"],
+}
+
 
 def _sheets():
     raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
     info = json.loads(raw) if raw else json.load(open("credentials.json", encoding="utf-8"))
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     return gspread.authorize(Credentials.from_service_account_info(info, scopes=scopes))
+
+
+def _aba(sh, nome):
+    """Garante a aba e o cabeçalho. Cria a aba se não existir; escreve o
+    cabeçalho se a primeira linha estiver vazia. Não mexe em dados existentes."""
+    header = CABECALHOS[nome]
+    try:
+        ws = sh.worksheet(nome)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sh.add_worksheet(title=nome, rows=1000, cols=len(header))
+    if not ws.row_values(1):
+        ws.update(range_name="A1", values=[header])
+    return ws
 
 
 def _verdadeiro(v):
@@ -120,7 +142,7 @@ def _preencher_fila(pesquisas):
     if not RELATORIOS_ID:
         print("SPREADSHEET_ID_RELATORIOS não definido; pulando preenchimento da fila.")
         return
-    fila = _sheets().open_by_key(RELATORIOS_ID).worksheet("relatorios")
+    fila = _aba(_sheets().open_by_key(RELATORIOS_ID), "relatorios")
     header = fila.row_values(1)
     existentes = {str(r.get("registro", "")).strip() for r in fila.get_all_records()}
     novas = []
@@ -199,9 +221,9 @@ def cmd_extrair():
     if not RELATORIOS_ID:
         raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
     sh = _sheets().open_by_key(RELATORIOS_ID)
-    fila = sh.worksheet("relatorios")
-    ws_voto = sh.worksheet("voto_segmento")
-    ws_rej = sh.worksheet("rejeicao")
+    fila = _aba(sh, "relatorios")
+    ws_voto = _aba(sh, "voto_segmento")
+    ws_rej = _aba(sh, "rejeicao")
 
     linhas = fila.get_all_records()
     voto_novos, rej_novos, marcar = [], [], []
