@@ -1,0 +1,21 @@
+name: extrair-pesquisas
+
+on:
+  schedule:
+    - cron: '0 12 * * *'   # 09:00 BRT (depois do alerta)
+  workflow_dispatch:
+
+jobs:
+  extrair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install gspread google-auth google-genai requests
+      - run: python pesquisas.py extrair
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SPREADSHEET_ID_RELATORIOS: ${{ secrets.SPREADSHEET_ID_RELATORIOS }}
