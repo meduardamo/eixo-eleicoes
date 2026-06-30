@@ -25,9 +25,9 @@ CABECALHOS = {
     "relatorios": ["registro", "cargo", "uf", "instituto", "link",
                    "salvo_drive", "extraido", "data_extracao"],
     "voto_segmento": ["registro", "cargo", "uf", "instituto",
-                      "cenario", "candidato", "segmento", "valor"],
+                      "cenario", "candidato", "tipo_segmento", "segmento", "valor"],
     "rejeicao": ["registro", "cargo", "uf", "instituto",
-                 "candidato", "segmento", "valor"],
+                 "candidato", "tipo_segmento", "segmento", "valor"],
 }
 
 
@@ -198,19 +198,22 @@ PROMPT = (
     "relatório completo de uma pesquisa e extrai os cruzamentos por segmento.\n\n"
     "Extraia DUAS listas, em JSON:\n\n"
     "1) voto_segmento: para CADA cenário de voto estimulado e CADA candidato, o percentual "
-    "de voto quebrado por segmento demográfico (gênero, idade, escolaridade e renda). "
-    'Cada item: {"cenario": "...", "candidato": "Nome (PARTIDO)", "segmento": "...", "valor": número}.\n\n'
+    "de voto quebrado por segmento demográfico. "
+    'Cada item: {"cenario": "...", "candidato": "Nome (PARTIDO)", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
     "2) rejeicao: para CADA candidato, o percentual de rejeição quebrado por segmento. "
-    'Cada item: {"candidato": "Nome (PARTIDO)", "segmento": "...", "valor": número}.\n\n'
+    'Cada item: {"candidato": "Nome (PARTIDO)", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
     "Regras:\n"
     "1) Preserve os números EXATAMENTE como no relatório. Não arredonde nem recalcule.\n"
     "2) Não invente. Se um cruzamento não existir no relatório, omita.\n"
     "3) Use os rótulos de segmento como aparecem (ex: Masculino, Feminino, 16 a 24 anos, "
     "25 a 34 anos, Fundamental, Médio, Superior, Até 2 SM, Mais de 5 a 10 SM).\n"
-    "4) 'valor' é número, sem o símbolo de %.\n"
-    "5) Identifique o cenário pelo nome ou título que o relatório usa (ex: 'Estimulada 1', "
+    "4) 'tipo_segmento' classifica o segmento em uma destas categorias: genero, idade, "
+    "escolaridade, renda, regiao, religiao, raca. Use exatamente esses rótulos minúsculos. "
+    "Se não encaixar em nenhuma, use 'outro'.\n"
+    "5) 'valor' é número, sem o símbolo de %.\n"
+    "6) Identifique o cenário pelo nome ou título que o relatório usa (ex: 'Estimulada 1', "
     "'Lula x Flávio'). Se houver só um, use 'Estimulada'.\n"
-    "6) Em 'candidato', use o nome como aparece, com o partido entre parênteses se houver.\n\n"
+    "7) Em 'candidato', use o nome como aparece, com o partido entre parênteses se houver.\n\n"
     "Responda SOMENTE o JSON, sem texto extra e sem markdown:\n"
     '{"voto_segmento": [...], "rejeicao": [...]}'
 )
@@ -253,9 +256,11 @@ def cmd_extrair():
         meta = [r.get("registro", ""), r.get("cargo", ""), r.get("uf", ""), r.get("instituto", "")]
         for v in dados.get("voto_segmento", []):
             voto_novos.append(meta + [v.get("cenario", ""), v.get("candidato", ""),
-                                      v.get("segmento", ""), v.get("valor", "")])
+                                      v.get("tipo_segmento", ""), v.get("segmento", ""),
+                                      v.get("valor", "")])
         for v in dados.get("rejeicao", []):
-            rej_novos.append(meta + [v.get("candidato", ""), v.get("segmento", ""), v.get("valor", "")])
+            rej_novos.append(meta + [v.get("candidato", ""), v.get("tipo_segmento", ""),
+                                     v.get("segmento", ""), v.get("valor", "")])
         marcar.append(i)
         print(f"linha {i} ({r.get('registro')}): "
               f"{len(dados.get('voto_segmento', []))} voto, {len(dados.get('rejeicao', []))} rejeição")
