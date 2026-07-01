@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install gspread google-auth google-genai requests
+      - run: pip install gspread google-auth google-genai requests pypdf
       - run: python pesquisas.py extrair
         env:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
