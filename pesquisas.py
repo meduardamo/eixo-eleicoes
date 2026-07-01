@@ -253,11 +253,25 @@ def extrair_do_pdf(pdf_bytes):
     from google import genai
     from google.genai import types
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        temperature=0,
+        max_output_tokens=65536,
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
+    )
     resp = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=[PROMPT, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")],
+        config=config,
     )
-    raw = (getattr(resp, "text", "") or "").strip().replace("```json", "").replace("```", "").strip()
+    raw = (getattr(resp, "text", "") or "").strip()
+    if not raw:
+        fr = "?"
+        cands = getattr(resp, "candidates", None)
+        if cands:
+            fr = getattr(cands[0], "finish_reason", "?")
+        raise RuntimeError(f"resposta vazia ou truncada do Gemini (finish_reason={fr})")
+    raw = raw.replace("```json", "").replace("```", "").strip()
     return json.loads(raw)
 
 
