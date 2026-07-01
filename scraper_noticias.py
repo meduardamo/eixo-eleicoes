@@ -79,31 +79,47 @@ UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB
 
 BRT = timezone(timedelta(hours=-3))
 
+# Só entram notícias publicadas nos últimos N dias (cobre as duas rodadas diárias
+# e o fuso). Ajustável pelo secret NOTICIAS_JANELA_DIAS.
+JANELA_DIAS = int(os.getenv("NOTICIAS_JANELA_DIAS", "2"))
+
+
+def _parse_data(pubdate):
+    """Data do RSS -> datetime em BRT, ou None se não der pra ler."""
+    if not pubdate:
+        return None
+    try:
+        return parsedate_to_datetime(pubdate).astimezone(BRT)
+    except Exception:
+        return None
+
 
 def _formatar_data(pubdate):
     """Converte a data do RSS (GMT) para 'dd/mm/aaaa HH:MM' no horário de Brasília."""
-    if not pubdate:
-        return ""
-    try:
-        return parsedate_to_datetime(pubdate).astimezone(BRT).strftime("%d/%m/%Y %H:%M")
-    except Exception:
-        return pubdate
+    dt = _parse_data(pubdate)
+    return dt.strftime("%d/%m/%Y %H:%M") if dt else (pubdate or "")
 
 
 def google_news_rss(busca, max_itens=20):
-    """Retorna as notícias de uma busca (título, fonte, data, link)."""
+    """Retorna as notícias recentes de uma busca (título, fonte, data, link).
+    Descarta o que for mais antigo que JANELA_DIAS."""
     q = urllib.parse.quote(busca)
     url = f"https://news.google.com/rss/search?q={q}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
     r = requests.get(url, headers=HEADERS, timeout=30)
     r.raise_for_status()
     root = ET.fromstring(r.content)
+    corte = datetime.now(BRT) - timedelta(days=JANELA_DIAS)
     itens = []
     for item in root.findall(".//item")[:max_itens]:
+        pub = item.findtext("pubDate", "")
+        dt = _parse_data(pub)
+        if dt and dt < corte:      # notícia velha, ignora
+            continue
         fonte = item.find("{*}source")
         itens.append({
             "titulo": item.findtext("title", ""),
             "fonte": fonte.text if fonte is not None else "",
-            "data": _formatar_data(item.findtext("pubDate", "")),
+            "data": _formatar_data(pub),
             "link": item.findtext("link", ""),
         })
     return itens
