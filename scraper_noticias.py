@@ -22,6 +22,23 @@ GEMINI_MODEL = "gemini-2.5-flash"
 SHEET_ID  = os.getenv("SPREADSHEET_ID_TSE", "1Vo-2oa11JpPaYC051Z0UYNR1yJZdhYW4RJeylHfX-bA")
 SHEET_ABA = "noticias"
 
+# Planilha com os sites/blogs regionais (colunas Link, Estado).
+SITES_ID  = os.getenv("SPREADSHEET_ID_SITES", "")
+SITES_ABA = os.getenv("SITES_ABA", "deduplicado")
+
+NOME_UF = {
+    'acre': 'AC', 'alagoas': 'AL', 'amapá': 'AP', 'amapa': 'AP', 'amazonas': 'AM',
+    'bahia': 'BA', 'ceará': 'CE', 'ceara': 'CE', 'distrito federal': 'DF',
+    'espírito santo': 'ES', 'espirito santo': 'ES', 'goiás': 'GO', 'goias': 'GO',
+    'maranhão': 'MA', 'maranhao': 'MA', 'mato grosso': 'MT',
+    'mato grosso do sul': 'MS', 'minas gerais': 'MG', 'pará': 'PA', 'para': 'PA',
+    'paraíba': 'PB', 'paraiba': 'PB', 'paraná': 'PR', 'parana': 'PR',
+    'pernambuco': 'PE', 'piauí': 'PI', 'piaui': 'PI', 'rio de janeiro': 'RJ',
+    'rio grande do norte': 'RN', 'rio grande do sul': 'RS', 'rondônia': 'RO',
+    'rondonia': 'RO', 'roraima': 'RR', 'santa catarina': 'SC', 'são paulo': 'SP',
+    'sao paulo': 'SP', 'sergipe': 'SE', 'tocantins': 'TO',
+}
+
 _SA_FIELDS = {
     "type", "project_id", "private_key_id", "private_key", "client_email",
     "client_id", "auth_uri", "token_uri", "auth_provider_x509_cert_url",
@@ -92,14 +109,17 @@ def google_news_rss(busca, max_itens=20):
     return itens
 
 
+TERMOS = ('(convenção OR pré-candidato OR "coordenador de campanha" '
+          'OR "lançamento de candidatura")')
+
+
 def gerar_buscas(cargos=('presidente', 'governador', 'senador')):
     buscas = []
     for cargo in cargos:
         if cargo == 'presidente':            # presidente é nacional, sem UF
-            buscas.append("eleições 2026 presidente (convenção OR pré-candidato)")
+            buscas.append(f"eleições 2026 presidente {TERMOS}")
         else:
-            buscas += [f"eleições 2026 {cargo} {uf} (convenção OR pré-candidato)"
-                       for uf in UFS]
+            buscas += [f"eleições 2026 {cargo} {uf} {TERMOS}" for uf in UFS]
     return buscas
 
 
@@ -163,6 +183,9 @@ def classificar_noticias(noticias):
     for i, n in enumerate(noticias, 1):
         try:
             n.update(classificar_com_gemini(n["titulo"]))
+            # site regional: a UF é conhecida, preenche se o Gemini não achou
+            if not n.get("uf") and n.get("uf_regional"):
+                n["uf"] = n["uf_regional"]
         except Exception as e:
             print(f"[{i}/{total}] erro ao classificar: {e}")
         if i % 10 == 0 or i == total:
@@ -176,7 +199,7 @@ COLUNAS_PLANILHA = [
 ]
 
 
-def _sheets_aba():
+def _gc():
     import gspread
     from google.oauth2.service_account import Credentials
     creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
@@ -187,9 +210,12 @@ def _sheets_aba():
         with open(os.path.join(_dir, "credentials.json"), encoding="utf-8") as f:
             info = {k: v for k, v in json.load(f).items() if k in _SA_FIELDS}
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_info(info, scopes=scopes)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(SHEET_ID)
+    return gspread.authorize(Credentials.from_service_account_info(info, scopes=scopes))
+
+
+def _sheets_aba():
+    import gspread
+    sh = _gc().open_by_key(SHEET_ID)
     try:
         return sh.worksheet(SHEET_ABA)
     except gspread.exceptions.WorksheetNotFound:
@@ -197,6 +223,52 @@ def _sheets_aba():
         aba = sh.add_worksheet(title=SHEET_ABA, rows=5000, cols=len(COLUNAS_PLANILHA))
         aba.append_row(COLUNAS_PLANILHA)
         return aba
+
+
+def carregar_sites_regionais():
+    """Lê a planilha de sites regionais e retorna [(dominio, uf)]."""
+    if not SITES_ID:
+        print("SPREADSHEET_ID_SITES não definido; pulando sites regionais.")
+        return []
+    try:
+        aba = _gc().open_by_key(SITES_ID).worksheet(SITES_ABA)
+        registros = aba.get_all_records()
+    except Exception as e:
+        print(f"Aviso: não foi possível ler os sites regionais: {e}")
+        return []
+    sites, vistos = [], set()
+    for r in registros:
+        link = str(r.get("Link", "") or r.get("link", "")).strip()
+        estado = str(r.get("Estado", "") or r.get("estado", "")).strip()
+        if not link:
+            continue
+        alvo = link if "//" in link else "http://" + link
+        dom = urllib.parse.urlparse(alvo).netloc.lower()
+        dom = dom[4:] if dom.startswith("www.") else dom
+        if not dom or dom in vistos:
+            continue
+        vistos.add(dom)
+        sites.append((dom, NOME_UF.get(estado.lower(), "")))
+    return sites
+
+
+def coletar_regionais(sites, pausa=1.0):
+    """Busca no Google Notícias restrito a cada domínio (site:), tagueando a UF."""
+    vistos, resultado = set(), []
+    for dom, uf in sites:
+        busca = f"site:{dom} {TERMOS}"
+        try:
+            for it in google_news_rss(busca):
+                chave = it['titulo'].strip().lower()
+                if chave and chave not in vistos:
+                    vistos.add(chave)
+                    it['busca'] = f"regional:{dom}"
+                    it['uf_regional'] = uf
+                    resultado.append(it)
+        except Exception as e:
+            print(f"erro em '{dom}': {e}")
+        time.sleep(pausa)
+    return resultado
 
 
 def carregar_titulos_existentes():
@@ -282,7 +354,22 @@ if __name__ == '__main__':
     titulos_existentes = carregar_titulos_existentes()
     print(f"{len(titulos_existentes)} títulos já na planilha.")
 
-    noticias = coletar()   # presidente + governador + senador
+    noticias = coletar()   # presidente + governador + senador (palavra-chave)
+
+    sites = carregar_sites_regionais()
+    if sites:
+        print(f"{len(sites)} sites regionais; buscando via site:...")
+        noticias += coletar_regionais(sites)
+
+    # dedup por título entre as duas fontes (nacional + regional)
+    vistos, unicas = set(), []
+    for n in noticias:
+        chave = n["titulo"].strip().lower()
+        if chave and chave not in vistos:
+            vistos.add(chave)
+            unicas.append(n)
+    noticias = unicas
+
     novas = [n for n in noticias if n["titulo"].strip().lower() not in titulos_existentes]
     print(f"{len(novas)} notícias novas (de {len(noticias)} coletadas)")
 
