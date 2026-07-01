@@ -22,11 +22,11 @@ BRT = timezone(timedelta(hours=-3))
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 CABECALHOS = {
-    "relatorios": ["registro", "cargo", "uf", "instituto", "link",
-                   "salvo_drive", "extraido", "data_extracao"],
-    "voto_segmento": ["registro", "cargo", "uf", "instituto",
+    "relatorios": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
+                   "link", "salvo_drive", "extraido", "data_extracao"],
+    "voto_segmento": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
                       "cenario", "candidato", "tipo_segmento", "segmento", "valor"],
-    "rejeicao": ["registro", "cargo", "uf", "instituto",
+    "rejeicao": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
                  "candidato", "tipo_segmento", "segmento", "valor"],
 }
 
@@ -166,6 +166,7 @@ def _preencher_fila(pesquisas):
             "cargo": p.get("cargos", ""),
             "uf": p.get("abrangencia", ""),
             "instituto": p.get("empresa_contratada", ""),
+            "data_divulgacao": str(p.get("data_divulgacao", ""))[:10],
         }
         novas.append([valores.get(c, "") for c in header])
         existentes.add(reg)
@@ -253,7 +254,8 @@ def cmd_extrair():
         except Exception as e:
             print(f"linha {i} ({r.get('registro')}): erro {e}")
             continue
-        meta = [r.get("registro", ""), r.get("cargo", ""), r.get("uf", ""), r.get("instituto", "")]
+        meta = [r.get("registro", ""), r.get("cargo", ""), r.get("uf", ""),
+                r.get("instituto", ""), r.get("data_divulgacao", "")]
         for v in dados.get("voto_segmento", []):
             voto_novos.append(meta + [v.get("cenario", ""), v.get("candidato", ""),
                                       v.get("tipo_segmento", ""), v.get("segmento", ""),
