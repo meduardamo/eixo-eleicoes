@@ -31,11 +31,14 @@ CABECALHOS = {
 }
 
 
-def _sheets():
+def _creds_info():
     raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
-    info = json.loads(raw) if raw else json.load(open("credentials.json", encoding="utf-8"))
+    return json.loads(raw) if raw else json.load(open("credentials.json", encoding="utf-8"))
+
+
+def _sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    return gspread.authorize(Credentials.from_service_account_info(info, scopes=scopes))
+    return gspread.authorize(Credentials.from_service_account_info(_creds_info(), scopes=scopes))
 
 
 def _aba(sh, nome):
@@ -220,6 +223,32 @@ PROMPT = (
 )
 
 
+def _drive_id(link):
+    import re
+    m = re.search(r"/d/([A-Za-z0-9_-]+)", link) or re.search(r"[?&]id=([A-Za-z0-9_-]+)", link)
+    return m.group(1) if m else None
+
+
+def _baixar_pdf(link):
+    """Baixa o PDF do link. Se for link do Google Drive, usa a API do Drive com a
+    conta de serviço (a pasta precisa estar compartilhada com ela). Senão, download direto."""
+    fid = _drive_id(link)
+    if not fid:
+        return requests.get(link, headers=HEADERS, timeout=60).content
+    from google.auth.transport.requests import Request
+    creds = Credentials.from_service_account_info(
+        _creds_info(), scopes=["https://www.googleapis.com/auth/drive.readonly"])
+    creds.refresh(Request())
+    r = requests.get(
+        f"https://www.googleapis.com/drive/v3/files/{fid}",
+        params={"alt": "media", "supportsAllDrives": "true"},
+        headers={"Authorization": f"Bearer {creds.token}"}, timeout=120)
+    r.raise_for_status()
+    if r.content[:4] != b"%PDF":
+        raise RuntimeError("conteúdo não é PDF (a conta de serviço tem acesso ao arquivo?)")
+    return r.content
+
+
 def extrair_do_pdf(pdf_bytes):
     from google import genai
     from google.genai import types
@@ -249,7 +278,7 @@ def cmd_extrair():
         if not link or _verdadeiro(r.get("extraido")):
             continue
         try:
-            pdf = requests.get(link, headers=HEADERS, timeout=60).content
+            pdf = _baixar_pdf(link)
             dados = extrair_do_pdf(pdf)
         except Exception as e:
             print(f"linha {i} ({r.get('registro')}): erro {e}")
