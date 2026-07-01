@@ -249,7 +249,26 @@ def _baixar_pdf(link):
     return r.content
 
 
-def extrair_do_pdf(pdf_bytes):
+PAGINAS_POR_BLOCO = 5
+
+
+def _blocos_pdf(pdf_bytes, tamanho=PAGINAS_POR_BLOCO):
+    """Fatia o PDF em blocos de páginas. Cada página é um slide autocontido,
+    então a tabela nunca se parte entre blocos."""
+    import io
+    from pypdf import PdfReader, PdfWriter
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    n = len(reader.pages)
+    for ini in range(0, n, tamanho):
+        writer = PdfWriter()
+        for i in range(ini, min(ini + tamanho, n)):
+            writer.add_page(reader.pages[i])
+        buf = io.BytesIO()
+        writer.write(buf)
+        yield buf.getvalue()
+
+
+def _gemini_json(pdf_bytes):
     from google import genai
     from google.genai import types
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -273,6 +292,29 @@ def extrair_do_pdf(pdf_bytes):
         raise RuntimeError(f"resposta vazia ou truncada do Gemini (finish_reason={fr})")
     raw = raw.replace("```json", "").replace("```", "").strip()
     return json.loads(raw)
+
+
+def _dedup(itens, chaves):
+    vistos, saida = set(), []
+    for it in itens:
+        k = tuple(str(it.get(c, "")).strip() for c in chaves)
+        if k not in vistos:
+            vistos.add(k)
+            saida.append(it)
+    return saida
+
+
+def extrair_do_pdf(pdf_bytes):
+    """Extrai bloco a bloco (para caber no limite de tokens e melhorar a
+    precisão) e junta os resultados, removendo duplicatas entre blocos."""
+    voto, rej = [], []
+    for bloco in _blocos_pdf(pdf_bytes):
+        dados = _gemini_json(bloco)
+        voto += dados.get("voto_segmento", [])
+        rej += dados.get("rejeicao", [])
+    voto = _dedup(voto, ["cenario", "candidato", "tipo_segmento", "segmento"])
+    rej = _dedup(rej, ["candidato", "tipo_segmento", "segmento"])
+    return {"voto_segmento": voto, "rejeicao": rej}
 
 
 def cmd_extrair():
