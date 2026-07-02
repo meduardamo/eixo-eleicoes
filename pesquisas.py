@@ -208,8 +208,8 @@ PROMPT = (
     'Cada item: {"cenario": "...", "candidato": "Nome (PARTIDO)", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
     "2) rejeicao: para CADA candidato, o percentual de rejeição quebrado por segmento. "
     'Cada item: {"candidato": "Nome (PARTIDO)", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
-    "3) aprovacao: aprovação/desaprovação ou avaliação de governo ou autoridade (ex: governo "
-    "federal, presidente, governador), quebrada por segmento. "
+    "3) aprovacao: APENAS aprovação/desaprovação ou avaliação do DESEMPENHO de quem está no "
+    "cargo (presidente ou governador em exercício), quebrada por segmento. "
     'Cada item: {"alvo": "...", "resposta": "...", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
     "Regras:\n"
     "1) Preserve os números EXATAMENTE como no relatório. Não arredonde nem recalcule.\n"
@@ -224,9 +224,14 @@ PROMPT = (
     "6) Identifique o cenário pelo nome ou título que o relatório usa (ex: 'Estimulada 1', "
     "'Lula x Flávio'). Se houver só um, use 'Estimulada'.\n"
     "7) Em 'candidato', use o nome como aparece, com o partido entre parênteses se houver.\n"
-    "8) Em aprovacao: 'alvo' é o que está sendo avaliado (ex: 'Governo Lula', 'Presidente "
-    "Lula', 'Governo Federal'); 'resposta' é a categoria como no relatório (ex: 'Aprova', "
-    "'Desaprova', 'Não sabe', 'Ótimo/Bom', 'Regular', 'Ruim/Péssimo').\n\n"
+    "8) Em aprovacao, PADRONIZE o 'alvo' assim: se for avaliação do presidente/governo "
+    "federal, use SEMPRE 'Presidente <Nome>' (ex: 'Presidente Lula'), mesmo que o relatório "
+    "escreva 'Governo Lula', 'Governo Federal' ou 'gestão do presidente'. Se for governador/"
+    "governo estadual, use SEMPRE 'Governador <Nome>'. 'resposta' é a categoria como no "
+    "relatório (ex: 'Aprova', 'Desaprova', 'Não sabe', 'Ótimo/Bom', 'Regular', 'Ruim/Péssimo').\n"
+    "9) NÃO inclua em aprovacao perguntas hipotéticas ou de intenção (ex: 'gostaria que se "
+    "reelegesse', 'a reeleição de X', 'a eleição de Y', desejo de candidatura). aprovacao é só "
+    "avaliação do trabalho de quem já governa.\n\n"
     "Responda SOMENTE o JSON, sem texto extra e sem markdown:\n"
     '{"voto_segmento": [...], "rejeicao": [...], "aprovacao": [...]}'
 )
