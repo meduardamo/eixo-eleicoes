@@ -39,7 +39,7 @@ CREDS_PATH = "credentials.json"
 HEADER_ROW = 3
 DATA_START_ROW = 4
 
-DAYS_BACK = int(os.getenv("DAYS_BACK", "4"))
+DAYS_BACK = int(os.getenv("DAYS_BACK", "15"))
 
 COLS_BASE = [
     "numero_identificacao",
