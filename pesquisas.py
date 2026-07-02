@@ -28,6 +28,8 @@ CABECALHOS = {
                       "cenario", "candidato", "tipo_segmento", "segmento", "valor"],
     "rejeicao": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
                  "candidato", "tipo_segmento", "segmento", "valor"],
+    "aprovacao": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
+                  "alvo", "resposta", "tipo_segmento", "segmento", "valor"],
 }
 
 
@@ -200,12 +202,15 @@ GEMINI_MODEL = "gemini-2.5-flash"
 PROMPT = (
     "Você é um analista de dados de pesquisas eleitorais da Eixo. Você recebe o PDF do "
     "relatório completo de uma pesquisa e extrai os cruzamentos por segmento.\n\n"
-    "Extraia DUAS listas, em JSON:\n\n"
+    "Extraia TRÊS listas, em JSON:\n\n"
     "1) voto_segmento: para CADA cenário de voto estimulado e CADA candidato, o percentual "
     "de voto quebrado por segmento demográfico. "
     'Cada item: {"cenario": "...", "candidato": "Nome (PARTIDO)", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
     "2) rejeicao: para CADA candidato, o percentual de rejeição quebrado por segmento. "
     'Cada item: {"candidato": "Nome (PARTIDO)", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
+    "3) aprovacao: aprovação/desaprovação ou avaliação de governo ou autoridade (ex: governo "
+    "federal, presidente, governador), quebrada por segmento. "
+    'Cada item: {"alvo": "...", "resposta": "...", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
     "Regras:\n"
     "1) Preserve os números EXATAMENTE como no relatório. Não arredonde nem recalcule.\n"
     "2) Não invente. Se um cruzamento não existir no relatório, omita.\n"
@@ -213,13 +218,17 @@ PROMPT = (
     "25 a 34 anos, Fundamental, Médio, Superior, Até 2 SM, Mais de 5 a 10 SM).\n"
     "4) 'tipo_segmento' classifica o segmento em uma destas categorias: genero, idade, "
     "escolaridade, renda, regiao, religiao, raca. Use exatamente esses rótulos minúsculos. "
-    "Se não encaixar em nenhuma, use 'outro'.\n"
+    "Se não encaixar em nenhuma, use 'outro'. Para o total geral (sem recorte), use "
+    "tipo_segmento='geral' e segmento='Total'.\n"
     "5) 'valor' é número, sem o símbolo de %.\n"
     "6) Identifique o cenário pelo nome ou título que o relatório usa (ex: 'Estimulada 1', "
     "'Lula x Flávio'). Se houver só um, use 'Estimulada'.\n"
-    "7) Em 'candidato', use o nome como aparece, com o partido entre parênteses se houver.\n\n"
+    "7) Em 'candidato', use o nome como aparece, com o partido entre parênteses se houver.\n"
+    "8) Em aprovacao: 'alvo' é o que está sendo avaliado (ex: 'Governo Lula', 'Presidente "
+    "Lula', 'Governo Federal'); 'resposta' é a categoria como no relatório (ex: 'Aprova', "
+    "'Desaprova', 'Não sabe', 'Ótimo/Bom', 'Regular', 'Ruim/Péssimo').\n\n"
     "Responda SOMENTE o JSON, sem texto extra e sem markdown:\n"
-    '{"voto_segmento": [...], "rejeicao": [...]}'
+    '{"voto_segmento": [...], "rejeicao": [...], "aprovacao": [...]}'
 )
 
 
@@ -307,14 +316,16 @@ def _dedup(itens, chaves):
 def extrair_do_pdf(pdf_bytes):
     """Extrai bloco a bloco (para caber no limite de tokens e melhorar a
     precisão) e junta os resultados, removendo duplicatas entre blocos."""
-    voto, rej = [], []
+    voto, rej, aprov = [], [], []
     for bloco in _blocos_pdf(pdf_bytes):
         dados = _gemini_json(bloco)
         voto += dados.get("voto_segmento", [])
         rej += dados.get("rejeicao", [])
+        aprov += dados.get("aprovacao", [])
     voto = _dedup(voto, ["cenario", "candidato", "tipo_segmento", "segmento"])
     rej = _dedup(rej, ["candidato", "tipo_segmento", "segmento"])
-    return {"voto_segmento": voto, "rejeicao": rej}
+    aprov = _dedup(aprov, ["alvo", "resposta", "tipo_segmento", "segmento"])
+    return {"voto_segmento": voto, "rejeicao": rej, "aprovacao": aprov}
 
 
 def cmd_extrair():
@@ -324,9 +335,10 @@ def cmd_extrair():
     fila = _aba(sh, "relatorios")
     ws_voto = _aba(sh, "voto_segmento")
     ws_rej = _aba(sh, "rejeicao")
+    ws_aprov = _aba(sh, "aprovacao")
 
     linhas = fila.get_all_records()
-    voto_novos, rej_novos, marcar = [], [], []
+    voto_novos, rej_novos, aprov_novos, marcar = [], [], [], []
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
 
     for i, r in enumerate(linhas, start=2):   # linha 1 = cabeçalho
@@ -348,14 +360,22 @@ def cmd_extrair():
         for v in dados.get("rejeicao", []):
             rej_novos.append(meta + [v.get("candidato", ""), v.get("tipo_segmento", ""),
                                      v.get("segmento", ""), v.get("valor", "")])
+        for v in dados.get("aprovacao", []):
+            aprov_novos.append(meta + [v.get("alvo", ""), v.get("resposta", ""),
+                                       v.get("tipo_segmento", ""), v.get("segmento", ""),
+                                       v.get("valor", "")])
         marcar.append(i)
         print(f"linha {i} ({r.get('registro')}): "
-              f"{len(dados.get('voto_segmento', []))} voto, {len(dados.get('rejeicao', []))} rejeição")
+              f"{len(dados.get('voto_segmento', []))} voto, "
+              f"{len(dados.get('rejeicao', []))} rejeição, "
+              f"{len(dados.get('aprovacao', []))} aprovação")
 
     if voto_novos:
         ws_voto.append_rows(voto_novos, value_input_option="RAW")
     if rej_novos:
         ws_rej.append_rows(rej_novos, value_input_option="RAW")
+    if aprov_novos:
+        ws_aprov.append_rows(aprov_novos, value_input_option="RAW")
 
     headers = fila.row_values(1)
     if marcar and "extraido" in headers:
