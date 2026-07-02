@@ -2,19 +2,25 @@ name: pesqele-daily
 
 on:
   workflow_dispatch:
+    inputs:
+      days_back:
+        description: "Dias para trás (backfill: use um número maior, ex.: 20)"
+        default: "7"
+        required: false
   schedule:
     - cron: '7 10 * * *'
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     env:
       HEADLESS: "1"
       ELEICAO_TEXT: "Eleições Gerais 2026"
       ADD_HOURS: "3"
       TZ: "America/Recife"
+      DAYS_BACK: ${{ github.event.inputs.days_back || '5' }}
 
     steps:
       - name: Checkout
