@@ -39,7 +39,7 @@ CREDS_PATH = "credentials.json"
 HEADER_ROW = 3
 DATA_START_ROW = 4
 
-DAYS_BACK = int(os.getenv("DAYS_BACK", "3"))
+DAYS_BACK = int(os.getenv("DAYS_BACK", "4"))
 
 COLS_BASE = [
     "numero_identificacao",
@@ -65,8 +65,9 @@ def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = 
     opts.add_argument("--disable-setuid-sandbox")
 
     if headless or os.getenv("CI"):
-        opts.add_argument("--headless")
+        opts.add_argument("--headless=new")
         opts.add_argument("--window-size=1920,1080")
+        opts.add_argument("--disable-software-rasterizer")
     else:
         opts.add_argument("--start-maximized")
         opts.add_argument(f"--user-data-dir={os.path.abspath(profile_dir)}")
@@ -74,6 +75,20 @@ def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = 
     driver = webdriver.Chrome(options=opts)
     driver.set_page_load_timeout(120)
     return driver
+
+
+def get_with_retry(driver: webdriver.Chrome, url: str, tries: int = 3) -> None:
+    """driver.get com retry: o Chrome headless às vezes estoura o renderer no
+    primeiro acesso em CI."""
+    for i in range(tries):
+        try:
+            driver.get(url)
+            return
+        except TimeoutException:
+            if i == tries - 1:
+                raise
+            print(f"driver.get falhou (tentativa {i + 1}); repetindo...")
+            time.sleep(3)
 
 
 def wait_dom_ready(driver: webdriver.Chrome, timeout: int = 30) -> None:
@@ -553,7 +568,7 @@ def run_one_scope(
             if attempt < max_retries - 1:
                 print(f"Tentativa {attempt + 1} falhou com stale element, tentando novamente...")
                 time.sleep(2)
-                driver.get(URL_LISTAR)
+                get_with_retry(driver, URL_LISTAR)
                 wait_dom_ready(driver)
                 time.sleep(1)
                 continue
@@ -563,7 +578,7 @@ def run_one_scope(
             if attempt < max_retries - 1:
                 print(f"Tentativa {attempt + 1} falhou: {str(e)[:120]}, tentando novamente...")
                 time.sleep(2)
-                driver.get(URL_LISTAR)
+                get_with_retry(driver, URL_LISTAR)
                 wait_dom_ready(driver)
                 time.sleep(1)
                 continue
@@ -582,7 +597,7 @@ def run_to_google_sheets_insert_dedup(
     wait = WebDriverWait(driver, 30)
 
     try:
-        driver.get(URL_LISTAR)
+        get_with_retry(driver, URL_LISTAR)
         wait_dom_ready(driver)
 
         if "BRASIL" not in SKIP_SHEETS:
