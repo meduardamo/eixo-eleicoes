@@ -94,8 +94,9 @@ def classificar_tipo_resultado(nome: str, tipo_informado: str = "") -> str:
     if tipo in TIPOS_RESULTADO:
         return tipo
     nome_norm = normalizar_texto_simples(nome).lower()
-    marcadores = ["branco", "nulo", "nulos", "ns/nr", "nsnr",
-                  "não sabe", "nao sabe", "indeciso", "indecisos", "nenhum"]
+    marcadores = ["branco", "nulo", "nulos", "ns/nr", "nsnr", "não sabe", "nao sabe",
+                  "indeciso", "indecisos", "nenhum", "não válido", "nao valido",
+                  "não valido", "nao válido", "não respond", "nao respond"]
     if any(tag in nome_norm for tag in marcadores):
         return "nao_valido"
     return "candidato"
@@ -174,6 +175,55 @@ def gerar_conteudo_gemini(contents, tentativas: int = 3, backoff: float = 1.5):
     raise RuntimeError(f"Gemini falhou após {tentativas} tentativas: {ultimo}")
 
 
+NOME_UF = {
+    "brasil": "BR", "acre": "AC", "alagoas": "AL", "amapá": "AP", "amapa": "AP",
+    "amazonas": "AM", "bahia": "BA", "ceará": "CE", "ceara": "CE",
+    "distrito federal": "DF", "espírito santo": "ES", "espirito santo": "ES",
+    "goiás": "GO", "goias": "GO", "maranhão": "MA", "maranhao": "MA",
+    "mato grosso": "MT", "mato grosso do sul": "MS", "minas gerais": "MG",
+    "pará": "PA", "para": "PA", "paraíba": "PB", "paraiba": "PB", "paraná": "PR",
+    "parana": "PR", "pernambuco": "PE", "piauí": "PI", "piaui": "PI",
+    "rio de janeiro": "RJ", "rio grande do norte": "RN", "rio grande do sul": "RS",
+    "rondônia": "RO", "rondonia": "RO", "roraima": "RR", "santa catarina": "SC",
+    "são paulo": "SP", "sao paulo": "SP", "sergipe": "SE", "tocantins": "TO",
+}
+
+
+def sigla_uf(valor) -> str:
+    v = normalizar_texto_simples(valor)
+    if len(v) == 2:
+        return v.upper()
+    return NOME_UF.get(v.lower(), v.upper())
+
+
+_CANONICO = None
+
+
+def _canonico() -> dict:
+    global _CANONICO
+    if _CANONICO is None:
+        caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "canonico.json")
+        try:
+            with open(caminho, encoding="utf-8") as f:
+                _CANONICO = json.load(f)
+        except Exception:
+            _CANONICO = {"institutos": [], "presidente": [], "governador": {}, "senador": {}}
+    return _CANONICO
+
+
+def _referencia(cargo, uf):
+    """Retorna (lista de candidatos canônicos do cargo/UF, lista de institutos canônicos)."""
+    c = _canonico()
+    cargo = (cargo or "").lower()
+    if cargo == "presidente":
+        cands = c.get("presidente", [])
+    elif cargo in ("governador", "senador"):
+        cands = c.get(cargo, {}).get(sigla_uf(uf), [])
+    else:
+        cands = []
+    return cands, c.get("institutos", [])
+
+
 def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "", escopo: dict | None = None) -> dict:
     escopo = escopo or {}
     restricoes = []
@@ -188,11 +238,21 @@ def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "", escop
                  "cargos ou turnos que apareçam no material.\nSe não houver bloco que case, "
                  "retorne cenarios=[].\n\n")
 
+    cands, institutos = _referencia(escopo.get("cargo"), escopo.get("uf"))
+    bloco_ref = ""
+    if cands:
+        bloco_ref += ("CANDIDATOS CANÔNICOS deste cargo/UF (quando o candidato do relatório for "
+                      "um destes, use EXATAMENTE o mesmo nome curto e a mesma sigla; o texto entre "
+                      "parênteses é o partido):\n" + "\n".join(cands) + "\n\n")
+    if institutos:
+        bloco_ref += ("INSTITUTOS CANÔNICOS (quando o instituto do relatório corresponder a um "
+                      "destes, use EXATAMENTE este nome):\n" + ", ".join(institutos) + "\n\n")
+
     prompt = f"""
 Você recebe o texto completo de um PDF de uma pesquisa eleitoral brasileira.
 Extraia os dados estruturados para inserção em planilha.
 
-{bloco}REGRAS:
+{bloco}{bloco_ref}REGRAS:
 - Responda somente com JSON válido.
 - Não invente dados ausentes. Use string vazia ou null.
 - Datas devem sair em YYYY-MM-DD quando possível.
@@ -201,7 +261,13 @@ Extraia os dados estruturados para inserção em planilha.
 - uf deve estar em caixa alta. Para presidente nacional use BR.
 - percentual deve ser numérico, sem %.
 - tipo deve ser candidato ou nao_valido.
-- Use nao_valido para branco/nulo, indecisos, ns/nr e equivalentes.
+- PADRONIZAÇÃO DE NOMES: se o candidato corresponder a um da lista canônica acima, use o nome
+  curto e a sigla EXATAMENTE como lá (campo 'candidato' = a parte antes do parêntese; 'partido' =
+  a sigla dentro do parêntese). Se não estiver na lista, use o nome curto usual + a sigla do partido.
+- INSTITUTO: se corresponder a um da lista canônica, use o nome exato de lá.
+- INVÁLIDOS: consolide TODOS os votos inválidos (branco, nulo, indeciso, não sabe, não respondeu,
+  ns/nr) em UM ÚNICO item por cenário: candidato='Não válido', partido='', tipo='nao_valido',
+  percentual = a soma deles.
 - modo é o método de coleta (ex.: Presencial, Telefônica (CATI), Online, Misto). Vazio se não houver.
 - metodologia é a descrição da metodologia conforme reportada (plano amostral, universo, técnica). Texto livre.
 - Cada cenário estimulado vira um item de "cenarios". Traga o voto ESTIMULADO principal por candidato.
