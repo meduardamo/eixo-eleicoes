@@ -543,17 +543,39 @@ def cmd_publicar():
             df["percentual"] = pd.to_numeric(df["percentual"], errors="coerce")
         return df
 
+    def _registros_no_polling(sheet_id):
+        """registros que já existem na planilha de turno (do PollingData ou de rodada
+        anterior). Evita republicar e duplicar."""
+        try:
+            aba = gc.open_by_key(sheet_id).worksheet("resultados")
+        except Exception:
+            return set()
+        cab = aba.row_values(1)
+        if "registro_tse" not in cab:
+            return set()
+        col = aba.col_values(cab.index("registro_tse") + 1)[1:]
+        return {v.strip() for v in col if v.strip()}
+
     publicados = []
     for turno, sheet_id in (("t1", T1_ID), ("t2", T2_ID)):
         if not sheet_id:
             continue
-        pt = pendentes[pendentes["turno"].astype(str).str.lower() == turno]
+        pt_all = pendentes[pendentes["turno"].astype(str).str.lower() == turno]
+        if pt_all.empty:
+            continue
+        publicados += list(pt_all.index)   # tratados nesta rodada (enviados ou pulados)
+
+        existentes = _registros_no_polling(sheet_id)
+        ja = pt_all["registro_tse"].astype(str).str.strip().isin(existentes)
+        if ja.any():
+            print(f"{turno}: {int(ja.sum())} cenário(s) já na planilha (registro existente), pulando")
+        pt = pt_all[~ja]
         if pt.empty:
             continue
+
         ids = set(pt["scenario_id"].astype(str))
         rt = df_r[df_r["scenario_id"].astype(str).isin(ids)]
         salvar_tudo(gc, sheet_id, _preparar(pt), _preparar(rt))
-        publicados += list(pt.index)
         print(f"{turno}: {len(pt)} cenário(s), {len(rt)} resultado(s) -> planilha de {turno}")
 
     for i in publicados:   # índice 0-based do df = linha (i+2) na planilha
