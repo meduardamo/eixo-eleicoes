@@ -16,8 +16,6 @@ jobs:
       GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       SPREADSHEET_ID_RELATORIOS: ${{ secrets.SPREADSHEET_ID_RELATORIOS }}
-      SPREADSHEET_ID_POLLINGDATA: ${{ secrets.SPREADSHEET_ID_POLLINGDATA }}
-      SPREADSHEET_ID_POLLINGDATA_T2: ${{ secrets.SPREADSHEET_ID_POLLINGDATA_T2 }}
 
     steps:
       - name: Checkout
@@ -33,10 +31,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Extrair topline dos PDFs (staging)
+      - name: Extrair topline dos PDFs (staging, NÃO publica)
         run: |
           python pesquisas.py topline
 
-      - name: Publicar nas planilhas de turno (t1/t2 + média)
-        run: |
-          python pesquisas.py publicar
+      # Publicação nas planilhas de turno desativada por enquanto.
+      # Quando quiser ligar, reative este passo (e os secrets abaixo no env):
+      #   SPREADSHEET_ID_POLLINGDATA / SPREADSHEET_ID_POLLINGDATA_T2
+      # - name: Publicar nas planilhas de turno (t1/t2 + média)
+      #   run: |
+      #     python pesquisas.py publicar
