@@ -30,6 +30,16 @@ CABECALHOS = {
                  "candidato", "tipo_segmento", "segmento", "valor"],
     "aprovacao": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
                   "alvo", "resposta", "tipo_segmento", "segmento", "valor"],
+    "topline_pesquisas": ["registro_tse", "ano", "cargo", "uf", "turno",
+                          "instituto", "classificacao_instituto", "data_campo",
+                          "scenario_label", "modo", "amostra", "margem_erro", "confianca",
+                          "metodologia", "poll_id", "scenario_id", "fonte_url",
+                          "fonte_url_original", "conferida", "horario_raspagem", "origem"],
+    "topline_resultados": ["registro_tse", "ano", "cargo", "uf", "turno",
+                           "instituto", "classificacao_instituto", "data_campo",
+                           "scenario_label", "candidato", "partido", "candidato_partido",
+                           "tipo", "percentual", "poll_id", "scenario_id", "fonte_url",
+                           "horario_raspagem", "origem"],
 }
 
 
@@ -394,11 +404,172 @@ def cmd_extrair():
     print(f"\n{len(marcar)} relatório(s) extraído(s).")
 
 
+# ────────────────────────────── TOPLINE ──────────────────────────────
+# Versão em lote do painel Polling Manual: lê os PDFs da fila e grava o voto
+# estimulado (topline) na planilha do PollingData, no mesmo formato do
+# `resultados`, tagueado manual (reconcilia com o oficial quando a assinatura sair).
+
+POLLING_ID = os.getenv("SPREADSHEET_ID_POLLINGDATA", "")
+FLAG_TOPLINE = "topline_extraido"
+CARGOS_POLLING = {"presidente", "governador", "senador"}
+
+
+def _cargos_da_linha(valor):
+    cargos = []
+    for c in str(valor or "").split(","):
+        c = c.strip().lower()
+        if c in CARGOS_POLLING and c not in cargos:
+            cargos.append(c)
+    return cargos
+
+
+def cmd_topline():
+    if not RELATORIOS_ID:
+        raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
+    import pandas as pd
+    from polling_manual_core import (
+        extrair_dados_polling_gemini, extrair_texto_pdf_bytes, montar_dataframes_polling,
+    )
+
+    sh = _sheets().open_by_key(RELATORIOS_ID)
+    fila = sh.worksheet("relatorios")
+
+    header = fila.row_values(1)
+    if FLAG_TOPLINE not in header:
+        header.append(FLAG_TOPLINE)
+        fila.update_cell(1, len(header), FLAG_TOPLINE)
+    col_flag = header.index(FLAG_TOPLINE) + 1
+
+    linhas = fila.get_all_records()
+    todos_p, todos_r, marcar = [], [], []
+
+    for i, r in enumerate(linhas, start=2):
+        link = str(r.get("link", "")).strip()
+        if not link or _verdadeiro(r.get(FLAG_TOPLINE)):
+            continue
+        cargos = _cargos_da_linha(r.get("cargo"))
+        if not cargos:
+            print(f"linha {i} ({r.get('registro')}): sem cargo de polling, pulando")
+            continue
+        try:
+            texto = extrair_texto_pdf_bytes(_baixar_pdf(link))
+        except Exception as e:
+            print(f"linha {i} ({r.get('registro')}): erro ao baixar/ler PDF: {e}")
+            continue
+        if not texto:
+            print(f"linha {i} ({r.get('registro')}): PDF sem texto (scan?), pulando")
+            continue
+
+        n_cen = 0
+        for cargo in cargos:
+            try:
+                payload = extrair_dados_polling_gemini(texto, url_original=link, escopo={"cargo": cargo})
+                df_p, df_r = montar_dataframes_polling(payload, fonte_url=link)
+            except Exception as e:
+                print(f"linha {i} ({r.get('registro')}) [{cargo}]: erro na extração: {e}")
+                continue
+            if not df_r.empty:
+                todos_p.append(df_p)
+                todos_r.append(df_r)
+                n_cen += len(df_p)
+        marcar.append(i)
+        print(f"linha {i} ({r.get('registro')}): {n_cen} cenário(s) de topline")
+
+    def _gravar(dfs, aba_nome):
+        if not dfs:
+            return
+        cols = CABECALHOS[aba_nome]
+        df = pd.concat(dfs, ignore_index=True).reindex(columns=cols).fillna("")
+        ws = _aba(sh, aba_nome)
+        ws.append_rows(df.astype(str).values.tolist(), value_input_option="RAW")
+        print(f"{len(df)} linha(s) gravadas na aba '{aba_nome}'.")
+
+    _gravar(todos_p, "topline_pesquisas")
+    _gravar(todos_r, "topline_resultados")
+
+    for row_i in marcar:
+        fila.update_cell(row_i, col_flag, "sim")
+    print(f"\n{len(marcar)} relatório(s) processado(s) para topline.")
+
+
+# ────────────────────────────── PUBLICAR ──────────────────────────────
+# Parte 2: lê o staging (topline_pesquisas/topline_resultados), separa por turno
+# e envia pras planilhas do PollingData (t1 e t2) via salvar_tudo, que gera
+# pesquisas + resultados + resultados_bi (média móvel). Reusa o scraper_polling
+# chamando-o, sem alterá-lo.
+
+T1_ID = os.getenv("SPREADSHEET_ID_POLLINGDATA", "")
+T2_ID = os.getenv("SPREADSHEET_ID_POLLINGDATA_T2", "")
+
+
+def cmd_publicar():
+    if not RELATORIOS_ID:
+        raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
+    if not (T1_ID or T2_ID):
+        raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
+    import pandas as pd
+    from scraper_polling import classificar_instituto, gs_client_from_env, salvar_tudo
+
+    gc = gs_client_from_env()
+    sh = gc.open_by_key(RELATORIOS_ID)
+    ws_p = sh.worksheet("topline_pesquisas")
+    ws_r = sh.worksheet("topline_resultados")
+
+    df_p = pd.DataFrame(ws_p.get_all_records())
+    df_r = pd.DataFrame(ws_r.get_all_records())
+    if df_p.empty:
+        print("topline_pesquisas vazia; nada a publicar.")
+        return
+
+    header_p = ws_p.row_values(1)
+    if "publicado" not in header_p:
+        header_p.append("publicado")
+        ws_p.update_cell(1, len(header_p), "publicado")
+    col_pub = header_p.index("publicado") + 1
+    if "publicado" not in df_p.columns:
+        df_p["publicado"] = ""
+
+    feito = df_p["publicado"].astype(str).str.strip().str.lower().isin(["sim", "true", "1", "x"])
+    pendentes = df_p[~feito]
+    if pendentes.empty:
+        print("Tudo já publicado.")
+        return
+
+    def _preparar(df):
+        df = df.drop(columns=["publicado"], errors="ignore").copy()
+        if "instituto" in df.columns:
+            df["classificacao_instituto"] = df["instituto"].apply(classificar_instituto)
+        if "percentual" in df.columns:
+            df["percentual"] = pd.to_numeric(df["percentual"], errors="coerce")
+        return df
+
+    publicados = []
+    for turno, sheet_id in (("t1", T1_ID), ("t2", T2_ID)):
+        if not sheet_id:
+            continue
+        pt = pendentes[pendentes["turno"].astype(str).str.lower() == turno]
+        if pt.empty:
+            continue
+        ids = set(pt["scenario_id"].astype(str))
+        rt = df_r[df_r["scenario_id"].astype(str).isin(ids)]
+        salvar_tudo(gc, sheet_id, _preparar(pt), _preparar(rt))
+        publicados += list(pt.index)
+        print(f"{turno}: {len(pt)} cenário(s), {len(rt)} resultado(s) -> planilha de {turno}")
+
+    for i in publicados:   # índice 0-based do df = linha (i+2) na planilha
+        ws_p.update_cell(i + 2, col_pub, "sim")
+    print(f"\n{len(publicados)} cenário(s) publicado(s).")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "alerta":
         cmd_alerta()
     elif cmd == "extrair":
         cmd_extrair()
+    elif cmd == "topline":
+        cmd_topline()
+    elif cmd == "publicar":
+        cmd_publicar()
     else:
-        print("uso: python pesquisas.py [alerta|extrair]")
+        print("uso: python pesquisas.py [alerta|extrair|topline|publicar]")
