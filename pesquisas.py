@@ -34,7 +34,8 @@ CABECALHOS = {
                           "instituto", "classificacao_instituto", "data_campo",
                           "scenario_label", "descricao", "modo", "amostra", "margem_erro",
                           "confianca", "metodologia", "poll_id", "scenario_id", "fonte_url",
-                          "fonte_url_original", "conferida", "horario_raspagem", "origem"],
+                          "fonte_url_original", "conferida", "horario_raspagem",
+                          "validacao", "origem"],
     "topline_resultados": ["registro_tse", "ano", "cargo", "uf", "turno",
                            "instituto", "classificacao_instituto", "data_campo",
                            "scenario_label", "candidato", "partido", "candidato_partido",
@@ -267,7 +268,12 @@ PROMPT = (
     "5) 'valor' é número, sem o símbolo de %.\n"
     "6) Identifique o cenário pelo nome ou título que o relatório usa (ex: 'Estimulada 1', "
     "'Lula x Flávio'). Se houver só um, use 'Estimulada'.\n"
-    "7) Em 'candidato', use o nome como aparece, com o partido entre parênteses se houver.\n"
+    "7) Em 'candidato', use SEMPRE o formato 'Nome (SIGLA)'. Se o candidato constar na lista "
+    "canônica fornecida abaixo, use EXATAMENTE o nome e a sigla de lá. A sigla do partido é "
+    "sempre curta e em caixa alta (PT, PL, MDB, REP, UNIAO...), nunca por extenso.\n"
+    "7b) Em voto_segmento, consolide as respostas inválidas (branco, nulo, não sabe, não "
+    "respondeu, indeciso, nenhum) em um único candidato='Não válido' por cenário e segmento, "
+    "somando os valores. Em rejeicao, mantenha as categorias de resposta como no relatório.\n"
     "8) Em aprovacao, PADRONIZE o 'alvo' assim: se for avaliação do presidente/governo "
     "federal, use SEMPRE 'Presidente <Nome>' (ex: 'Presidente Lula'), mesmo que o relatório "
     "escreva 'Governo Lula', 'Governo Federal' ou 'gestão do presidente'. Se for governador/"
@@ -326,7 +332,7 @@ def _blocos_pdf(pdf_bytes, tamanho=PAGINAS_POR_BLOCO):
         yield buf.getvalue()
 
 
-def _gemini_json(pdf_bytes):
+def _gemini_json(pdf_bytes, extra=""):
     from google import genai
     from google.genai import types
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -336,9 +342,10 @@ def _gemini_json(pdf_bytes):
         max_output_tokens=65536,
         thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
+    prompt = PROMPT + (f"\n\n{extra}" if extra else "")
     resp = client.models.generate_content(
         model=GEMINI_MODEL,
-        contents=[PROMPT, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")],
+        contents=[prompt, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")],
         config=config,
     )
     raw = (getattr(resp, "text", "") or "").strip()
@@ -362,12 +369,12 @@ def _dedup(itens, chaves):
     return saida
 
 
-def extrair_do_pdf(pdf_bytes):
+def extrair_do_pdf(pdf_bytes, extra=""):
     """Extrai bloco a bloco (para caber no limite de tokens e melhorar a
     precisão) e junta os resultados, removendo duplicatas entre blocos."""
     voto, rej, aprov = [], [], []
     for bloco in _blocos_pdf(pdf_bytes):
-        dados = _gemini_json(bloco)
+        dados = _gemini_json(bloco, extra)
         voto += dados.get("voto_segmento", [])
         rej += dados.get("rejeicao", [])
         aprov += dados.get("aprovacao", [])
@@ -380,6 +387,8 @@ def extrair_do_pdf(pdf_bytes):
 def cmd_extrair():
     if not RELATORIOS_ID:
         raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
+    from polling_manual_core import _referencia, instituto_canonico, sigla_uf
+
     sh = _sheets().open_by_key(RELATORIOS_ID)
     fila = _aba(sh, "relatorios")
     ws_voto = _aba(sh, "voto_segmento")
@@ -390,18 +399,27 @@ def cmd_extrair():
     voto_novos, rej_novos, aprov_novos, marcar = [], [], [], []
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
 
+    def _bloco_canonico(cargo_txt, uf):
+        """Listas canônicas de candidatos dos cargos/UF desta pesquisa, pro prompt."""
+        partes = []
+        for cargo in _cargos_da_linha(cargo_txt):
+            cands, _ = _referencia(cargo, uf)
+            if cands:
+                partes.append(f"CANDIDATOS CANÔNICOS ({cargo} {sigla_uf(uf)}):\n" + "\n".join(cands))
+        return "\n\n".join(partes)
+
     for i, r in enumerate(linhas, start=2):   # linha 1 = cabeçalho
         link = str(r.get("link", "")).strip()
         if not link or _verdadeiro(r.get("extraido")):
             continue
         try:
             pdf = _baixar_pdf(link)
-            dados = extrair_do_pdf(pdf)
+            dados = extrair_do_pdf(pdf, extra=_bloco_canonico(r.get("cargo"), r.get("uf")))
         except Exception as e:
             print(f"linha {i} ({r.get('registro')}): erro {e}")
             continue
-        meta = [r.get("registro", ""), r.get("cargo", ""), r.get("uf", ""),
-                r.get("instituto", ""), r.get("data_divulgacao", "")]
+        meta = [r.get("registro", ""), r.get("cargo", ""), sigla_uf(r.get("uf", "")),
+                instituto_canonico(r.get("instituto", "")), r.get("data_divulgacao", "")]
         for v in dados.get("voto_segmento", []):
             voto_novos.append(meta + [v.get("cenario", ""), v.get("candidato", ""),
                                       v.get("tipo_segmento", ""), v.get("segmento", ""),
@@ -430,10 +448,12 @@ def cmd_extrair():
     if marcar and "extraido" in headers:
         ci_ext = headers.index("extraido") + 1
         ci_data = headers.index("data_extracao") + 1 if "data_extracao" in headers else None
+        celulas = []
         for row_i in marcar:
-            fila.update_cell(row_i, ci_ext, "sim")
+            celulas.append(gspread.Cell(row_i, ci_ext, "sim"))
             if ci_data:
-                fila.update_cell(row_i, ci_data, agora)
+                celulas.append(gspread.Cell(row_i, ci_data, agora))
+        fila.update_cells(celulas, value_input_option="RAW")
 
     print(f"\n{len(marcar)} relatório(s) extraído(s).")
 
@@ -471,29 +491,43 @@ def cmd_topline():
     header = fila.row_values(1)
     col_flag = _garantir_coluna(fila, header, FLAG_TOPLINE)
     col_data = _garantir_coluna(fila, header, "topline_data_extracao")
+    col_erro = _garantir_coluna(fila, header, "topline_erro")
+    col_tent = _garantir_coluna(fila, header, "topline_tentativas")
 
     linhas = fila.get_all_records()
-    todos_p, todos_r, marcar = [], [], []
+    todos_p, todos_r = [], []
+    updates = []          # células a marcar (batch no fim, evita cota do Sheets)
+    ok_regs, err_regs = [], []
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
+
+    def _falha(row_i, registro, tentativas, msg):
+        updates.extend([gspread.Cell(row_i, col_erro, msg[:300]),
+                        gspread.Cell(row_i, col_tent, tentativas + 1)])
+        err_regs.append(f"{registro} [{msg[:80]}]")
+        print(f"linha {row_i} ({registro}): erro: {msg}")
 
     for i, r in enumerate(linhas, start=2):
         link = str(r.get("link", "")).strip()
+        registro_fila = str(r.get("registro", "")).strip()
         if not link or _verdadeiro(r.get(FLAG_TOPLINE)):
+            continue
+        tentativas = int(r.get("topline_tentativas") or 0)
+        if tentativas >= 3:   # desiste após 3 falhas; erro fica anotado na planilha
             continue
         cargos = _cargos_da_linha(r.get("cargo"))
         if not cargos:
-            print(f"linha {i} ({r.get('registro')}): sem cargo de polling, pulando")
             continue
         try:
-            texto = extrair_texto_pdf_bytes(_baixar_pdf(link))
+            pdf = _baixar_pdf(link)
+            texto = extrair_texto_pdf_bytes(pdf)
         except Exception as e:
-            print(f"linha {i} ({r.get('registro')}): erro ao baixar/ler PDF: {e}")
+            _falha(i, registro_fila, tentativas, f"baixar/ler PDF: {e}")
             continue
-        if not texto:
-            print(f"linha {i} ({r.get('registro')}): PDF sem texto (scan?), pulando")
-            continue
+        if len(texto) < 200:   # scan/sem camada de texto: manda o PDF pro Gemini (visão)
+            print(f"linha {i} ({registro_fila}): PDF sem texto útil, usando visão")
+            texto = ""
 
-        n_cen = 0
+        n_cen, avisos, houve_erro = 0, [], False
         # um mesmo PDF costuma ter 1º e 2º turno; extrai cada turno separado,
         # senão o Gemini fixa um turno só no payload e descarta o outro.
         for cargo in cargos:
@@ -501,19 +535,47 @@ def cmd_topline():
                 try:
                     payload = extrair_dados_polling_gemini(
                         texto, url_original=link,
-                        escopo={"cargo": cargo, "turno": turno, "uf": r.get("uf", "")})
+                        escopo={"cargo": cargo, "turno": turno, "uf": r.get("uf", "")},
+                        pdf_bytes=None if texto else pdf)
                     payload["turno"] = turno   # garante o turno pedido no rótulo/poll_id
+                    # registro da fila é a fonte da verdade; avisa se o PDF divergir
+                    reg_pdf = str(payload.get("registro_tse", "")).strip()
+                    if reg_pdf and registro_fila and reg_pdf != registro_fila:
+                        avisos.append(f"registro no PDF ({reg_pdf}) difere da fila")
+                    payload["registro_tse"] = registro_fila or reg_pdf
+                    # sem data de campo no PDF: usa a data de divulgação da fila
+                    if not str(payload.get("data_campo", "")).strip():
+                        payload["data_campo"] = str(r.get("data_divulgacao", "")).strip()
                     df_p, df_r = montar_dataframes_polling(
                         payload, fonte_url=link, instituto_fonte=r.get("instituto", ""))
                 except Exception as e:
-                    print(f"linha {i} ({r.get('registro')}) [{cargo}/{turno}]: erro na extração: {e}")
+                    print(f"linha {i} ({registro_fila}) [{cargo}/{turno}]: erro na extração: {e}")
+                    houve_erro = True
                     continue
-                if not df_r.empty:
-                    todos_p.append(df_p)
-                    todos_r.append(df_r)
-                    n_cen += len(df_p)
-        marcar.append(i)
-        print(f"linha {i} ({r.get('registro')}): {n_cen} cenário(s) de topline")
+                if df_r.empty:
+                    continue
+                # sanidade: percentual fora de 0-100 e soma do cenário fora de 85-115
+                if (df_r["percentual"] < 0).any() or (df_r["percentual"] > 100).any():
+                    avisos.append(f"{cargo}/{turno}: percentual fora de 0-100")
+                for sid, grupo in df_r.groupby("scenario_id"):
+                    soma = grupo["percentual"].sum()
+                    if not 85 <= soma <= 115:
+                        lbl = grupo["scenario_label"].iloc[0]
+                        avisos.append(f"{cargo}/{turno} cenário {lbl}: soma {soma:.1f}")
+                df_p["validacao"] = "; ".join(avisos[-3:]) if avisos else ""
+                todos_p.append(df_p)
+                todos_r.append(df_r)
+                n_cen += len(df_p)
+
+        if n_cen == 0 and houve_erro:
+            _falha(i, registro_fila, tentativas, "todas as extrações falharam")
+            continue
+        updates.extend([gspread.Cell(i, col_flag, "sim"),
+                        gspread.Cell(i, col_data, agora),
+                        gspread.Cell(i, col_erro, "; ".join(avisos[:3]))])
+        ok_regs.append(registro_fila)
+        aviso_txt = f" | avisos: {'; '.join(avisos[:2])}" if avisos else ""
+        print(f"linha {i} ({registro_fila}): {n_cen} cenário(s) de topline{aviso_txt}")
 
     def _gravar(dfs, aba_nome):
         if not dfs:
@@ -527,10 +589,12 @@ def cmd_topline():
     _gravar(todos_p, "topline_pesquisas")
     _gravar(todos_r, "topline_resultados")
 
-    for row_i in marcar:
-        fila.update_cell(row_i, col_flag, "sim")
-        fila.update_cell(row_i, col_data, agora)
-    print(f"\n{len(marcar)} relatório(s) processado(s) para topline.")
+    if updates:
+        fila.update_cells(updates, value_input_option="RAW")
+
+    print("\n───────── resumo ─────────")
+    print(f"processados: {len(ok_regs)}  {ok_regs}")
+    print(f"com erro:    {len(err_regs)}  {err_regs}")
 
 
 # ────────────────────────────── PUBLICAR ──────────────────────────────
@@ -575,9 +639,9 @@ def cmd_publicar():
         return
 
     def _preparar(df):
-        # tira 'origem' e 'publicado': o salvar_tudo forçaria metodologia por último e
-        # jogaria origem antes dela. Adiciono origem como última coluna depois (=> _marcar_origem).
-        df = df.drop(columns=["publicado", "origem"], errors="ignore").copy()
+        # tira colunas de controle do staging: o salvar_tudo forçaria metodologia por
+        # último e jogaria colunas novas antes dela (origem entra depois, => _marcar_origem).
+        df = df.drop(columns=["publicado", "origem", "validacao"], errors="ignore").copy()
         if "instituto" in df.columns:
             df["classificacao_instituto"] = df["instituto"].apply(classificar_instituto)
         if "percentual" in df.columns:
@@ -630,9 +694,56 @@ def cmd_publicar():
             except Exception as e:
                 print(f"  aviso: origem em {tab} ({sheet_id[:6]}...): {e}")
 
-    for i in publicados:   # índice 0-based do df = linha (i+2) na planilha
-        ws_p.update_cell(i + 2, col_pub, "sim")
+    if publicados:   # índice 0-based do df = linha (i+2) na planilha
+        ws_p.update_cells([gspread.Cell(i + 2, col_pub, "sim") for i in publicados],
+                          value_input_option="RAW")
     print(f"\n{len(publicados)} cenário(s) publicado(s).")
+
+
+def cmd_canonico():
+    """Regenera o canonico.json a partir das planilhas T1/T2 do PollingData.
+    Rodar localmente quando surgirem candidatos/institutos novos; commitar o arquivo."""
+    if not (T1_ID or T2_ID):
+        raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
+    from scraper_polling import gs_client_from_env
+
+    gc = gs_client_from_env()
+    institutos, pres = set(), set()
+    gov, sen = {}, {}
+    for sid in (T1_ID, T2_ID):
+        if not sid:
+            continue
+        for r in gc.open_by_key(sid).worksheet("resultados").get_all_records():
+            inst = str(r.get("instituto", "")).strip()
+            if inst:
+                institutos.add(inst)
+            if str(r.get("tipo", "")).strip().lower() == "nao_valido":
+                continue
+            cp = str(r.get("candidato_partido", "")).strip()
+            cargo = str(r.get("cargo", "")).strip().lower()
+            uf = str(r.get("uf", "")).strip().upper()
+            if not cp:
+                continue
+            if cargo == "presidente":
+                pres.add(cp)
+            elif cargo == "governador":
+                gov.setdefault(uf, set()).add(cp)
+            elif cargo == "senador":
+                sen.setdefault(uf, set()).add(cp)
+
+    data = {
+        "institutos": sorted(institutos),
+        "presidente": sorted(pres),
+        "governador": {uf: sorted(v) for uf, v in sorted(gov.items())},
+        "senador": {uf: sorted(v) for uf, v in sorted(sen.items())},
+    }
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "canonico.json")
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+    print(f"canonico.json atualizado: {len(data['institutos'])} institutos, "
+          f"{len(data['presidente'])} presidenciáveis, "
+          f"{sum(len(v) for v in data['governador'].values())} gov, "
+          f"{sum(len(v) for v in data['senador'].values())} sen. Commite o arquivo.")
 
 
 if __name__ == "__main__":
@@ -645,5 +756,7 @@ if __name__ == "__main__":
         cmd_topline()
     elif cmd == "publicar":
         cmd_publicar()
+    elif cmd == "canonico":
+        cmd_canonico()
     else:
-        print("uso: python pesquisas.py [alerta|extrair|topline|publicar]")
+        print("uso: python pesquisas.py [alerta|extrair|topline|publicar|canonico]")
