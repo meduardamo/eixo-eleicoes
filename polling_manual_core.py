@@ -15,8 +15,9 @@ import time
 import unicodedata
 from datetime import datetime
 
-import fitz  # PyMuPDF
-import pandas as pd
+# fitz (PyMuPDF) e pandas são importados dentro das funções que os usam, pra este
+# módulo poder ser importado só pelos helpers (sigla_uf, instituto_canonico) em
+# ambientes sem essas libs.
 
 # Este módulo é independente do scraper_polling.py de propósito: ele fica
 # intocado. As 3 funções abaixo são cópias pequenas do que era usado de lá.
@@ -124,6 +125,7 @@ def extrair_json_de_texto_bruto(texto: str) -> dict:
 # ─────────────────────────── leitura do PDF ───────────────────────────
 
 def extrair_texto_pdf_bytes(pdf_bytes, page_indices=None) -> str:
+    import fitz  # PyMuPDF
     partes = []
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
         pages = page_indices if page_indices is not None else list(range(doc.page_count))
@@ -162,6 +164,8 @@ def gerar_conteudo_gemini(contents, tentativas: int = 3, backoff: float = 1.5):
         try:
             try:
                 cfg = types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0,
                     thinking_config=types.ThinkingConfig(thinking_budget=4000))
                 resp = client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
             except Exception:
@@ -256,7 +260,12 @@ def instituto_canonico(nome):
     return melhor or (nome.split("/")[-1].strip() or nome).title()
 
 
-def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "", escopo: dict | None = None) -> dict:
+def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "",
+                                 escopo: dict | None = None,
+                                 pdf_bytes: bytes | None = None) -> dict:
+    """Extrai via Gemini. Com texto_fonte usa só texto (barato). Se texto_fonte vier
+    vazio e pdf_bytes for passado, manda o PDF inteiro pro Gemini (visão), o que
+    cobre relatório escaneado/sem camada de texto."""
     escopo = escopo or {}
     restricoes = []
     for chave, rotulo in (("cargo", "cargo"), ("uf", "uf"), ("turno", "turno"), ("instituto", "instituto")):
@@ -291,7 +300,10 @@ Extraia os dados estruturados para inserção em planilha.
 - cargo deve ser governador, senador ou presidente.
 - turno deve ser t1 ou t2.
 - uf deve estar em caixa alta. Para presidente nacional use BR.
-- percentual deve ser numérico, sem %.
+- percentual deve ser numérico, sem %. Preserve os números EXATAMENTE como no material;
+  não arredonde, não recalcule, não normalize para somar 100.
+- t1 = cenários de primeiro turno (vários candidatos testados); t2 = simulações de segundo
+  turno (confrontos diretos, tipicamente entre 2 candidatos).
 - tipo deve ser candidato ou nao_valido.
 - PADRONIZAÇÃO DE NOMES: se o candidato corresponder a um da lista canônica acima, use o nome
   curto e a sigla EXATAMENTE como lá (campo 'candidato' = a parte antes do parêntese; 'partido' =
@@ -319,12 +331,18 @@ FORMATO:
        "itens": [ {{ "candidato": "", "partido": "", "percentual": null, "tipo": "candidato" }} ] }}
   ]
 }}
-
-TEXTO FONTE:
-{texto_fonte}
 """.strip()
 
-    resp = gerar_conteudo_gemini(prompt)
+    if texto_fonte:
+        contents = prompt + f"\n\nTEXTO FONTE:\n{texto_fonte}"
+    elif pdf_bytes:
+        from google.genai import types
+        contents = [prompt + "\n\nO material é o PDF anexo (leia as páginas, inclusive tabelas e gráficos).",
+                    types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")]
+    else:
+        raise RuntimeError("Passe texto_fonte ou pdf_bytes.")
+
+    resp = gerar_conteudo_gemini(contents)
     payload = extrair_json_de_texto_bruto(getattr(resp, "text", "") or "")
     return normalizar_payload_polling(payload)
 
@@ -371,6 +389,7 @@ def normalizar_payload_polling(payload: dict) -> dict:
 
 def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original: str = "",
                               instituto_fonte: str = "") -> tuple:
+    import pandas as pd
     cargo = normalizar_texto_simples(payload.get("cargo")).lower()
     turno = normalizar_texto_simples(payload.get("turno")).lower()
     uf = sigla_uf(payload.get("uf"))   # PesqEle manda "ALAGOAS"; polling usa "AL"
