@@ -32,7 +32,8 @@ CABECALHOS = {
                   "alvo", "resposta", "tipo_segmento", "segmento", "valor"],
     "topline_pesquisas": ["registro_tse", "ano", "cargo", "uf", "turno",
                           "instituto", "classificacao_instituto", "data_campo",
-                          "scenario_label", "descricao", "modo", "amostra", "margem_erro",
+                          "scenario_label", "descricao", "votos_por_entrevistado",
+                          "modo", "amostra", "margem_erro",
                           "confianca", "metodologia", "poll_id", "scenario_id", "fonte_url",
                           "fonte_url_original", "conferida", "horario_raspagem",
                           "validacao", "origem"],
@@ -528,6 +529,15 @@ def cmd_topline():
             texto = ""
 
         n_cen, avisos, houve_erro = 0, [], False
+
+        def _aviso(msg):
+            if msg not in avisos:
+                avisos.append(msg)
+
+        def _norm_reg(s):
+            import re as _re
+            return _re.sub(r"[^A-Z0-9]", "", str(s).upper())
+
         # um mesmo PDF costuma ter 1º e 2º turno; extrai cada turno separado,
         # senão o Gemini fixa um turno só no payload e descarta o outro.
         for cargo in cargos:
@@ -538,10 +548,12 @@ def cmd_topline():
                         escopo={"cargo": cargo, "turno": turno, "uf": r.get("uf", "")},
                         pdf_bytes=None if texto else pdf)
                     payload["turno"] = turno   # garante o turno pedido no rótulo/poll_id
-                    # registro da fila é a fonte da verdade; avisa se o PDF divergir
+                    # registro da fila é a fonte da verdade; só avisa se o registro da
+                    # fila NÃO estiver entre os do PDF (compara sem hífen/pontuação;
+                    # relatórios grafam BA04848 e podem trazer mais de um registro)
                     reg_pdf = str(payload.get("registro_tse", "")).strip()
-                    if reg_pdf and registro_fila and reg_pdf != registro_fila:
-                        avisos.append(f"registro no PDF ({reg_pdf}) difere da fila")
+                    if reg_pdf and registro_fila and _norm_reg(registro_fila) not in _norm_reg(reg_pdf):
+                        _aviso(f"registro no PDF ({reg_pdf}) difere da fila")
                     payload["registro_tse"] = registro_fila or reg_pdf
                     # sem data de campo no PDF: usa a data de divulgação da fila
                     if not str(payload.get("data_campo", "")).strip():
@@ -554,14 +566,26 @@ def cmd_topline():
                     continue
                 if df_r.empty:
                     continue
-                # sanidade: percentual fora de 0-100 e soma do cenário fora de 85-115
+                # sanidade: percentual fora de 0-100 e soma do cenário fora da faixa.
+                # A faixa depende de quantos nomes o entrevistado podia citar NAQUELE
+                # cenário (o relatório declara; ex: senador com 2 vagas -> soma ~200).
                 if (df_r["percentual"] < 0).any() or (df_r["percentual"] > 100).any():
-                    avisos.append(f"{cargo}/{turno}: percentual fora de 0-100")
+                    _aviso(f"{cargo}/{turno}: percentual fora de 0-100")
+                votos_map = dict(zip(df_p["scenario_id"], df_p["votos_por_entrevistado"]))
                 for sid, grupo in df_r.groupby("scenario_id"):
                     soma = grupo["percentual"].sum()
-                    if not 85 <= soma <= 115:
-                        lbl = grupo["scenario_label"].iloc[0]
-                        avisos.append(f"{cargo}/{turno} cenário {lbl}: soma {soma:.1f}")
+                    votos = int(votos_map.get(sid) or 1)
+                    teto = 215 if votos >= 2 else 115
+                    if 85 <= soma <= teto:
+                        continue
+                    lbl = grupo["scenario_label"].iloc[0]
+                    if cargo == "senador" and votos == 1 and 115 < soma <= 215:
+                        # soma de voto duplo, mas o relatório não declarou (ou o Gemini
+                        # não achou a nota): não silencia, pede conferência
+                        _aviso(f"{cargo}/{turno} cenário {lbl}: soma {soma:.1f} "
+                               "(possível voto duplo não sinalizado; conferir)")
+                    else:
+                        _aviso(f"{cargo}/{turno} cenário {lbl}: soma {soma:.1f}")
                 df_p["validacao"] = "; ".join(avisos[-3:]) if avisos else ""
                 todos_p.append(df_p)
                 todos_r.append(df_r)
