@@ -12,4 +12,5 @@ google-auth-httplib2
 google-auth-oauthlib
 google-genai
 pypdf
+pymupdf
 brevo-python==1.1.2
