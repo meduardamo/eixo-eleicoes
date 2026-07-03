@@ -32,8 +32,8 @@ CABECALHOS = {
                   "alvo", "resposta", "tipo_segmento", "segmento", "valor"],
     "topline_pesquisas": ["registro_tse", "ano", "cargo", "uf", "turno",
                           "instituto", "classificacao_instituto", "data_campo",
-                          "scenario_label", "modo", "amostra", "margem_erro", "confianca",
-                          "metodologia", "poll_id", "scenario_id", "fonte_url",
+                          "scenario_label", "descricao", "modo", "amostra", "margem_erro",
+                          "confianca", "metodologia", "poll_id", "scenario_id", "fonte_url",
                           "fonte_url_original", "conferida", "horario_raspagem", "origem"],
     "topline_resultados": ["registro_tse", "ano", "cargo", "uf", "turno",
                            "instituto", "classificacao_instituto", "data_campo",
@@ -503,7 +503,8 @@ def cmd_topline():
                         texto, url_original=link,
                         escopo={"cargo": cargo, "turno": turno, "uf": r.get("uf", "")})
                     payload["turno"] = turno   # garante o turno pedido no rótulo/poll_id
-                    df_p, df_r = montar_dataframes_polling(payload, fonte_url=link)
+                    df_p, df_r = montar_dataframes_polling(
+                        payload, fonte_url=link, instituto_fonte=r.get("instituto", ""))
                 except Exception as e:
                     print(f"linha {i} ({r.get('registro')}) [{cargo}/{turno}]: erro na extração: {e}")
                     continue
