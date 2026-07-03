@@ -83,6 +83,27 @@ def _garantir_coluna(ws, header, nome):
     return novo
 
 
+def _marcar_origem(ws, label):
+    """Adiciona 'origem' como ÚLTIMA coluna (depois de metodologia) e marca as
+    linhas nossas (conferida=manual_streamlit). Não desloca coluna existente."""
+    from gspread.utils import rowcol_to_a1
+    header = ws.row_values(1)
+    if "conferida" not in header:
+        return
+    col_o = _garantir_coluna(ws, header, "origem")
+    i_conf, i_o = header.index("conferida"), col_o - 1
+    vals = ws.get_all_values()
+    if len(vals) < 2:
+        return
+    coluna = []
+    for row in vals[1:]:
+        conf = (row[i_conf] if i_conf < len(row) else "").strip().lower()
+        atual = row[i_o] if i_o < len(row) else ""
+        coluna.append([label if conf == "manual_streamlit" else atual])
+    rng = f"{rowcol_to_a1(2, col_o)}:{rowcol_to_a1(len(vals), col_o)}"
+    ws.update(range_name=rng, values=coluna)
+
+
 # ─────────────────────────────── ALERTA ───────────────────────────────
 
 PESQELE_ID = os.getenv("SPREADSHEET_ID", "")
@@ -519,6 +540,7 @@ def cmd_publicar():
         raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
     import pandas as pd
     from scraper_polling import classificar_instituto, gs_client_from_env, salvar_tudo
+    from polling_manual_core import ORIGEM
 
     gc = gs_client_from_env()
     sh = gc.open_by_key(RELATORIOS_ID)
@@ -543,7 +565,9 @@ def cmd_publicar():
         return
 
     def _preparar(df):
-        df = df.drop(columns=["publicado"], errors="ignore").copy()
+        # tira 'origem' e 'publicado': o salvar_tudo forçaria metodologia por último e
+        # jogaria origem antes dela. Adiciono origem como última coluna depois (=> _marcar_origem).
+        df = df.drop(columns=["publicado", "origem"], errors="ignore").copy()
         if "instituto" in df.columns:
             df["classificacao_instituto"] = df["instituto"].apply(classificar_instituto)
         if "percentual" in df.columns:
@@ -584,6 +608,17 @@ def cmd_publicar():
         rt = df_r[df_r["scenario_id"].astype(str).isin(ids)]
         salvar_tudo(gc, sheet_id, _preparar(pt), _preparar(rt))
         print(f"{turno}: {len(pt)} cenário(s), {len(rt)} resultado(s) -> planilha de {turno}")
+
+    # origem como última coluna (após metodologia) e marca nossas linhas, sempre
+    for sheet_id in (T1_ID, T2_ID):
+        if not sheet_id:
+            continue
+        sh_t = gc.open_by_key(sheet_id)
+        for tab in ("pesquisas", "resultados"):
+            try:
+                _marcar_origem(sh_t.worksheet(tab), ORIGEM)
+            except Exception as e:
+                print(f"  aviso: origem em {tab} ({sheet_id[:6]}...): {e}")
 
     for i in publicados:   # índice 0-based do df = linha (i+2) na planilha
         ws_p.update_cell(i + 2, col_pub, "sim")
