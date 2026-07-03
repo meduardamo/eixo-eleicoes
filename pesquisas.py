@@ -522,8 +522,8 @@ def cmd_publicar():
 
     gc = gs_client_from_env()
     sh = gc.open_by_key(RELATORIOS_ID)
-    ws_p = sh.worksheet("topline_pesquisas")
-    ws_r = sh.worksheet("topline_resultados")
+    ws_p = _aba(sh, "topline_pesquisas")
+    ws_r = _aba(sh, "topline_resultados")
 
     df_p = pd.DataFrame(ws_p.get_all_records())
     df_r = pd.DataFrame(ws_r.get_all_records())
