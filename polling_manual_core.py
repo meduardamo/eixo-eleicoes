@@ -1,0 +1,342 @@
+"""
+Extração headless do topline (voto estimulado por candidato) de PDFs de pesquisa.
+
+Reaproveita a lógica da página Streamlit `5_Polling_Manual.py` (gerador-de-envios),
+sem depender de Streamlit. Produz DataFrames no formato do `scraper_polling`
+(pesquisas + resultados), tagueados como manual (conferida='manual_streamlit'),
+prontos pra reconciliar com o dado oficial do PollingData quando a assinatura sair.
+"""
+
+import hashlib
+import json
+import os
+import re
+import time
+from datetime import datetime
+
+import fitz  # PyMuPDF
+import pandas as pd
+
+# Este módulo é independente do scraper_polling.py de propósito: ele fica
+# intocado. As 3 funções abaixo são cópias pequenas do que era usado de lá.
+
+GEMINI_MODEL = "gemini-2.5-flash"
+TIPOS_RESULTADO = ["candidato", "nao_valido"]
+
+# Marca a procedência: estes dados vêm dos PDFs dos relatórios, NÃO do PollingData.
+ORIGEM = "PDF (relatório do instituto)"
+
+
+def _slug(s: str) -> str:
+    s = normalizar_texto_simples(s).lower()
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+
+
+def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_block_hash, disputa=""):
+    uf = str(uf).upper()
+    data_campo = normalizar_texto_simples(data_campo)
+    turno_key = disputa if disputa else turno
+    if id_pesquisa and str(id_pesquisa).lower() not in ("sem registro", "sem_registro", "semregistro", "nan", ""):
+        return f"{uf}|{cargo}|{turno_key}|{id_pesquisa}|{data_campo}"
+    return f"{uf}|{cargo}|{turno_key}|{_slug(instituto)}|{data_campo}"
+
+
+def gerar_scenario_id(poll_id, scenario_label):
+    return f"{poll_id}|{normalizar_texto_simples(scenario_label)}"
+
+
+def normalizar_data_campo_segura(valor) -> str:
+    """Aceita YYYY-MM-DD ou M/D/YYYY (nunca D/M/YYYY) e devolve YYYY-MM-DD."""
+    s = normalizar_texto_simples(valor)
+    if not s:
+        return ""
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            return s
+    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", s):
+        try:
+            return datetime.strptime(s, "%m/%d/%Y").strftime("%Y-%m-%d")
+        except ValueError:
+            return s
+    return s
+
+
+# ─────────────────────────── normalizadores ───────────────────────────
+
+def normalizar_texto_simples(valor) -> str:
+    return re.sub(r"\s+", " ", str(valor or "")).strip()
+
+
+def normalizar_percentual_simples(valor):
+    s = normalizar_texto_simples(valor).replace("%", "").replace(",", ".")
+    if not s:
+        return None
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+
+def normalizar_inteiro_simples(valor):
+    s = re.sub(r"[^\d]", "", normalizar_texto_simples(valor))
+    if not s:
+        return None
+    try:
+        return int(s)
+    except Exception:
+        return None
+
+
+def classificar_tipo_resultado(nome: str, tipo_informado: str = "") -> str:
+    tipo = normalizar_texto_simples(tipo_informado).lower()
+    if tipo in TIPOS_RESULTADO:
+        return tipo
+    nome_norm = normalizar_texto_simples(nome).lower()
+    marcadores = ["branco", "nulo", "nulos", "ns/nr", "nsnr",
+                  "não sabe", "nao sabe", "indeciso", "indecisos", "nenhum"]
+    if any(tag in nome_norm for tag in marcadores):
+        return "nao_valido"
+    return "candidato"
+
+
+def extrair_json_de_texto_bruto(texto: str) -> dict:
+    bruto = (texto or "").strip()
+    if not bruto:
+        raise RuntimeError("O Gemini não retornou JSON.")
+    bruto = re.sub(r"^```json\s*", "", bruto, flags=re.IGNORECASE)
+    bruto = re.sub(r"^```\s*", "", bruto)
+    bruto = re.sub(r"\s*```$", "", bruto)
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", bruto):
+        try:
+            obj, _ = decoder.raw_decode(bruto[match.start():])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            continue
+    raise RuntimeError("Não localizei um objeto JSON válido na resposta do Gemini.")
+
+
+# ─────────────────────────── leitura do PDF ───────────────────────────
+
+def extrair_texto_pdf_bytes(pdf_bytes, page_indices=None) -> str:
+    partes = []
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        pages = page_indices if page_indices is not None else list(range(doc.page_count))
+        for idx in pages:
+            if idx < 0 or idx >= doc.page_count:
+                continue
+            raw = doc.load_page(idx).get_text("text") or ""
+            raw = raw.replace("-\n", "").replace("\n", " ")
+            raw = re.sub(r"\s{2,}", " ", raw).strip()
+            if raw:
+                partes.append(raw)
+    return " ".join(partes).strip()
+
+
+# ─────────────────────────── Gemini ───────────────────────────
+
+_CLIENT = None
+
+
+def _gemini_client():
+    global _CLIENT
+    if _CLIENT is None:
+        from google import genai
+        key = os.environ.get("GEMINI_API_KEY", "")
+        if not key:
+            raise RuntimeError("GEMINI_API_KEY não definido.")
+        _CLIENT = genai.Client(api_key=key)
+    return _CLIENT
+
+
+def gerar_conteudo_gemini(contents, tentativas: int = 3, backoff: float = 1.5):
+    from google.genai import types
+    client = _gemini_client()
+    ultimo = None
+    for t in range(1, tentativas + 1):
+        try:
+            try:
+                cfg = types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_budget=4000))
+                resp = client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
+            except Exception:
+                resp = client.models.generate_content(model=GEMINI_MODEL, contents=contents)
+            if getattr(resp, "text", None):
+                return resp
+            ultimo = RuntimeError("resposta vazia")
+        except Exception as e:
+            ultimo = e
+        if t < tentativas:
+            time.sleep(backoff * (2 ** (t - 1)))
+    raise RuntimeError(f"Gemini falhou após {tentativas} tentativas: {ultimo}")
+
+
+def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "", escopo: dict | None = None) -> dict:
+    escopo = escopo or {}
+    restricoes = []
+    for chave, rotulo in (("cargo", "cargo"), ("uf", "uf"), ("turno", "turno"), ("instituto", "instituto")):
+        val = normalizar_texto_simples(escopo.get(chave))
+        if val:
+            restricoes.append(f"- {rotulo} = {val}")
+    bloco = ""
+    if restricoes:
+        bloco = ("FOCO DA EXTRAÇÃO (restrições obrigatórias):\n" + "\n".join(restricoes) +
+                 "\nExtraia APENAS o bloco que casa com essas restrições. Ignore outros estados, "
+                 "cargos ou turnos que apareçam no material.\nSe não houver bloco que case, "
+                 "retorne cenarios=[].\n\n")
+
+    prompt = f"""
+Você recebe o texto completo de um PDF de uma pesquisa eleitoral brasileira.
+Extraia os dados estruturados para inserção em planilha.
+
+{bloco}REGRAS:
+- Responda somente com JSON válido.
+- Não invente dados ausentes. Use string vazia ou null.
+- Datas devem sair em YYYY-MM-DD quando possível.
+- cargo deve ser governador, senador ou presidente.
+- turno deve ser t1 ou t2.
+- uf deve estar em caixa alta. Para presidente nacional use BR.
+- percentual deve ser numérico, sem %.
+- tipo deve ser candidato ou nao_valido.
+- Use nao_valido para branco/nulo, indecisos, ns/nr e equivalentes.
+- modo é o método de coleta (ex.: Presencial, Telefônica (CATI), Online, Misto). Vazio se não houver.
+- metodologia é a descrição da metodologia conforme reportada (plano amostral, universo, técnica). Texto livre.
+- Cada cenário estimulado vira um item de "cenarios". Traga o voto ESTIMULADO principal por candidato.
+
+FORMATO:
+{{
+  "cargo": "", "turno": "", "uf": "", "instituto": "", "registro_tse": "",
+  "data_campo": "", "amostra": null, "margem_erro": null, "confianca": null,
+  "modo": "", "metodologia": "", "fonte_url_original": "{url_original}",
+  "observacoes": "", "pendencias": [],
+  "cenarios": [
+    {{ "scenario_label": "", "descricao": "",
+       "itens": [ {{ "candidato": "", "partido": "", "percentual": null, "tipo": "candidato" }} ] }}
+  ]
+}}
+
+TEXTO FONTE:
+{texto_fonte}
+""".strip()
+
+    resp = gerar_conteudo_gemini(prompt)
+    payload = extrair_json_de_texto_bruto(getattr(resp, "text", "") or "")
+    return normalizar_payload_polling(payload)
+
+
+def normalizar_payload_polling(payload: dict) -> dict:
+    payload = payload or {}
+    cenarios_norm = []
+    for idx, cenario in enumerate(payload.get("cenarios") or [], start=1):
+        label = normalizar_texto_simples(cenario.get("scenario_label") or cenario.get("cenario") or idx)
+        itens_norm = []
+        for item in (cenario.get("itens") or cenario.get("resultados") or []):
+            candidato = normalizar_texto_simples(
+                item.get("candidato") or item.get("nome") or item.get("opcao") or item.get("candidato_partido"))
+            partido = normalizar_texto_simples(item.get("partido"))
+            percentual = normalizar_percentual_simples(item.get("percentual"))
+            tipo = classificar_tipo_resultado(candidato, item.get("tipo", ""))
+            if not candidato and percentual is None:
+                continue
+            itens_norm.append({"candidato": candidato, "partido": partido,
+                               "percentual": percentual, "tipo": tipo})
+        cenarios_norm.append({"scenario_label": label or str(idx),
+                              "descricao": normalizar_texto_simples(cenario.get("descricao") or cenario.get("titulo")),
+                              "itens": itens_norm})
+    return {
+        "cargo": normalizar_texto_simples(payload.get("cargo")).lower() or "governador",
+        "turno": normalizar_texto_simples(payload.get("turno")).lower() or "t1",
+        "uf": normalizar_texto_simples(payload.get("uf")).upper() or "BR",
+        "instituto": normalizar_texto_simples(payload.get("instituto")),
+        "registro_tse": normalizar_texto_simples(payload.get("registro_tse")),
+        "data_campo": normalizar_texto_simples(payload.get("data_campo")),
+        "amostra": normalizar_inteiro_simples(payload.get("amostra")),
+        "margem_erro": normalizar_percentual_simples(payload.get("margem_erro")),
+        "confianca": normalizar_inteiro_simples(payload.get("confianca")),
+        "modo": normalizar_texto_simples(payload.get("modo")),
+        "metodologia": normalizar_texto_simples(payload.get("metodologia")),
+        "fonte_url_original": normalizar_texto_simples(payload.get("fonte_url_original")),
+        "observacoes": normalizar_texto_simples(payload.get("observacoes")),
+        "pendencias": payload.get("pendencias") or [],
+        "cenarios": cenarios_norm or [{"scenario_label": "1", "descricao": "", "itens": []}],
+    }
+
+
+# ─────────────────────── payload -> DataFrames ───────────────────────
+
+def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original: str = "") -> tuple:
+    cargo = normalizar_texto_simples(payload.get("cargo")).lower()
+    turno = normalizar_texto_simples(payload.get("turno")).lower()
+    uf = normalizar_texto_simples(payload.get("uf")).upper()
+    instituto = normalizar_texto_simples(payload.get("instituto"))
+    registro_tse = normalizar_texto_simples(payload.get("registro_tse"))
+    data_campo = normalizar_data_campo_segura(normalizar_texto_simples(payload.get("data_campo")))
+    amostra = normalizar_inteiro_simples(payload.get("amostra"))
+    margem_erro = normalizar_percentual_simples(payload.get("margem_erro"))
+    confianca = normalizar_inteiro_simples(payload.get("confianca"))
+    horario_raspagem = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    ano_calc = datetime.now().year
+    if data_campo and len(data_campo) >= 4 and data_campo[:4].isdigit():
+        try:
+            ano_calc = int(data_campo[:4])
+        except ValueError:
+            pass
+
+    modo_payload = normalizar_texto_simples(payload.get("modo"))
+    metodologia = normalizar_texto_simples(payload.get("metodologia"))
+
+    registro_base = registro_tse
+    if registro_base.lower() in {"sem registro", "sem_registro", "semregistro"}:
+        registro_base = ""
+
+    block_hash = hashlib.sha1(
+        f"manual|{uf}|{cargo}|{turno}|{instituto}|{registro_tse}|{data_campo}".encode("utf-8", errors="ignore")
+    ).hexdigest()[:10]
+
+    poll_id = gerar_poll_id(uf, instituto, registro_base, data_campo, cargo, turno, block_hash)
+    fonte_url_final = normalizar_texto_simples(fonte_url) or f"pdf://relatorio/{poll_id}"
+    fonte_url_original_final = normalizar_texto_simples(fonte_url_original) or normalizar_texto_simples(
+        payload.get("fonte_url_original"))
+    classificacao = ""   # preenchida no roteamento (parte 2), a partir do scraper_polling
+
+    pesquisas_rows, resultados_rows = [], []
+    for idx, cenario in enumerate(payload.get("cenarios") or [], start=1):
+        scenario_label = normalizar_texto_simples(cenario.get("scenario_label")) or str(idx)
+        scenario_id = gerar_scenario_id(poll_id, scenario_label)
+
+        pesquisas_rows.append({
+            "origem": ORIGEM,
+            "scenario_id": scenario_id, "poll_id": poll_id, "ano": ano_calc, "uf": uf,
+            "cargo": cargo, "turno": turno, "instituto": instituto,
+            "classificacao_instituto": classificacao, "registro_tse": registro_tse,
+            "data_campo": data_campo, "modo": modo_payload, "amostra": amostra,
+            "margem_erro": margem_erro, "confianca": confianca, "scenario_label": scenario_label,
+            "fonte_url": fonte_url_final, "fonte_url_original": fonte_url_original_final,
+            "horario_raspagem": horario_raspagem, "conferida": "manual_streamlit",
+            "metodologia": metodologia,
+        })
+
+        for item in cenario.get("itens") or []:
+            candidato = normalizar_texto_simples(item.get("candidato"))
+            partido = normalizar_texto_simples(item.get("partido"))
+            percentual = normalizar_percentual_simples(item.get("percentual"))
+            tipo = classificar_tipo_resultado(candidato, item.get("tipo", ""))
+            if not candidato or percentual is None:
+                continue
+            candidato_partido = candidato if tipo == "nao_valido" else (
+                f"{candidato} ({partido})" if partido else candidato)
+            resultados_rows.append({
+                "origem": ORIGEM,
+                "scenario_id": scenario_id, "poll_id": poll_id, "ano": ano_calc, "uf": uf,
+                "cargo": cargo, "turno": turno, "data_campo": data_campo, "instituto": instituto,
+                "classificacao_instituto": classificacao, "registro_tse": registro_tse,
+                "scenario_label": scenario_label, "candidato": candidato, "partido": partido,
+                "candidato_partido": candidato_partido, "tipo": tipo, "percentual": percentual,
+                "fonte_url": fonte_url_final, "horario_raspagem": horario_raspagem,
+            })
+
+    return pd.DataFrame(pesquisas_rows), pd.DataFrame(resultados_rows)
