@@ -470,9 +470,11 @@ def cmd_topline():
 
     header = fila.row_values(1)
     col_flag = _garantir_coluna(fila, header, FLAG_TOPLINE)
+    col_data = _garantir_coluna(fila, header, "topline_data_extracao")
 
     linhas = fila.get_all_records()
     todos_p, todos_r, marcar = [], [], []
+    agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
 
     for i, r in enumerate(linhas, start=2):
         link = str(r.get("link", "")).strip()
@@ -526,6 +528,7 @@ def cmd_topline():
 
     for row_i in marcar:
         fila.update_cell(row_i, col_flag, "sim")
+        fila.update_cell(row_i, col_data, agora)
     print(f"\n{len(marcar)} relatório(s) processado(s) para topline.")
 
 
