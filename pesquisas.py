@@ -492,17 +492,23 @@ def cmd_topline():
             continue
 
         n_cen = 0
+        # um mesmo PDF costuma ter 1º e 2º turno; extrai cada turno separado,
+        # senão o Gemini fixa um turno só no payload e descarta o outro.
         for cargo in cargos:
-            try:
-                payload = extrair_dados_polling_gemini(texto, url_original=link, escopo={"cargo": cargo})
-                df_p, df_r = montar_dataframes_polling(payload, fonte_url=link)
-            except Exception as e:
-                print(f"linha {i} ({r.get('registro')}) [{cargo}]: erro na extração: {e}")
-                continue
-            if not df_r.empty:
-                todos_p.append(df_p)
-                todos_r.append(df_r)
-                n_cen += len(df_p)
+            for turno in ("t1", "t2"):
+                try:
+                    payload = extrair_dados_polling_gemini(
+                        texto, url_original=link,
+                        escopo={"cargo": cargo, "turno": turno, "uf": r.get("uf", "")})
+                    payload["turno"] = turno   # garante o turno pedido no rótulo/poll_id
+                    df_p, df_r = montar_dataframes_polling(payload, fonte_url=link)
+                except Exception as e:
+                    print(f"linha {i} ({r.get('registro')}) [{cargo}/{turno}]: erro na extração: {e}")
+                    continue
+                if not df_r.empty:
+                    todos_p.append(df_p)
+                    todos_r.append(df_r)
+                    n_cen += len(df_p)
         marcar.append(i)
         print(f"linha {i} ({r.get('registro')}): {n_cen} cenário(s) de topline")
 
