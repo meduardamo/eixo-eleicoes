@@ -11,6 +11,7 @@ DESTINATARIOS, SPREADSHEET_ID (PesqEle), SPREADSHEET_ID_RELATORIOS.
 
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -24,7 +25,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 CABECALHOS = {
     "relatorios": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
                    "link", "salvo_drive", "extraido", "data_extracao"],
-    "voto_segmento": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
+    "voto_segmento": ["registro", "cargo", "turno", "uf", "instituto", "data_divulgacao",
                       "cenario", "candidato", "tipo_segmento", "segmento", "valor"],
     "rejeicao": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
                  "candidato", "tipo_segmento", "segmento", "valor"],
@@ -70,6 +71,23 @@ def _aba(sh, nome):
 
 def _verdadeiro(v):
     return str(v).strip().lower() in ("sim", "true", "verdadeiro", "1", "x")
+
+
+def _int0(v):
+    """Inteiro tolerante: '', texto ou lixo viram 0 (célula editada à mão não derruba o run)."""
+    try:
+        return int(float(str(v).strip() or 0))
+    except Exception:
+        return 0
+
+
+def _data_iso(valor):
+    """'01/07/2026' (padrão BR, dia primeiro) ou '2026-07-01' -> '2026-07-01'."""
+    s = str(valor or "").strip()
+    m = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", s)
+    if m:
+        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+    return s[:10]
 
 
 def _garantir_coluna(ws, header, nome):
@@ -235,9 +253,10 @@ def cmd_alerta():
                  if str(r.get("data_divulgacao", ""))[:10] == hoje]
     print(f"{len(pesquisas)} pesquisa(s) com divulgação hoje ({hoje})")
     if pesquisas:
+        # fila primeiro: mesmo que o e-mail falhe, as linhas do dia ficam criadas
+        _preencher_fila(pesquisas)
         _enviar(f"Pesquisas eleitorais previstas para hoje ({len(pesquisas)})",
                 _html(pesquisas, hoje))
-        _preencher_fila(pesquisas)
 
 
 # ────────────────────────────── EXTRAÇÃO ──────────────────────────────
@@ -251,9 +270,14 @@ PROMPT = (
     "Extraia TRÊS listas, em JSON:\n\n"
     "1) voto_segmento: para CADA cenário de voto estimulado e CADA candidato, o percentual "
     "de voto quebrado por segmento demográfico. "
-    'Cada item: {"cenario": "...", "candidato": "Nome (PARTIDO)", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
+    'Cada item: {"cargo": "presidente|governador|senador", "turno": "t1|t2", "cenario": "...", '
+    '"candidato": "Nome (PARTIDO)", "tipo_segmento": "...", "segmento": "...", "valor": número}. '
+    "'cargo' é a disputa daquele cenário específico; 'turno' é t2 quando for simulação de "
+    "segundo turno (confronto direto), senão t1.\n\n"
     "2) rejeicao: para CADA candidato, o percentual de rejeição quebrado por segmento. "
-    'Cada item: {"candidato": "Nome (PARTIDO)", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
+    'Cada item: {"cargo": "presidente|governador|senador", "candidato": "Nome (PARTIDO)", '
+    '"tipo_segmento": "...", "segmento": "...", "valor": número}. '
+    "'cargo' é a disputa a que a rejeição se refere.\n\n"
     "3) aprovacao: APENAS aprovação/desaprovação ou avaliação do DESEMPENHO de quem está no "
     "cargo (presidente ou governador em exercício), quebrada por segmento. "
     'Cada item: {"alvo": "...", "resposta": "...", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
@@ -379,8 +403,8 @@ def extrair_do_pdf(pdf_bytes, extra=""):
         voto += dados.get("voto_segmento", [])
         rej += dados.get("rejeicao", [])
         aprov += dados.get("aprovacao", [])
-    voto = _dedup(voto, ["cenario", "candidato", "tipo_segmento", "segmento"])
-    rej = _dedup(rej, ["candidato", "tipo_segmento", "segmento"])
+    voto = _dedup(voto, ["cargo", "turno", "cenario", "candidato", "tipo_segmento", "segmento"])
+    rej = _dedup(rej, ["cargo", "candidato", "tipo_segmento", "segmento"])
     aprov = _dedup(aprov, ["alvo", "resposta", "tipo_segmento", "segmento"])
     return {"voto_segmento": voto, "rejeicao": rej, "aprovacao": aprov}
 
@@ -396,8 +420,13 @@ def cmd_extrair():
     ws_rej = _aba(sh, "rejeicao")
     ws_aprov = _aba(sh, "aprovacao")
 
+    header = fila.row_values(1)
+    col_err = _garantir_coluna(fila, header, "extracao_erro")
+    col_ten = _garantir_coluna(fila, header, "extracao_tentativas")
+
     linhas = fila.get_all_records()
     voto_novos, rej_novos, aprov_novos, marcar = [], [], [], []
+    updates, ok_regs, err_regs = [], [], []
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
 
     def _bloco_canonico(cargo_txt, uf):
@@ -413,31 +442,70 @@ def cmd_extrair():
         link = str(r.get("link", "")).strip()
         if not link or _verdadeiro(r.get("extraido")):
             continue
+        tentativas = _int0(r.get("extracao_tentativas"))
+        if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
+            continue
         try:
             pdf = _baixar_pdf(link)
             dados = extrair_do_pdf(pdf, extra=_bloco_canonico(r.get("cargo"), r.get("uf")))
         except Exception as e:
-            print(f"linha {i} ({r.get('registro')}): erro {e}")
+            msg = str(e)
+            updates.extend([gspread.Cell(i, col_err, msg[:300]),
+                            gspread.Cell(i, col_ten, tentativas + 1)])
+            err_regs.append(f"{r.get('registro')} [{msg[:80]}]")
+            print(f"linha {i} ({r.get('registro')}): erro {msg}")
             continue
-        meta = [r.get("registro", ""), r.get("cargo", ""), sigla_uf(r.get("uf", "")),
-                instituto_canonico(r.get("instituto", "")), r.get("data_divulgacao", "")]
+        registro = r.get("registro", "")
+        cargo_fila = r.get("cargo", "")
+        uf = sigla_uf(r.get("uf", ""))
+        inst = instituto_canonico(r.get("instituto", ""))
+        data_div = _data_iso(r.get("data_divulgacao", ""))
         for v in dados.get("voto_segmento", []):
-            voto_novos.append(meta + [v.get("cenario", ""), v.get("candidato", ""),
-                                      v.get("tipo_segmento", ""), v.get("segmento", ""),
-                                      v.get("valor", "")])
+            # cargo/turno da disputa daquele cenário (o Gemini identifica); se faltar,
+            # cai no texto da fila, pra linha nunca ficar sem referência
+            voto_novos.append([registro, v.get("cargo") or cargo_fila, v.get("turno", "t1"),
+                               uf, inst, data_div,
+                               v.get("cenario", ""), v.get("candidato", ""),
+                               v.get("tipo_segmento", ""), v.get("segmento", ""),
+                               v.get("valor", "")])
         for v in dados.get("rejeicao", []):
-            rej_novos.append(meta + [v.get("candidato", ""), v.get("tipo_segmento", ""),
-                                     v.get("segmento", ""), v.get("valor", "")])
+            rej_novos.append([registro, v.get("cargo") or cargo_fila, uf, inst, data_div,
+                              v.get("candidato", ""), v.get("tipo_segmento", ""),
+                              v.get("segmento", ""), v.get("valor", "")])
         for v in dados.get("aprovacao", []):
-            aprov_novos.append(meta + [v.get("alvo", ""), v.get("resposta", ""),
-                                       v.get("tipo_segmento", ""), v.get("segmento", ""),
-                                       v.get("valor", "")])
+            aprov_novos.append([registro, cargo_fila, uf, inst, data_div,
+                                v.get("alvo", ""), v.get("resposta", ""),
+                                v.get("tipo_segmento", ""), v.get("segmento", ""),
+                                v.get("valor", "")])
         marcar.append(i)
-        print(f"linha {i} ({r.get('registro')}): "
+        updates.append(gspread.Cell(i, col_err, ""))   # limpa erro de rodada anterior
+        ok_regs.append(registro)
+        print(f"linha {i} ({registro}): "
               f"{len(dados.get('voto_segmento', []))} voto, "
               f"{len(dados.get('rejeicao', []))} rejeição, "
               f"{len(dados.get('aprovacao', []))} aprovação")
 
+    def _apenas_novas(ws, aba_nome, rows, chaves):
+        """Descarta linhas que já existem na aba (protege contra reprocessamento
+        com staging não apagado)."""
+        if not rows:
+            return rows
+        cols = CABECALHOS[aba_nome]
+        idx = [cols.index(c) for c in chaves]
+        existentes = {tuple(str(e.get(c, "")).strip() for c in chaves)
+                      for e in ws.get_all_records()}
+        novas = [rw for rw in rows if tuple(str(rw[j]).strip() for j in idx) not in existentes]
+        if len(novas) < len(rows):
+            print(f"  [dedup {aba_nome}] {len(rows) - len(novas)} linha(s) já existiam")
+        return novas
+
+    voto_novos = _apenas_novas(ws_voto, "voto_segmento", voto_novos,
+                               ["registro", "cargo", "turno", "cenario", "candidato",
+                                "tipo_segmento", "segmento"])
+    rej_novos = _apenas_novas(ws_rej, "rejeicao", rej_novos,
+                              ["registro", "cargo", "candidato", "tipo_segmento", "segmento"])
+    aprov_novos = _apenas_novas(ws_aprov, "aprovacao", aprov_novos,
+                                ["registro", "alvo", "resposta", "tipo_segmento", "segmento"])
     if voto_novos:
         ws_voto.append_rows(voto_novos, value_input_option="RAW")
     if rej_novos:
@@ -449,14 +517,16 @@ def cmd_extrair():
     if marcar and "extraido" in headers:
         ci_ext = headers.index("extraido") + 1
         ci_data = headers.index("data_extracao") + 1 if "data_extracao" in headers else None
-        celulas = []
         for row_i in marcar:
-            celulas.append(gspread.Cell(row_i, ci_ext, "sim"))
+            updates.append(gspread.Cell(row_i, ci_ext, "sim"))
             if ci_data:
-                celulas.append(gspread.Cell(row_i, ci_data, agora))
-        fila.update_cells(celulas, value_input_option="RAW")
+                updates.append(gspread.Cell(row_i, ci_data, agora))
+    if updates:
+        fila.update_cells(updates, value_input_option="RAW")
 
-    print(f"\n{len(marcar)} relatório(s) extraído(s).")
+    print("\n───────── resumo ─────────")
+    print(f"extraídos: {len(ok_regs)}  {ok_regs}")
+    print(f"com erro:  {len(err_regs)}  {err_regs}")
 
 
 # ────────────────────────────── TOPLINE ──────────────────────────────
@@ -487,7 +557,7 @@ def cmd_topline():
     )
 
     sh = _sheets().open_by_key(RELATORIOS_ID)
-    fila = sh.worksheet("relatorios")
+    fila = _aba(sh, "relatorios")
 
     header = fila.row_values(1)
     col_flag = _garantir_coluna(fila, header, FLAG_TOPLINE)
@@ -512,8 +582,8 @@ def cmd_topline():
         registro_fila = str(r.get("registro", "")).strip()
         if not link or _verdadeiro(r.get(FLAG_TOPLINE)):
             continue
-        tentativas = int(r.get("topline_tentativas") or 0)
-        if tentativas >= 3:   # desiste após 3 falhas; erro fica anotado na planilha
+        tentativas = _int0(r.get("topline_tentativas"))
+        if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
             continue
         cargos = _cargos_da_linha(r.get("cargo"))
         if not cargos:
@@ -556,13 +626,16 @@ def cmd_topline():
                         _aviso(f"registro no PDF ({reg_pdf}) difere da fila")
                     payload["registro_tse"] = registro_fila or reg_pdf
                     # sem data de campo no PDF: usa a data de divulgação da fila
+                    # (convertida de dd/mm/aaaa pra ISO, senão viraria mês/dia trocado)
                     if not str(payload.get("data_campo", "")).strip():
-                        payload["data_campo"] = str(r.get("data_divulgacao", "")).strip()
+                        payload["data_campo"] = _data_iso(r.get("data_divulgacao", ""))
                     df_p, df_r = montar_dataframes_polling(
                         payload, fonte_url=link, instituto_fonte=r.get("instituto", ""))
                 except Exception as e:
                     print(f"linha {i} ({registro_fila}) [{cargo}/{turno}]: erro na extração: {e}")
                     houve_erro = True
+                    # falha parcial não pode ficar invisível: registra no aviso da linha
+                    _aviso(f"extração falhou em {cargo}/{turno}")
                     continue
                 if df_r.empty:
                     continue
@@ -601,17 +674,28 @@ def cmd_topline():
         aviso_txt = f" | avisos: {'; '.join(avisos[:2])}" if avisos else ""
         print(f"linha {i} ({registro_fila}): {n_cen} cenário(s) de topline{aviso_txt}")
 
-    def _gravar(dfs, aba_nome):
+    def _gravar(dfs, aba_nome, chaves):
         if not dfs:
             return
         cols = CABECALHOS[aba_nome]
         df = pd.concat(dfs, ignore_index=True).reindex(columns=cols).fillna("")
         ws = _aba(sh, aba_nome)
+        # dedup contra o que já está na aba (protege reprocessamento com staging não apagado)
+        existentes = {tuple(str(e.get(c, "")).strip() for c in chaves)
+                      for e in ws.get_all_records()}
+        if existentes:
+            mask = df.apply(lambda rw: tuple(str(rw[c]).strip() for c in chaves) not in existentes,
+                            axis=1)
+            if (~mask).any():
+                print(f"  [dedup {aba_nome}] {int((~mask).sum())} linha(s) já existiam")
+            df = df[mask]
+        if df.empty:
+            return
         ws.append_rows(df.astype(str).values.tolist(), value_input_option="RAW")
         print(f"{len(df)} linha(s) gravadas na aba '{aba_nome}'.")
 
-    _gravar(todos_p, "topline_pesquisas")
-    _gravar(todos_r, "topline_resultados")
+    _gravar(todos_p, "topline_pesquisas", ["scenario_id"])
+    _gravar(todos_r, "topline_resultados", ["scenario_id", "candidato_partido"])
 
     if updates:
         fila.update_cells(updates, value_input_option="RAW")
