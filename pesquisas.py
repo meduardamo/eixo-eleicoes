@@ -70,6 +70,19 @@ def _verdadeiro(v):
     return str(v).strip().lower() in ("sim", "true", "verdadeiro", "1", "x")
 
 
+def _garantir_coluna(ws, header, nome):
+    """Retorna o índice (1-based) da coluna 'nome'. Se não existir, cria (expandindo
+    a grade se preciso, pra não estourar o limite de colunas)."""
+    if nome in header:
+        return header.index(nome) + 1
+    novo = len(header) + 1
+    if ws.col_count < novo:
+        ws.add_cols(novo - ws.col_count)
+    ws.update_cell(1, novo, nome)
+    header.append(nome)
+    return novo
+
+
 # ─────────────────────────────── ALERTA ───────────────────────────────
 
 PESQELE_ID = os.getenv("SPREADSHEET_ID", "")
@@ -435,10 +448,7 @@ def cmd_topline():
     fila = sh.worksheet("relatorios")
 
     header = fila.row_values(1)
-    if FLAG_TOPLINE not in header:
-        header.append(FLAG_TOPLINE)
-        fila.update_cell(1, len(header), FLAG_TOPLINE)
-    col_flag = header.index(FLAG_TOPLINE) + 1
+    col_flag = _garantir_coluna(fila, header, FLAG_TOPLINE)
 
     linhas = fila.get_all_records()
     todos_p, todos_r, marcar = [], [], []
@@ -522,10 +532,7 @@ def cmd_publicar():
         return
 
     header_p = ws_p.row_values(1)
-    if "publicado" not in header_p:
-        header_p.append("publicado")
-        ws_p.update_cell(1, len(header_p), "publicado")
-    col_pub = header_p.index("publicado") + 1
+    col_pub = _garantir_coluna(ws_p, header_p, "publicado")
     if "publicado" not in df_p.columns:
         df_p["publicado"] = ""
 
