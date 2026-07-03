@@ -319,6 +319,9 @@ Extraia os dados estruturados para inserção em planilha.
 - Extraia SOMENTE cenários de voto ESTIMULADO (aqueles em que os nomes dos candidatos são
   apresentados ao entrevistado). NÃO inclua voto ESPONTÂNEO (sem lista de nomes), nem rejeição,
   nem avaliação/aprovação de governo. Cada cenário estimulado vira um item de "cenarios".
+- votos_por_entrevistado: use 2 quando o relatório indicar que o entrevistado podia citar/votar
+  em até 2 nomes naquele cenário (comum para senador em eleição com 2 vagas; procure notas como
+  'cada entrevistado poderia citar até 2 candidatos'). Caso contrário, use 1.
 
 FORMATO:
 {{
@@ -327,7 +330,7 @@ FORMATO:
   "modo": "", "metodologia": "", "fonte_url_original": "{url_original}",
   "observacoes": "", "pendencias": [],
   "cenarios": [
-    {{ "scenario_label": "", "descricao": "",
+    {{ "scenario_label": "", "descricao": "", "votos_por_entrevistado": 1,
        "itens": [ {{ "candidato": "", "partido": "", "percentual": null, "tipo": "candidato" }} ] }}
   ]
 }}
@@ -363,8 +366,10 @@ def normalizar_payload_polling(payload: dict) -> dict:
                 continue
             itens_norm.append({"candidato": candidato, "partido": partido,
                                "percentual": percentual, "tipo": tipo})
+        votos = normalizar_inteiro_simples(cenario.get("votos_por_entrevistado")) or 1
         cenarios_norm.append({"scenario_label": label or str(idx),
                               "descricao": normalizar_texto_simples(cenario.get("descricao") or cenario.get("titulo")),
+                              "votos_por_entrevistado": max(1, min(votos, 3)),
                               "itens": itens_norm})
     return {
         "cargo": normalizar_texto_simples(payload.get("cargo")).lower() or "governador",
@@ -444,6 +449,7 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
             "data_campo": data_campo, "modo": modo_payload, "amostra": amostra,
             "margem_erro": margem_erro, "confianca": confianca,
             "scenario_label": scenario_label, "descricao": descricao,
+            "votos_por_entrevistado": cenario.get("votos_por_entrevistado", 1),
             "fonte_url": fonte_url_final, "fonte_url_original": fonte_url_original_final,
             "horario_raspagem": horario_raspagem, "conferida": "manual_streamlit",
             "metodologia": metodologia,
