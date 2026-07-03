@@ -12,6 +12,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 from datetime import datetime
 
 import fitz  # PyMuPDF
@@ -224,6 +225,37 @@ def _referencia(cargo, uf):
     return cands, c.get("institutos", [])
 
 
+# palavras genéricas ignoradas ao casar o nome legal do PesqEle com o canônico
+_STOP_INST = {
+    "de", "da", "do", "e", "ltda", "instituto", "pesquisas", "pesquisa", "consultoria",
+    "me", "eireli", "opiniao", "publica", "analise", "tecnologia", "comunicacao",
+    "marketing", "associados", "midia", "publicidade", "estatistica", "informacao",
+    "consumidor", "dados", "eventos", "agencia",
+}
+
+
+def _tokens_inst(s):
+    s = unicodedata.normalize("NFKD", normalizar_texto_simples(s))
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    return [t for t in re.sub(r"[^a-z0-9 ]", " ", s).split() if t]
+
+
+def instituto_canonico(nome):
+    """Mapeia o nome legal do PesqEle (ex: 'REAL TIME MIDIA LTDA / REAL TIME BIG DATA')
+    para o nome canônico do PollingData (ex: 'Real Time Big Data'). Se não achar, devolve
+    a marca (parte após '/') em Title Case."""
+    nome = normalizar_texto_simples(nome)
+    if not nome:
+        return ""
+    alvo = set(_tokens_inst(nome))
+    melhor, tam = None, 0
+    for canon in _canonico().get("institutos", []):
+        sig = [t for t in _tokens_inst(canon) if t not in _STOP_INST] or _tokens_inst(canon)
+        if sig and all(t in alvo for t in sig) and len(canon) > tam:
+            melhor, tam = canon, len(canon)   # prefere o canônico mais específico
+    return melhor or (nome.split("/")[-1].strip() or nome).title()
+
+
 def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "", escopo: dict | None = None) -> dict:
     escopo = escopo or {}
     restricoes = []
@@ -264,13 +296,17 @@ Extraia os dados estruturados para inserção em planilha.
 - PADRONIZAÇÃO DE NOMES: se o candidato corresponder a um da lista canônica acima, use o nome
   curto e a sigla EXATAMENTE como lá (campo 'candidato' = a parte antes do parêntese; 'partido' =
   a sigla dentro do parêntese). Se não estiver na lista, use o nome curto usual + a sigla do partido.
+- 'partido' é SEMPRE a SIGLA curta em caixa alta (PT, PL, MDB, REP, UNIAO, PSD...), nunca o nome
+  por extenso (use REP, não 'Republicanos'; UNIAO, não 'União Brasil'). Sem partido: 'SEM PARTIDO'.
 - INSTITUTO: se corresponder a um da lista canônica, use o nome exato de lá.
 - INVÁLIDOS: consolide TODOS os votos inválidos (branco, nulo, indeciso, não sabe, não respondeu,
   ns/nr) em UM ÚNICO item por cenário: candidato='Não válido', partido='', tipo='nao_valido',
   percentual = a soma deles.
 - modo é o método de coleta (ex.: Presencial, Telefônica (CATI), Online, Misto). Vazio se não houver.
 - metodologia é a descrição da metodologia conforme reportada (plano amostral, universo, técnica). Texto livre.
-- Cada cenário estimulado vira um item de "cenarios". Traga o voto ESTIMULADO principal por candidato.
+- Extraia SOMENTE cenários de voto ESTIMULADO (aqueles em que os nomes dos candidatos são
+  apresentados ao entrevistado). NÃO inclua voto ESPONTÂNEO (sem lista de nomes), nem rejeição,
+  nem avaliação/aprovação de governo. Cada cenário estimulado vira um item de "cenarios".
 
 FORMATO:
 {{
@@ -333,11 +369,14 @@ def normalizar_payload_polling(payload: dict) -> dict:
 
 # ─────────────────────── payload -> DataFrames ───────────────────────
 
-def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original: str = "") -> tuple:
+def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original: str = "",
+                              instituto_fonte: str = "") -> tuple:
     cargo = normalizar_texto_simples(payload.get("cargo")).lower()
     turno = normalizar_texto_simples(payload.get("turno")).lower()
-    uf = normalizar_texto_simples(payload.get("uf")).upper()
-    instituto = normalizar_texto_simples(payload.get("instituto"))
+    uf = sigla_uf(payload.get("uf"))   # PesqEle manda "ALAGOAS"; polling usa "AL"
+    # instituto vem do PesqEle (fila), normalizado pro canônico; alguns relatórios só
+    # trazem o nome no logo, então não dá pra confiar no que o Gemini leu do PDF.
+    instituto = instituto_canonico(instituto_fonte or payload.get("instituto"))
     registro_tse = normalizar_texto_simples(payload.get("registro_tse"))
     data_campo = normalizar_data_campo_segura(normalizar_texto_simples(payload.get("data_campo")))
     amostra = normalizar_inteiro_simples(payload.get("amostra"))
@@ -371,7 +410,11 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
 
     pesquisas_rows, resultados_rows = [], []
     for idx, cenario in enumerate(payload.get("cenarios") or [], start=1):
-        scenario_label = normalizar_texto_simples(cenario.get("scenario_label")) or str(idx)
+        # scenario_label numérico (1, 2, ...), igual PollingData. O texto do relatório
+        # (ex: "Estimulada Presidente") vai pra 'descricao'.
+        scenario_label = str(idx)
+        descricao = normalizar_texto_simples(cenario.get("scenario_label")) or \
+            normalizar_texto_simples(cenario.get("descricao"))
         scenario_id = gerar_scenario_id(poll_id, scenario_label)
 
         pesquisas_rows.append({
@@ -380,21 +423,14 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
             "cargo": cargo, "turno": turno, "instituto": instituto,
             "classificacao_instituto": classificacao, "registro_tse": registro_tse,
             "data_campo": data_campo, "modo": modo_payload, "amostra": amostra,
-            "margem_erro": margem_erro, "confianca": confianca, "scenario_label": scenario_label,
+            "margem_erro": margem_erro, "confianca": confianca,
+            "scenario_label": scenario_label, "descricao": descricao,
             "fonte_url": fonte_url_final, "fonte_url_original": fonte_url_original_final,
             "horario_raspagem": horario_raspagem, "conferida": "manual_streamlit",
             "metodologia": metodologia,
         })
 
-        for item in cenario.get("itens") or []:
-            candidato = normalizar_texto_simples(item.get("candidato"))
-            partido = normalizar_texto_simples(item.get("partido"))
-            percentual = normalizar_percentual_simples(item.get("percentual"))
-            tipo = classificar_tipo_resultado(candidato, item.get("tipo", ""))
-            if not candidato or percentual is None:
-                continue
-            candidato_partido = candidato if tipo == "nao_valido" else (
-                f"{candidato} ({partido})" if partido else candidato)
+        def _linha_resultado(candidato, partido, candidato_partido, tipo, percentual):
             resultados_rows.append({
                 "origem": ORIGEM,
                 "scenario_id": scenario_id, "poll_id": poll_id, "ano": ano_calc, "uf": uf,
@@ -404,5 +440,23 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
                 "candidato_partido": candidato_partido, "tipo": tipo, "percentual": percentual,
                 "fonte_url": fonte_url_final, "horario_raspagem": horario_raspagem,
             })
+
+        invalido, tem_invalido = 0.0, False
+        for item in cenario.get("itens") or []:
+            candidato = normalizar_texto_simples(item.get("candidato"))
+            partido = normalizar_texto_simples(item.get("partido"))
+            percentual = normalizar_percentual_simples(item.get("percentual"))
+            if percentual is None:
+                continue
+            if classificar_tipo_resultado(candidato, item.get("tipo", "")) == "nao_valido":
+                invalido += percentual          # consolida todos os inválidos
+                tem_invalido = True
+                continue
+            if not candidato:
+                continue
+            cp = f"{candidato} ({partido})" if partido else candidato
+            _linha_resultado(candidato, partido, cp, "candidato", percentual)
+        if tem_invalido:
+            _linha_resultado("Não válido", "", "Não válido", "nao_valido", round(invalido, 1))
 
     return pd.DataFrame(pesquisas_rows), pd.DataFrame(resultados_rows)
