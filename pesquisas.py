@@ -267,6 +267,9 @@ GEMINI_MODEL = "gemini-2.5-flash"
 PROMPT = (
     "Você é um analista de dados de pesquisas eleitorais da Eixo. Você recebe o PDF do "
     "relatório completo de uma pesquisa e extrai os cruzamentos por segmento.\n\n"
+    "O relatório PODE conter mais de um cargo (presidente, governador, senador) no mesmo "
+    "documento, mesmo que só um esteja no título. Extraia os cenários de TODOS os cargos "
+    "que aparecerem, cada linha com o cargo correto.\n\n"
     "Extraia TRÊS listas, em JSON:\n\n"
     "1) voto_segmento: para CADA cenário de voto estimulado e CADA candidato, o percentual "
     "de voto quebrado por segmento demográfico. "
@@ -429,10 +432,12 @@ def cmd_extrair():
     updates, ok_regs, err_regs = [], [], []
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
 
-    def _bloco_canonico(cargo_txt, uf):
-        """Listas canônicas de candidatos dos cargos/UF desta pesquisa, pro prompt."""
+    def _bloco_canonico(uf):
+        """Listas canônicas dos TRÊS cargos da UF, pro prompt. Não se prende ao cargo
+        da fila: o relatório pode trazer cargos além do registrado. Presidente é
+        nacional; governador/senador vêm da UF (vazio quando não houver, ex: BRASIL)."""
         partes = []
-        for cargo in _cargos_da_linha(cargo_txt):
+        for cargo in ("presidente", "governador", "senador"):
             cands, _ = _referencia(cargo, uf)
             if cands:
                 partes.append(f"CANDIDATOS CANÔNICOS ({cargo} {sigla_uf(uf)}):\n" + "\n".join(cands))
@@ -447,7 +452,7 @@ def cmd_extrair():
             continue
         try:
             pdf = _baixar_pdf(link)
-            dados = extrair_do_pdf(pdf, extra=_bloco_canonico(r.get("cargo"), r.get("uf")))
+            dados = extrair_do_pdf(pdf, extra=_bloco_canonico(r.get("uf")))
         except Exception as e:
             msg = str(e)
             updates.extend([gspread.Cell(i, col_err, msg[:300]),
@@ -548,6 +553,23 @@ def _cargos_da_linha(valor):
     return cargos
 
 
+def _cargos_presentes(texto, cargo_fila):
+    """Cargos a extrair: os da fila MAIS os detectados no texto do PDF. Uma pesquisa
+    registrada só como presidente pode trazer cenários de governador/senador também.
+    Sem texto (PDF escaneado, vai por visão), tenta os três."""
+    cargos = set(_cargos_da_linha(cargo_fila))
+    low = (texto or "").lower()
+    if not low:
+        return ["presidente", "governador", "senador"]
+    if "presiden" in low:
+        cargos.add("presidente")
+    if "governador" in low or "governo do estado" in low:
+        cargos.add("governador")
+    if "senador" in low:
+        cargos.add("senador")
+    return [c for c in ("presidente", "governador", "senador") if c in cargos]
+
+
 def cmd_topline():
     if not RELATORIOS_ID:
         raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
@@ -585,9 +607,6 @@ def cmd_topline():
         tentativas = _int0(r.get("topline_tentativas"))
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
             continue
-        cargos = _cargos_da_linha(r.get("cargo"))
-        if not cargos:
-            continue
         try:
             pdf = _baixar_pdf(link)
             texto = extrair_texto_pdf_bytes(pdf)
@@ -597,6 +616,9 @@ def cmd_topline():
         if len(texto) < 200:   # scan/sem camada de texto: manda o PDF pro Gemini (visão)
             print(f"linha {i} ({registro_fila}): PDF sem texto útil, usando visão")
             texto = ""
+        cargos = _cargos_presentes(texto, r.get("cargo"))
+        if not cargos:
+            continue
 
         n_cen, avisos, houve_erro = 0, [], False
 
@@ -613,9 +635,11 @@ def cmd_topline():
         for cargo in cargos:
             for turno in ("t1", "t2"):
                 try:
+                    escopo = {"cargo": cargo, "turno": turno}
+                    if cargo != "presidente":   # governador/senador são estaduais; presidente
+                        escopo["uf"] = r.get("uf", "")   # pode ser nacional (BR), deixa o Gemini decidir
                     payload = extrair_dados_polling_gemini(
-                        texto, url_original=link,
-                        escopo={"cargo": cargo, "turno": turno, "uf": r.get("uf", "")},
+                        texto, url_original=link, escopo=escopo,
                         pdf_bytes=None if texto else pdf)
                     payload["turno"] = turno   # garante o turno pedido no rótulo/poll_id
                     # registro da fila é a fonte da verdade; só avisa se o registro da
