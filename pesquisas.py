@@ -24,7 +24,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 CABECALHOS = {
     "relatorios": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
-                   "link", "salvo_drive", "extraido", "data_extracao"],
+                   "link", "extraido", "data_extracao"],
     "voto_segmento": ["registro", "cargo", "turno", "uf", "instituto", "data_divulgacao",
                       "cenario", "candidato", "tipo_segmento", "segmento", "valor"],
     "rejeicao": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
