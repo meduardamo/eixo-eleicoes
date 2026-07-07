@@ -22,9 +22,23 @@ from google.oauth2.service_account import Credentials
 BRT = timezone(timedelta(hours=-3))
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+CABECALHO_RELATORIOS = [
+    "registro", "cargo", "uf", "instituto", "data_divulgacao", "link",
+    "origem_link", "nivel_conferencia",
+    "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
+    "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
+]
+
+ALIASES_RELATORIOS = {
+    "origem_link": ["origem_busca"],
+    "segmentos_extraido": ["extraido"],
+    "segmentos_data_extracao": ["data_extracao"],
+    "segmentos_erro": ["extracao_erro"],
+    "segmentos_tentativas": ["extracao_tentativas"],
+}
+
 CABECALHOS = {
-    "relatorios": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
-                   "link", "extraido", "data_extracao"],
+    "relatorios": CABECALHO_RELATORIOS,
     "voto_segmento": ["registro", "cargo", "turno", "uf", "instituto", "data_divulgacao",
                       "cenario", "candidato", "tipo_segmento", "segmento", "valor"],
     "rejeicao": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
@@ -44,6 +58,40 @@ CABECALHOS = {
                            "tipo", "percentual", "poll_id", "scenario_id", "fonte_url",
                            "horario_raspagem", "origem"],
 }
+
+
+def _normalizar_cabecalho(ws, cabecalho):
+    """Garante a ordem canônica sem perder dados de colunas já existentes."""
+    valores = ws.get_all_values()
+    if not valores:
+        ws.update(range_name="A1", values=[cabecalho])
+        return cabecalho[:]
+
+    atual = valores[0]
+    aliases_antigos = {a for aliases in ALIASES_RELATORIOS.values() for a in aliases}
+    extras = [c for c in atual if c and c not in cabecalho and c not in aliases_antigos]
+    alvo = cabecalho + extras
+    if atual == alvo:
+        return atual
+
+    idx = {nome: pos for pos, nome in enumerate(atual) if nome}
+
+    def _valor(row, coluna):
+        candidatos = [coluna] + ALIASES_RELATORIOS.get(coluna, [])
+        for c in candidatos:
+            pos = idx.get(c)
+            if pos is not None and pos < len(row) and row[pos] != "":
+                return row[pos]
+        return ""
+
+    novos = [alvo]
+    for row in valores[1:]:
+        novos.append([_valor(row, c) for c in alvo])
+
+    if ws.col_count < len(alvo):
+        ws.add_cols(len(alvo) - ws.col_count)
+    ws.update(range_name="A1", values=novos, value_input_option="RAW")
+    return alvo
 
 
 def _creds_info():
@@ -66,6 +114,8 @@ def _aba(sh, nome):
         ws = sh.add_worksheet(title=nome, rows=1000, cols=len(header))
     if not ws.row_values(1):
         ws.update(range_name="A1", values=[header])
+    elif nome == "relatorios":
+        _normalizar_cabecalho(ws, header)
     return ws
 
 
@@ -424,8 +474,8 @@ def cmd_extrair():
     ws_aprov = _aba(sh, "aprovacao")
 
     header = fila.row_values(1)
-    col_err = _garantir_coluna(fila, header, "extracao_erro")
-    col_ten = _garantir_coluna(fila, header, "extracao_tentativas")
+    col_err = _garantir_coluna(fila, header, "segmentos_erro")
+    col_ten = _garantir_coluna(fila, header, "segmentos_tentativas")
 
     linhas = fila.get_all_records()
     voto_novos, rej_novos, aprov_novos, marcar = [], [], [], []
@@ -445,9 +495,9 @@ def cmd_extrair():
 
     for i, r in enumerate(linhas, start=2):   # linha 1 = cabeçalho
         link = str(r.get("link", "")).strip()
-        if not link or _verdadeiro(r.get("extraido")):
+        if not link or _verdadeiro(r.get("segmentos_extraido")):
             continue
-        tentativas = _int0(r.get("extracao_tentativas"))
+        tentativas = _int0(r.get("segmentos_tentativas"))
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
             continue
         try:
@@ -519,9 +569,9 @@ def cmd_extrair():
         ws_aprov.append_rows(aprov_novos, value_input_option="RAW")
 
     headers = fila.row_values(1)
-    if marcar and "extraido" in headers:
-        ci_ext = headers.index("extraido") + 1
-        ci_data = headers.index("data_extracao") + 1 if "data_extracao" in headers else None
+    if marcar and "segmentos_extraido" in headers:
+        ci_ext = headers.index("segmentos_extraido") + 1
+        ci_data = headers.index("segmentos_data_extracao") + 1 if "segmentos_data_extracao" in headers else None
         for row_i in marcar:
             updates.append(gspread.Cell(row_i, ci_ext, "sim"))
             if ci_data:
