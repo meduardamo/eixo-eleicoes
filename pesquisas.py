@@ -848,8 +848,10 @@ def cmd_topline():
             for turno in ("t1", "t2"):
                 try:
                     escopo = {"cargo": cargo, "turno": turno}
-                    if cargo != "presidente":   # governador/senador são estaduais; presidente
-                        escopo["uf"] = r.get("uf", "")   # pode ser nacional (BR), deixa o Gemini decidir
+                    if cargo != "presidente":   # governador/senador são estaduais: restrição obrigatória
+                        escopo["uf"] = r.get("uf", "")
+                    else:   # presidente pode ser nacional ou lido dentro do estado da fila: só referência
+                        escopo["uf_referencia"] = r.get("uf", "")
                     print(f"linha {i} ({registro_fila} / {r.get('cargo')}): extraindo topline {cargo}/{turno}...", flush=True)
                     payload = extrair_dados_polling_gemini(
                         texto, url_original=link, escopo=escopo,
