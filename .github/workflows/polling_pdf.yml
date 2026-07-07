@@ -6,7 +6,7 @@ on:
     # GitHub Actions usa UTC; Recife = UTC-3.
     - cron: '0 14 * * *'   # 11:00 Recife
     - cron: '0 19 * * *'   # 16:00 Recife
-    - cron: '0 23 * * *'   # 20:00 Recife, depois do atualiza-relatorios
+    - cron: '0 23 * * *'   # 20:00 Recife
 
 jobs:
   run:
@@ -19,9 +19,6 @@ jobs:
       GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       SPREADSHEET_ID_RELATORIOS: ${{ secrets.SPREADSHEET_ID_RELATORIOS }}
-      SPREADSHEET_ID_POLLINGDATA: ${{ secrets.SPREADSHEET_ID_POLLINGDATA }}
-      SPREADSHEET_ID_POLLINGDATA_T2: ${{ secrets.SPREADSHEET_ID_POLLINGDATA_T2 }}
-      PUBLICAR_POLLINGDATA: ${{ vars.PUBLICAR_POLLINGDATA }}
 
     steps:
       - name: Checkout
@@ -43,6 +40,7 @@ jobs:
           python --version
           echo "Workflow: polling-pdf-extrair-topline"
           echo "Comandos: pesquisas.py extrair; pesquisas.py topline"
+          echo "Publicação PollingData: DESATIVADA"
 
       - name: Extrair segmentos, rejeição e aprovação
         id: extrair
@@ -76,7 +74,3 @@ jobs:
           if [ "${{ steps.extrair.outcome }}" != "success" ] || [ "${{ steps.topline.outcome }}" != "success" ]; then
             exit 1
           fi
-
-      - name: Publicar nas planilhas de turno (t1/t2 + média)
-        if: ${{ env.PUBLICAR_POLLINGDATA == 'true' && (env.SPREADSHEET_ID_POLLINGDATA != '' || env.SPREADSHEET_ID_POLLINGDATA_T2 != '') }}
-        run: python -u pesquisas.py publicar
