@@ -1403,8 +1403,7 @@ def corrigir_coluna_numerica_na_aba(aba, nome_coluna: str, padrao: str = "0.0"):
 def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     """
     Expande cada série para o grão diário e calcula uma média móvel de 13 dias
-    por candidato em cada combinação de
-    ano/cargo/uf/turno/disputa/tipo/candidato_partido.
+    por candidato em cada combinação de ano/cargo/uf/turno/tipo/candidato_partido.
 
     A média móvel é **ponderada pelo score do instituto**: para cada janela de
     13 dias, mm = Σ(pct_dia × peso_total_dia) / Σ(peso_total_dia). Quando
@@ -1429,7 +1428,7 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
     if "peso_total_dia" not in df.columns:
         df["peso_total_dia"] = pd.NA
 
-    for col in ["ano", "cargo", "uf", "turno", "disputa", "tipo", "candidato", "partido", "candidato_partido"]:
+    for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato", "partido", "candidato_partido"]:
         if col not in df.columns:
             df[col] = ""
 
@@ -1446,7 +1445,7 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
         composto = candidato.where(partido.eq(""), candidato + " (" + partido + ")")
         df.loc[vazio_candidato_partido, "candidato_partido"] = composto.loc[vazio_candidato_partido]
 
-    for col in ["ano", "cargo", "uf", "turno", "disputa", "tipo", "candidato_partido", "data_campo"]:
+    for col in ["ano", "cargo", "uf", "turno", "tipo", "candidato_partido", "data_campo"]:
         df[col] = df[col].fillna("").astype(str).str.strip()
 
     df["_data_campo_dt"] = pd.to_datetime(df["data_campo"], errors="coerce")
@@ -1459,9 +1458,9 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
         errors="coerce",
     )
 
-    chaves_escopo = ["ano", "cargo", "uf", "turno", "disputa", "tipo"]
+    chaves_escopo = ["ano", "cargo", "uf", "turno", "tipo"]
     chaves_serie = chaves_escopo + ["candidato_partido"]
-    colunas_dimensao = ["ano", "uf", "cargo", "turno", "disputa", "tipo", "candidato", "partido", "candidato_partido"]
+    colunas_dimensao = ["ano", "uf", "cargo", "turno", "tipo", "candidato", "partido", "candidato_partido"]
 
     df_com_serie = df[
         df["_data_campo_dt"].notna()
@@ -1561,8 +1560,6 @@ def deduplicar_resultados_bi_preferindo_cenario_media(df: pd.DataFrame) -> pd.Da
         return df
 
     df = df.copy()
-    if "disputa" not in df.columns:
-        df["disputa"] = ""
 
     def registro_valido(valor: str) -> bool:
         s = _norm_ws(valor).lower()
@@ -1578,7 +1575,6 @@ def deduplicar_resultados_bi_preferindo_cenario_media(df: pd.DataFrame) -> pd.Da
                 _norm_ws(row.get("uf", "")),
                 _norm_ws(row.get("cargo", "")),
                 _norm_ws(row.get("turno", "")),
-                _norm_ws(row.get("disputa", "")),
             ])
 
         return "|".join([
@@ -1589,7 +1585,6 @@ def deduplicar_resultados_bi_preferindo_cenario_media(df: pd.DataFrame) -> pd.Da
             _norm_ws(row.get("uf", "")),
             _norm_ws(row.get("cargo", "")),
             _norm_ws(row.get("turno", "")),
-            _norm_ws(row.get("disputa", "")),
         ])
 
     prioridade_origem = {
@@ -1646,7 +1641,7 @@ def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
     }
 
     for col in [
-        "ano", "uf", "cargo", "turno", "disputa", "data_campo", "tipo", "candidato",
+        "ano", "uf", "cargo", "turno", "data_campo", "tipo", "candidato",
         "partido", "candidato_partido", "instituto", "classificacao_instituto",
         "registro_tse", "origem_percentual_base", "cenario_usado_no_calculo",
         "fonte_url", "poll_id", "horario_raspagem"
@@ -1669,7 +1664,7 @@ def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
     df["_pct_x_peso"] = df["_pct_x_peso"].fillna(0.0)
 
     dims = [
-        "ano", "uf", "cargo", "turno", "disputa", "data_campo", "tipo",
+        "ano", "uf", "cargo", "turno", "data_campo", "tipo",
         "candidato", "partido", "candidato_partido"
     ]
 
@@ -1725,7 +1720,7 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     # candidato/partido separados, ano) consulte a aba `resultados`, que mantém
     # o grão por scenario_id.
     cols = [
-        "uf", "cargo", "turno", "disputa", "data_campo",
+        "uf", "cargo", "turno", "data_campo",
         "candidato_partido", "tipo",
         "percentual_base", "media_movel_13d",
         "qtd_pesquisas_dia",
@@ -1748,7 +1743,7 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     else:
         df["data_campo"] = df["data_campo"].apply(normalizar_data_campo_segura)
 
-    for col in ["poll_id", "tipo", "candidato", "scenario_label", "disputa"]:
+    for col in ["poll_id", "tipo", "candidato", "scenario_label"]:
         if col not in df.columns:
             df[col] = ""
 
@@ -1799,7 +1794,7 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     df_candidatos = deduplicar_resultados_bi_preferindo_cenario_media(df_candidatos)
     df_candidatos = agregar_resultados_bi_diario(df_candidatos)
 
-    chaves_posicao = ["ano", "uf", "cargo", "turno", "disputa", "data_campo"]
+    chaves_posicao = ["ano", "uf", "cargo", "turno", "data_campo"]
     df_candidatos["posicao_candidato"] = (
         df_candidatos.groupby(chaves_posicao)["percentual_base"]
         .rank(method="min", ascending=False)
@@ -1817,8 +1812,8 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
     # Ordenação por percentual_base desc é equivalente a ordenar por posicao_candidato asc
     # (líder vem primeiro), e permite remover posicao_candidato do schema exportado.
     df_candidatos = df_candidatos.sort_values(
-        by=["cargo", "uf", "turno", "disputa", "data_campo", "percentual_base", "candidato_partido"],
-        ascending=[True, True, True, True, False, False, True],
+        by=["cargo", "uf", "turno", "data_campo", "percentual_base", "candidato_partido"],
+        ascending=[True, True, True, False, False, True],
         na_position="last",
     ).reset_index(drop=True)
 
@@ -2219,27 +2214,6 @@ def normalizar_institutos_retroativo(aba_pesquisas, aba_resultados):
         print(f"[normalizacao] aba 'resultados': {n_r} linha(s) com instituto normalizado")
 
 
-def _reconstruir_resultados_bi_em_abas(aba_resultados, aba_resultados_bi):
-    preencher_posicao_pesquisa_na_aba(aba_resultados)
-
-    df_resultados_all = carregar_df_da_aba(aba_resultados)
-    df_resultados_bi = construir_resultados_bi(df_resultados_all)
-    sobrescrever_aba(aba_resultados_bi, df_resultados_bi)
-    print(f"[+] resultados_bi: {len(df_resultados_bi)} linhas consolidadas para Looker")
-
-    corrigir_coluna_numerica_na_aba(aba_resultados, "percentual")
-    corrigir_coluna_numerica_na_aba(aba_resultados, "percentual_media_cenarios")
-    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "percentual_base")
-    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "media_movel_13d")
-
-
-def reconstruir_resultados_bi(gc, spreadsheet_id: str):
-    sh = gc.open_by_key(spreadsheet_id)
-    aba_resultados = garantir_aba(sh, "resultados", rows=20000, cols=35)
-    aba_resultados_bi = garantir_aba(sh, "resultados_bi", rows=20000, cols=40)
-    _reconstruir_resultados_bi_em_abas(aba_resultados, aba_resultados_bi)
-
-
 def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame):
     if (df_p is None or df_p.empty) and (df_r is None or df_r.empty):
         print("[-] nada para salvar")
@@ -2308,7 +2282,17 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
         novos, exist = dedup_e_salvar(aba_resultados, df_r, key_col="_dedup_key")
         print(f"[+] resultados: {novos} novas | {exist} já existiam")
 
-    _reconstruir_resultados_bi_em_abas(aba_resultados, aba_resultados_bi)
+    preencher_posicao_pesquisa_na_aba(aba_resultados)
+
+    df_resultados_all = carregar_df_da_aba(aba_resultados)
+    df_resultados_bi = construir_resultados_bi(df_resultados_all)
+    sobrescrever_aba(aba_resultados_bi, df_resultados_bi)
+    print(f"[+] resultados_bi: {len(df_resultados_bi)} linhas consolidadas para Looker")
+
+    corrigir_coluna_numerica_na_aba(aba_resultados, "percentual")
+    corrigir_coluna_numerica_na_aba(aba_resultados, "percentual_media_cenarios")
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "percentual_base")
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "media_movel_13d")
 
 
 def _buscar_urls_no_json(obj, urls: set, pattern: str):
