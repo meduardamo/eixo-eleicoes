@@ -11,10 +11,11 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 100
 
     env:
       TZ: "America/Recife"
+      PYTHONUNBUFFERED: "1"
       GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       SPREADSHEET_ID_RELATORIOS: ${{ secrets.SPREADSHEET_ID_RELATORIOS }}
@@ -33,18 +34,43 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Extrair segmentos e topline dos PDFs
+      - name: Diagnóstico da rodada
+        run: |
+          date
+          python --version
+          echo "Workflow: polling-pdf-extrair-topline"
+          echo "Comandos: pesquisas.py extrair; pesquisas.py topline"
+
+      - name: Extrair segmentos, rejeição e aprovação
+        id: extrair
+        continue-on-error: true
+        timeout-minutes: 45
         run: |
           set +e
+          echo "::group::python pesquisas.py extrair"
+          python -u pesquisas.py extrair
+          status=$?
+          echo "::endgroup::"
+          exit "$status"
 
-          python pesquisas.py extrair
-          STATUS_EXTRAIR=$?
+      - name: Extrair topline
+        id: topline
+        continue-on-error: true
+        timeout-minutes: 45
+        run: |
+          set +e
+          echo "::group::python pesquisas.py topline"
+          python -u pesquisas.py topline
+          status=$?
+          echo "::endgroup::"
+          exit "$status"
 
-          python pesquisas.py topline
-          STATUS_TOPLINE=$?
-
-          if [ "$STATUS_EXTRAIR" -ne 0 ] || [ "$STATUS_TOPLINE" -ne 0 ]; then
-            echo "Falha em extrair=$STATUS_EXTRAIR topline=$STATUS_TOPLINE"
+      - name: Resultado final
+        if: ${{ always() }}
+        run: |
+          echo "extrair: ${{ steps.extrair.outcome }}"
+          echo "topline: ${{ steps.topline.outcome }}"
+          if [ "${{ steps.extrair.outcome }}" != "success" ] || [ "${{ steps.topline.outcome }}" != "success" ]; then
             exit 1
           fi
 
