@@ -19,6 +19,9 @@ jobs:
       GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       SPREADSHEET_ID_RELATORIOS: ${{ secrets.SPREADSHEET_ID_RELATORIOS }}
+      SPREADSHEET_ID_POLLINGDATA: ${{ secrets.SPREADSHEET_ID_POLLINGDATA }}
+      SPREADSHEET_ID_POLLINGDATA_T2: ${{ secrets.SPREADSHEET_ID_POLLINGDATA_T2 }}
+      PUBLICAR_POLLINGDATA: ${{ vars.PUBLICAR_POLLINGDATA }}
 
     steps:
       - name: Checkout
@@ -74,9 +77,6 @@ jobs:
             exit 1
           fi
 
-      # Publicação nas planilhas de turno desativada por enquanto.
-      # Quando quiser ligar, reative este passo (e os secrets abaixo no env):
-      #   SPREADSHEET_ID_POLLINGDATA / SPREADSHEET_ID_POLLINGDATA_T2
-      # - name: Publicar nas planilhas de turno (t1/t2 + média)
-      #   run: |
-      #     python pesquisas.py publicar
+      - name: Publicar nas planilhas de turno (t1/t2 + média)
+        if: ${{ env.PUBLICAR_POLLINGDATA == 'true' && (env.SPREADSHEET_ID_POLLINGDATA != '' || env.SPREADSHEET_ID_POLLINGDATA_T2 != '') }}
+        run: python -u pesquisas.py publicar
