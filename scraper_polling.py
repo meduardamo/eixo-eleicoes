@@ -403,7 +403,8 @@ def parse_url_meta(url: str):
     if m:
         turno = m.group("turno")
         slug = m.group("slug") or ""
-        disputa = f"{turno.lower()}_{slug}" if slug else ""
+        # disputa só distingue confrontos no 2º turno; no 1º turno fica vazia
+        disputa = f"{turno.lower()}_{slug}" if (slug and turno.lower() == "t2") else ""
         return {
             "ano": int(m.group("ano")),
             "cargo": "presidente",
@@ -1747,6 +1748,18 @@ def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=cols)
 
     df = df_resultados.copy()
+
+    # disputa só distingue confrontos no 2º turno. No 1º turno deve ser vazia:
+    # valores espúrios (números, slugs herdados) fatiam a série de cada candidato
+    # e quebram a média móvel de 13 dias. Normaliza mantendo disputa só em t2.
+    if "disputa" not in df.columns:
+        df["disputa"] = ""
+    _eh_t2 = (
+        df["turno"].astype(str).str.strip().str.lower().eq("t2")
+        if "turno" in df.columns else False
+    )
+    df["disputa"] = df["disputa"].where(_eh_t2, "")
+
     if "percentual" in df.columns:
         df["percentual"] = df["percentual"].apply(parsear_pct)
     else:
