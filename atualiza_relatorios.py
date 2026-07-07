@@ -7,9 +7,10 @@ import shutil
 import subprocess
 import tempfile
 import time
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import gspread
 import requests
@@ -57,6 +58,12 @@ ALIASES_RELATORIOS = {
     "segmentos_data_extracao": ["data_extracao"],
     "segmentos_erro": ["extracao_erro"],
     "segmentos_tentativas": ["extracao_tentativas"],
+}
+CARGOS_MONITORADOS = ("presidente", "governador", "senador")
+CARGO_ROTULO = {
+    "presidente": "Presidente",
+    "governador": "Governador",
+    "senador": "Senador",
 }
 
 IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
@@ -152,6 +159,87 @@ def _normalizar_cabecalho_relatorios(ws):
     return alvo
 
 
+def _sem_acento(valor):
+    return unicodedata.normalize("NFKD", str(valor or "")).encode("ascii", "ignore").decode()
+
+
+def _cargo_norm(valor):
+    s = _sem_acento(valor).strip().lower()
+    for cargo in CARGOS_MONITORADOS:
+        if cargo in s:
+            return cargo
+    return s
+
+
+def _cargos_monitorados(valor):
+    s = _sem_acento(valor).lower()
+    cargos = []
+    for cargo in CARGOS_MONITORADOS:
+        if cargo in s and cargo not in cargos:
+            cargos.append(cargo)
+    return [CARGO_ROTULO[c] for c in cargos]
+
+
+def _chave_fila(registro, cargo, uf):
+    return (
+        re.sub(r"[^A-Z0-9]", "", str(registro or "").upper()),
+        _cargo_norm(cargo),
+        _sem_acento(uf).strip().upper(),
+    )
+
+
+def _limpar_status_extracao(row):
+    for coluna in (
+        "link", COL_NIVEL_CONFERENCIA,
+        "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
+        "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
+    ):
+        row[coluna] = ""
+    row[COL_ORIGEM_LINK] = "separado de linha multicargo; buscar fonte específica"
+    return row
+
+
+def _separar_linhas_multicargo(ws, header):
+    if "cargo" not in header or "registro" not in header:
+        return
+
+    registros = ws.get_all_records()
+    existentes = {
+        _chave_fila(r.get("registro"), r.get("cargo"), r.get("uf"))
+        for r in registros
+        if str(r.get("registro", "")).strip()
+    }
+    col_cargo = header.index("cargo") + 1
+    updates, novas = [], []
+
+    for row_i, r in enumerate(registros, start=2):
+        cargos = _cargos_monitorados(r.get("cargo"))
+        if not cargos:
+            continue
+        primeiro = cargos[0]
+        if str(r.get("cargo", "")).strip() != primeiro:
+            updates.append(gspread.Cell(row_i, col_cargo, primeiro))
+        if len(cargos) <= 1:
+            continue
+        existentes.add(_chave_fila(r.get("registro"), primeiro, r.get("uf")))
+
+        for cargo in cargos[1:]:
+            chave = _chave_fila(r.get("registro"), cargo, r.get("uf"))
+            if chave in existentes:
+                continue
+            novo = {c: r.get(c, "") for c in header}
+            novo["cargo"] = cargo
+            _limpar_status_extracao(novo)
+            novas.append([novo.get(c, "") for c in header])
+            existentes.add(chave)
+
+    if updates:
+        ws.update_cells(updates, value_input_option="RAW")
+    if novas:
+        ws.append_rows(novas, value_input_option="RAW")
+        print(f"{len(novas)} linha(s) multicargo separada(s) na fila de relatórios.")
+
+
 def _extrair_json_objeto(texto):
     bruto = (texto or "").strip()
     bruto = re.sub(r"^```json\s*", "", bruto, flags=re.I)
@@ -178,6 +266,7 @@ def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, d
     2. PROIBIDO TSE: NÃO retorne links do sistema PesqEle do TSE ou PDFs que sejam apenas o "Recibo de Registro/Questionário". O alvo é o relatório com os RESULTADOS (gráficos, intenção de voto).
     3. FALSO PAYWALL: Se a primeira fonte encontrada for paga (Estadão, Folha, O Globo), ESCARAFUNCHE a internet buscando fontes abertas secundárias sobre a mesma pesquisa. Retorne o paywall apenas como último recurso.
     4. ALUCINAÇÃO DE DATA: Só aceite matérias ou relatórios que citem dados de 2026. Ignore notícias velhas de 2022 ou 2024.
+    5. CARGO CERTO: A fonte precisa trazer números do cargo pedido ({cargo}). Se o mesmo registro tiver matérias separadas para Governador e Senador, retorne a matéria do cargo pedido. Não aceite uma matéria apenas de Governador para uma linha de Senador, nem o contrário.
 
     Retorne APENAS um JSON válido (sem tags markdown de bloco de código):
     {{
@@ -209,6 +298,7 @@ def agente_buscar_pesquisas_dia(gemini_client):
     1. IGNORE TEASERS: Descarte matérias que dizem "vai ser divulgada", "foi registrada" ou "está em campo". Colete apenas resultados JÁ publicados com números de intenção de voto ou rejeição.
     2. ALUCINAÇÃO DE ANO: Filtre rigorosamente pesquisas passadas (2022/2024). Queremos apenas 2026.
     3. REGISTRO DUPLO: Se uma pesquisa estadual testou Governador e Presidente, ela geralmente tem um registro Estadual (UF-00000/2026) e um Nacional (BR-00000/2026). Se a matéria citar ambos, crie DOIS itens separados na lista JSON abaixo.
+    4. CARGOS MONITORADOS: Retorne apenas pesquisas para Presidente, Governador ou Senador. Ignore Deputado Federal, Deputado Estadual e outros cargos.
 
     Retorne APENAS um JSON válido (sem tags markdown):
     {{
@@ -229,7 +319,10 @@ def agente_buscar_pesquisas_dia(gemini_client):
     try:
         config = types.GenerateContentConfig(temperature=0.15, tools=[types.Tool(google_search=types.GoogleSearch())])
         res = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=config)
-        return _extrair_json_objeto(getattr(res, "text", "") or "").get("pesquisas", [])
+        pesquisas = _extrair_json_objeto(getattr(res, "text", "") or "").get("pesquisas", [])
+        if not isinstance(pesquisas, list):
+            return []
+        return [p for p in pesquisas if isinstance(p, dict)]
     except Exception as e:
         print(f"  [AVISO] Varredura Gemini/search falhou: {str(e)[:200]}")
         return []
@@ -1146,18 +1239,29 @@ def resolver_pasta_drive(creds, cargo, uf_extenso):
     return r_create["id"]
 
 
-def fazer_upload_drive(creds, pasta_id, nome_arquivo, pdf_bytes):
+def fazer_upload_drive(creds, pasta_id, nome_arquivo, pdf_bytes, nomes_existentes=None):
     headers = {'Authorization': f'Bearer {creds.token}'}
+    nomes_busca = [nome_arquivo] + [n for n in (nomes_existentes or []) if n and n != nome_arquivo]
 
-    query = f"name='{nome_arquivo}' and '{pasta_id}' in parents and trashed=false"
-    r = requests.get(
-        "https://www.googleapis.com/drive/v3/files",
-        params={"q": query, "corpora": "drive", "driveId": DRIVE_ID, "includeItemsFromAllDrives": "true", "supportsAllDrives": "true", "fields": "files(id, webViewLink)"},
-        headers=headers
-    ).json()
+    for nome_busca in nomes_busca:
+        query = f"name='{nome_busca}' and '{pasta_id}' in parents and trashed=false"
+        r = requests.get(
+            "https://www.googleapis.com/drive/v3/files",
+            params={"q": query, "corpora": "drive", "driveId": DRIVE_ID, "includeItemsFromAllDrives": "true", "supportsAllDrives": "true", "fields": "files(id, name, webViewLink)"},
+            headers=headers
+        ).json()
 
-    if r.get("files"):
-        return r["files"][0]["webViewLink"]  # Já existe
+        if r.get("files"):
+            arquivo = r["files"][0]
+            if arquivo.get("name") != nome_arquivo:
+                r_rename = requests.patch(
+                    f"https://www.googleapis.com/drive/v3/files/{arquivo['id']}?supportsAllDrives=true&fields=id,name,webViewLink",
+                    headers=headers,
+                    json={"name": nome_arquivo},
+                )
+                if r_rename.ok:
+                    return r_rename.json().get("webViewLink", arquivo.get("webViewLink", ""))
+            return arquivo["webViewLink"]  # Já existe
 
     meta = {'name': nome_arquivo, 'parents': [pasta_id]}
     files = {
@@ -1171,10 +1275,58 @@ def fazer_upload_drive(creds, pasta_id, nome_arquivo, pdf_bytes):
     return r_upload.json().get('webViewLink', '')
 
 
-def normalizar_nome_arquivo(registro, data_div):
+def _drive_file_id(link):
+    if not link:
+        return ""
+    parsed = urlparse(str(link))
+    match = re.search(r"/file/d/([^/]+)", parsed.path)
+    if match:
+        return match.group(1)
+    query_id = parse_qs(parsed.query).get("id", [""])[0]
+    if query_id:
+        return query_id
+    match = re.search(r"[-\w]{25,}", str(link))
+    return match.group(0) if match else ""
+
+
+def renomear_arquivo_drive_por_link(creds, link, nome_arquivo):
+    file_id = _drive_file_id(link)
+    if not file_id:
+        return False
+
+    headers = {'Authorization': f'Bearer {creds.token}'}
+    try:
+        r_atual = requests.get(
+            f"https://www.googleapis.com/drive/v3/files/{file_id}",
+            params={"supportsAllDrives": "true", "fields": "id,name,webViewLink"},
+            headers=headers,
+            timeout=30,
+        )
+        if not r_atual.ok:
+            return False
+        atual = r_atual.json()
+        if atual.get("name") == nome_arquivo:
+            return False
+
+        r_rename = requests.patch(
+            f"https://www.googleapis.com/drive/v3/files/{file_id}",
+            params={"supportsAllDrives": "true", "fields": "id,name,webViewLink"},
+            headers=headers,
+            json={"name": nome_arquivo},
+            timeout=30,
+        )
+        return r_rename.ok
+    except requests.RequestException:
+        return False
+
+
+def normalizar_nome_arquivo(registro, data_div, cargo=""):
     reg_limpo = registro.replace("/", "-")
+    cargo_limpo = re.sub(r"[^A-Za-z0-9]+", "-", _sem_acento(cargo).strip()).strip("-")
     m = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", str(data_div))
     data_iso = f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else data_div
+    if cargo_limpo:
+        return f"{reg_limpo}_{cargo_limpo}_{data_iso}.pdf"
     return f"{reg_limpo}_{data_iso}.pdf"
 
 
@@ -1195,15 +1347,32 @@ def atualizar_planilha():
     col_link = _garantir_coluna(ws, header, "link")
     col_status = _garantir_coluna(ws, header, COL_ORIGEM_LINK)
     col_nivel = _garantir_coluna(ws, header, COL_NIVEL_CONFERENCIA)
+    _separar_linhas_multicargo(ws, header)
 
     dados = ws.get_all_records()
-    registros_existentes = {str(r.get("registro", "")).strip() for r in dados}
+    registros_existentes = {
+        _chave_fila(r.get("registro"), r.get("cargo"), r.get("uf"))
+        for r in dados
+    }
+    primeiro_cargo_por_registro = {}
+    for r in dados:
+        reg_norm = re.sub(r"[^A-Z0-9]", "", str(r.get("registro", "")).upper())
+        if reg_norm and reg_norm not in primeiro_cargo_por_registro:
+            primeiro_cargo_por_registro[reg_norm] = _cargo_norm(r.get("cargo", ""))
 
     pdfs_salvos = 0
     links_preenchidos = 0
     linhas_novas = []
     pendentes_finais = []
     celulas_para_atualizar = []
+
+    def _gravar_celulas_pendentes(contexto=""):
+        if not celulas_para_atualizar:
+            return
+        detalhe = f" ({contexto})" if contexto else ""
+        print(f"Gravando {len(celulas_para_atualizar)} atualização(ões) na planilha{detalhe}...")
+        ws.update_cells(celulas_para_atualizar, value_input_option="USER_ENTERED")
+        celulas_para_atualizar.clear()
 
     # 1. PROCESSAR LINHAS PENDENTES (SEM LINK)
     print(f"\n--- Fase 1: Processando Pendentes ({len(dados)} linhas analisadas) ---")
@@ -1212,14 +1381,19 @@ def atualizar_planilha():
         link_atual = str(linha.get("link", "")).strip()
         if not registro:
             continue
+        if _cargo_norm(linha.get("cargo", "")) not in CARGOS_MONITORADOS:
+            continue
         if link_atual:
+            nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")), linha.get("cargo", ""))
+            if renomear_arquivo_drive_por_link(creds, link_atual, nome_pdf):
+                print(f"  [OK] Arquivo renomeado no Drive: {nome_pdf}")
             if not str(linha.get(COL_ORIGEM_LINK, "")).strip():
                 celulas_para_atualizar.append(gspread.Cell(i, col_status, "link já existente na fila"))
             if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
                 celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "link_existente"))
             continue
 
-        print(f"Buscando: {registro}...")
+        print(f"Buscando: {registro} / {linha.get('cargo', '')}...")
         resultado = agente_buscar_link_faltante(
             gemini_client, registro, linha.get("instituto", ""),
             linha.get("cargo", ""), linha.get("uf", ""), linha.get("data_divulgacao", "")
@@ -1247,8 +1421,12 @@ def atualizar_planilha():
                 celulas_para_atualizar.append(gspread.Cell(i, col_status, "verificar fonte" + _nota_conferencia(situacao)))
                 continue
             pasta_id = resolver_pasta_drive(creds, linha.get("cargo", ""), linha.get("uf", ""))
-            nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")))
-            link_drive = fazer_upload_drive(creds, pasta_id, nome_pdf, pdf_bytes)
+            nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")), linha.get("cargo", ""))
+            nomes_legado = []
+            reg_norm = re.sub(r"[^A-Z0-9]", "", registro.upper())
+            if primeiro_cargo_por_registro.get(reg_norm) == _cargo_norm(linha.get("cargo", "")):
+                nomes_legado.append(normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", ""))))
+            link_drive = fazer_upload_drive(creds, pasta_id, nome_pdf, pdf_bytes, nomes_existentes=nomes_legado)
 
             nota = _nota_conferencia(situacao)
             celulas_para_atualizar.append(gspread.Cell(i, col_link, link_drive))
@@ -1260,61 +1438,72 @@ def atualizar_planilha():
             celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "erro_tecnico"))
             pendentes_finais.append(f"{registro} - Erro técnico ao baixar/salvar PDF: {str(e)}")
 
+    _gravar_celulas_pendentes("fim da Fase 1")
+
     # 2. VARREDURA POR PESQUISAS NOVAS
     print("\n--- Fase 2: Varredura de Mídia por Pesquisas Novas ---")
     pesquisas_novas = agente_buscar_pesquisas_dia(gemini_client)
     print(f"O Gemini identificou {len(pesquisas_novas)} citação(ões) de pesquisa hoje.")
 
     for p in pesquisas_novas:
-        registro = p.get("registro", "").strip()
-        if not registro or registro in registros_existentes:
+        if not isinstance(p, dict):
+            continue
+        registro = str(p.get("registro") or "").strip()
+        cargos = _cargos_monitorados(p.get("cargo", ""))
+        if not registro or not cargos:
             continue
 
-        print(f"Nova descoberta! {registro} - {p.get('instituto')} - {p.get('uf')}")
-        link_drive_final = ""
-        origem = p.get("origem_texto", "")
-        situacao = ""
+        for idx_cargo, cargo in enumerate(cargos):
+            chave = _chave_fila(registro, cargo, p.get("uf", ""))
+            if chave in registros_existentes:
+                continue
 
-        if p.get("tipo") == "paywall":
-            situacao = "paywall"
-            origem = f"Paywall detectado. Fonte: {p.get('link')}"
-            pendentes_finais.append(f"{registro} (NOVO) - {origem}")
-        elif p.get("link"):
-            try:
-                pdf_bytes, situacao = baixar_pdf_ou_gerar_headless(
-                    p.get("link"), registro, p.get("uf", ""), p.get("instituto", ""), gemini_client)
-                if not pdf_bytes or pdf_bytes[:4] != b"%PDF":
-                    situacao = "bloqueado"
-                if situacao in SITUACOES_PENDENTES:
-                    origem = f"verificar fonte{_nota_conferencia(situacao)}. Fonte: {p.get('link')}"
-                    pendentes_finais.append(f"{registro} (NOVO) - {origem}")
-                else:
-                    pasta_id = resolver_pasta_drive(creds, p.get("cargo", ""), p.get("uf", ""))
-                    nome_pdf = normalizar_nome_arquivo(registro, str(p.get("data_divulgacao", "")))
-                    link_drive_final = fazer_upload_drive(creds, pasta_id, nome_pdf, pdf_bytes)
-                    origem = (origem + _nota_conferencia(situacao)).strip()
-                    pdfs_salvos += 1
-            except Exception as e:
-                situacao = "erro_tecnico"
-                origem = f"Erro no PDF: {str(e)}. Fonte: {p.get('link')}"
-                pendentes_finais.append(f"{registro} (NOVO) - {origem}")
+            print(f"Nova descoberta! {registro} / {cargo} - {p.get('instituto')} - {p.get('uf')}")
+            link_drive_final = ""
+            origem = p.get("origem_texto", "")
+            situacao = ""
+            pode_usar_link = len(cargos) == 1 or idx_cargo == 0
 
-        # linha alinhada ao cabeçalho atual (qualquer que seja), + status na coluna própria
-        valores = {
-            "registro": registro,
-            "cargo": p.get("cargo", ""),
-            "uf": p.get("uf", ""),
-            "instituto": p.get("instituto", ""),
-            "data_divulgacao": p.get("data_divulgacao", ""),
-            "link": link_drive_final,
-            COL_ORIGEM_LINK: origem,
-            COL_NIVEL_CONFERENCIA: situacao,
-        }
-        linhas_novas.append([valores.get(c, "") for c in header])
-        registros_existentes.add(registro)
+            if not pode_usar_link:
+                origem = "separado de descoberta multicargo; buscar fonte específica"
+            elif p.get("tipo") == "paywall":
+                situacao = "paywall"
+                origem = f"Paywall detectado. Fonte: {p.get('link')}"
+                pendentes_finais.append(f"{registro} / {cargo} (NOVO) - {origem}")
+            elif p.get("link"):
+                try:
+                    pdf_bytes, situacao = baixar_pdf_ou_gerar_headless(
+                        p.get("link"), registro, p.get("uf", ""), p.get("instituto", ""), gemini_client)
+                    if not pdf_bytes or pdf_bytes[:4] != b"%PDF":
+                        situacao = "bloqueado"
+                    if situacao in SITUACOES_PENDENTES:
+                        origem = f"verificar fonte{_nota_conferencia(situacao)}. Fonte: {p.get('link')}"
+                        pendentes_finais.append(f"{registro} / {cargo} (NOVO) - {origem}")
+                    else:
+                        pasta_id = resolver_pasta_drive(creds, cargo, p.get("uf", ""))
+                        nome_pdf = normalizar_nome_arquivo(registro, str(p.get("data_divulgacao", "")), cargo)
+                        link_drive_final = fazer_upload_drive(creds, pasta_id, nome_pdf, pdf_bytes)
+                        origem = (origem + _nota_conferencia(situacao)).strip()
+                        pdfs_salvos += 1
+                except Exception as e:
+                    situacao = "erro_tecnico"
+                    origem = f"Erro no PDF: {str(e)}. Fonte: {p.get('link')}"
+                    pendentes_finais.append(f"{registro} / {cargo} (NOVO) - {origem}")
 
-    if celulas_para_atualizar:
-        ws.update_cells(celulas_para_atualizar, value_input_option="USER_ENTERED")
+            valores = {
+                "registro": registro,
+                "cargo": cargo,
+                "uf": p.get("uf", ""),
+                "instituto": p.get("instituto", ""),
+                "data_divulgacao": p.get("data_divulgacao", ""),
+                "link": link_drive_final,
+                COL_ORIGEM_LINK: origem,
+                COL_NIVEL_CONFERENCIA: situacao,
+            }
+            linhas_novas.append([valores.get(c, "") for c in header])
+            registros_existentes.add(chave)
+
+    _gravar_celulas_pendentes("fim da execução")
     if linhas_novas:
         ws.append_rows(linhas_novas, value_input_option="USER_ENTERED")
 
