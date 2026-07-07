@@ -617,9 +617,11 @@ def cmd_extrair():
     col_err = _garantir_coluna(fila, header, "segmentos_erro")
     col_ten = _garantir_coluna(fila, header, "segmentos_tentativas")
 
+    ci_ext = _garantir_coluna(fila, header, "segmentos_extraido")
+    ci_data = _garantir_coluna(fila, header, "segmentos_data_extracao")
+
     linhas = fila.get_all_records()
-    voto_novos, rej_novos, aprov_novos, marcar = [], [], [], []
-    updates, ok_regs, err_regs = [], [], []
+    ok_regs, err_regs = [], []
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
 
     print(f"Extrair segmentos: {len(linhas)} linha(s) na fila.", flush=True)
@@ -639,6 +641,43 @@ def cmd_extrair():
         cargo_item = _cargo_norm(item.get("cargo", ""))
         return not cargo_item or cargo_item == _cargo_norm(cargo_fila)
 
+    # Chaves já gravadas em cada aba, carregadas UMA vez pra dedup em memória (sem
+    # reler a aba a cada gravação). Protege contra duplicata quando um lote foi
+    # gravado mas a linha não chegou a ser marcada (ex.: timeout no meio).
+    CH_VOTO = ["registro", "cargo", "turno", "cenario", "candidato", "tipo_segmento", "segmento"]
+    CH_REJ = ["registro", "cargo", "candidato", "tipo_segmento", "segmento"]
+    CH_APROV = ["registro", "alvo", "resposta", "tipo_segmento", "segmento"]
+
+    def _carregar_chaves(ws, aba_nome, chaves):
+        return {tuple(str(e.get(c, "")).strip() for c in chaves) for e in ws.get_all_records()}
+
+    voto_keys = _carregar_chaves(ws_voto, "voto_segmento", CH_VOTO)
+    rej_keys = _carregar_chaves(ws_rej, "rejeicao", CH_REJ)
+    aprov_keys = _carregar_chaves(ws_aprov, "aprovacao", CH_APROV)
+
+    # Grava em lotes ao longo da rodada: se o passo estourar o tempo (timeout do
+    # Actions), o que já foi extraído fica salvo e a marcação segue junto, então a
+    # próxima rodada continua de onde parou em vez de perder tudo e reprocessar o
+    # mesmo backlog eternamente.
+    LOTE = 5
+    voto_buf, rej_buf, aprov_buf, updates = [], [], [], []
+    _contador = {"n": 0}
+
+    def _flush(ctx=""):
+        if voto_buf:
+            ws_voto.append_rows(voto_buf, value_input_option="RAW")
+        if rej_buf:
+            ws_rej.append_rows(rej_buf, value_input_option="RAW")
+        if aprov_buf:
+            ws_aprov.append_rows(aprov_buf, value_input_option="RAW")
+        if updates:   # marca as linhas extraídas DEPOIS de gravar os dados delas
+            fila.update_cells(updates, value_input_option="RAW")
+        if voto_buf or rej_buf or aprov_buf or updates:
+            print(f"  [gravado{(' ' + ctx) if ctx else ''}] "
+                  f"{len(voto_buf)} voto, {len(rej_buf)} rejeição, {len(aprov_buf)} aprovação", flush=True)
+        voto_buf.clear(); rej_buf.clear(); aprov_buf.clear(); updates.clear()
+        _contador["n"] = 0
+
     for i, r in enumerate(linhas, start=2):   # linha 1 = cabeçalho
         link = str(r.get("link", "")).strip()
         if not link or not _verdadeiro(r.get("conferido")) or _verdadeiro(r.get("segmentos_extraido")):
@@ -657,6 +696,9 @@ def cmd_extrair():
                             gspread.Cell(i, col_ten, tentativas + 1)])
             err_regs.append(f"{r.get('registro')} [{msg[:80]}]")
             print(f"linha {i} ({r.get('registro')}): erro {msg}")
+            _contador["n"] += 1
+            if _contador["n"] >= LOTE:
+                _flush("parcial")
             continue
         registro = r.get("registro", "")
         cargo_fila = r.get("cargo", "")
@@ -672,70 +714,60 @@ def cmd_extrair():
                             gspread.Cell(i, col_ten, tentativas + 1)])
             err_regs.append(f"{registro} {cargo_fila} [{msg}]")
             print(f"linha {i} ({registro} / {cargo_fila}): {msg}", flush=True)
+            _contador["n"] += 1
+            if _contador["n"] >= LOTE:
+                _flush("parcial")
             continue
         for v in voto_filtrado:
             # cargo/turno da disputa daquele cenário (o Gemini identifica); se faltar,
             # cai no texto da fila, pra linha nunca ficar sem referência
-            voto_novos.append([registro, v.get("cargo") or cargo_fila, v.get("turno", "t1"),
-                               uf, inst, data_div,
-                               v.get("cenario", ""), v.get("candidato", ""),
-                               v.get("tipo_segmento", ""), v.get("segmento", ""),
-                               v.get("valor", "")])
+            chave = (str(registro).strip(), str(v.get("cargo") or cargo_fila).strip(),
+                     str(v.get("turno", "t1")).strip(), str(v.get("cenario", "")).strip(),
+                     str(v.get("candidato", "")).strip(), str(v.get("tipo_segmento", "")).strip(),
+                     str(v.get("segmento", "")).strip())
+            if chave in voto_keys:
+                continue
+            voto_keys.add(chave)
+            voto_buf.append([registro, v.get("cargo") or cargo_fila, v.get("turno", "t1"),
+                             uf, inst, data_div,
+                             v.get("cenario", ""), v.get("candidato", ""),
+                             v.get("tipo_segmento", ""), v.get("segmento", ""),
+                             v.get("valor", "")])
         for v in rej_filtrada:
-            rej_novos.append([registro, v.get("cargo") or cargo_fila, uf, inst, data_div,
-                              v.get("candidato", ""), v.get("tipo_segmento", ""),
-                              v.get("segmento", ""), v.get("valor", "")])
+            chave = (str(registro).strip(), str(v.get("cargo") or cargo_fila).strip(),
+                     str(v.get("candidato", "")).strip(), str(v.get("tipo_segmento", "")).strip(),
+                     str(v.get("segmento", "")).strip())
+            if chave in rej_keys:
+                continue
+            rej_keys.add(chave)
+            rej_buf.append([registro, v.get("cargo") or cargo_fila, uf, inst, data_div,
+                            v.get("candidato", ""), v.get("tipo_segmento", ""),
+                            v.get("segmento", ""), v.get("valor", "")])
         for v in aprov_filtrada:
-            aprov_novos.append([registro, cargo_fila, uf, inst, data_div,
-                                v.get("alvo", ""), v.get("resposta", ""),
-                                v.get("tipo_segmento", ""), v.get("segmento", ""),
-                                v.get("valor", "")])
-        marcar.append(i)
-        updates.append(gspread.Cell(i, col_err, ""))   # limpa erro de rodada anterior
+            chave = (str(registro).strip(), str(v.get("alvo", "")).strip(),
+                     str(v.get("resposta", "")).strip(), str(v.get("tipo_segmento", "")).strip(),
+                     str(v.get("segmento", "")).strip())
+            if chave in aprov_keys:
+                continue
+            aprov_keys.add(chave)
+            aprov_buf.append([registro, cargo_fila, uf, inst, data_div,
+                              v.get("alvo", ""), v.get("resposta", ""),
+                              v.get("tipo_segmento", ""), v.get("segmento", ""),
+                              v.get("valor", "")])
+        # marca a linha como extraída no MESMO lote em que os dados dela vão (progresso durável)
+        updates.extend([gspread.Cell(i, col_err, ""),          # limpa erro de rodada anterior
+                        gspread.Cell(i, ci_ext, "sim"),
+                        gspread.Cell(i, ci_data, agora)])
         ok_regs.append(registro)
         print(f"linha {i} ({registro} / {cargo_fila}): "
               f"{len(voto_filtrado)} voto, "
               f"{len(rej_filtrada)} rejeição, "
               f"{len(aprov_filtrada)} aprovação", flush=True)
+        _contador["n"] += 1
+        if _contador["n"] >= LOTE:
+            _flush("parcial")
 
-    def _apenas_novas(ws, aba_nome, rows, chaves):
-        """Descarta linhas que já existem na aba (protege contra reprocessamento
-        com staging não apagado)."""
-        if not rows:
-            return rows
-        cols = CABECALHOS[aba_nome]
-        idx = [cols.index(c) for c in chaves]
-        existentes = {tuple(str(e.get(c, "")).strip() for c in chaves)
-                      for e in ws.get_all_records()}
-        novas = [rw for rw in rows if tuple(str(rw[j]).strip() for j in idx) not in existentes]
-        if len(novas) < len(rows):
-            print(f"  [dedup {aba_nome}] {len(rows) - len(novas)} linha(s) já existiam")
-        return novas
-
-    voto_novos = _apenas_novas(ws_voto, "voto_segmento", voto_novos,
-                               ["registro", "cargo", "turno", "cenario", "candidato",
-                                "tipo_segmento", "segmento"])
-    rej_novos = _apenas_novas(ws_rej, "rejeicao", rej_novos,
-                              ["registro", "cargo", "candidato", "tipo_segmento", "segmento"])
-    aprov_novos = _apenas_novas(ws_aprov, "aprovacao", aprov_novos,
-                                ["registro", "alvo", "resposta", "tipo_segmento", "segmento"])
-    if voto_novos:
-        ws_voto.append_rows(voto_novos, value_input_option="RAW")
-    if rej_novos:
-        ws_rej.append_rows(rej_novos, value_input_option="RAW")
-    if aprov_novos:
-        ws_aprov.append_rows(aprov_novos, value_input_option="RAW")
-
-    headers = fila.row_values(1)
-    if marcar and "segmentos_extraido" in headers:
-        ci_ext = headers.index("segmentos_extraido") + 1
-        ci_data = headers.index("segmentos_data_extracao") + 1 if "segmentos_data_extracao" in headers else None
-        for row_i in marcar:
-            updates.append(gspread.Cell(row_i, ci_ext, "sim"))
-            if ci_data:
-                updates.append(gspread.Cell(row_i, ci_data, agora))
-    if updates:
-        fila.update_cells(updates, value_input_option="RAW")
+    _flush("fim")
 
     print("\n───────── resumo ─────────")
     print(f"extraídos: {len(ok_regs)}  {ok_regs}")
@@ -797,18 +829,55 @@ def cmd_topline():
 
     linhas = fila.get_all_records()
     todos_p, todos_r = [], []
-    updates = []          # células a marcar (batch no fim, evita cota do Sheets)
+    updates = []
     ok_regs, err_regs = [], []
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
     print(f"Topline: {len(linhas)} linha(s) na fila.", flush=True)
+
+    LOTE = 5
+    _contador = {"n": 0}
+
+    def _gravar(dfs, aba_nome, chaves):
+        if not dfs:
+            return
+        cols = CABECALHOS[aba_nome]
+        df = pd.concat(dfs, ignore_index=True).reindex(columns=cols).fillna("")
+        ws = _aba(sh, aba_nome)
+        # dedup contra o que já está na aba (protege reprocessamento com staging não apagado)
+        existentes = {tuple(str(e.get(c, "")).strip() for c in chaves)
+                      for e in ws.get_all_records()}
+        if existentes:
+            mask = df.apply(lambda rw: tuple(str(rw[c]).strip() for c in chaves) not in existentes,
+                            axis=1)
+            if (~mask).any():
+                print(f"  [dedup {aba_nome}] {int((~mask).sum())} linha(s) já existiam")
+            df = df[mask]
+        if df.empty:
+            return
+        ws.append_rows(df.astype(str).values.tolist(), value_input_option="RAW")
+        print(f"{len(df)} linha(s) gravadas na aba '{aba_nome}'.")
+
+    # Grava em lotes: se o passo estourar o tempo (timeout do Actions), o que já foi
+    # extraído fica salvo e a marcação segue junto, então a próxima rodada continua de
+    # onde parou em vez de perder tudo. Marca a linha DEPOIS de gravar os cenários dela.
+    def _flush_topline(ctx=""):
+        _gravar(todos_p, "topline_pesquisas", ["scenario_id"])
+        _gravar(todos_r, "topline_resultados", ["scenario_id", "candidato_partido"])
+        if updates:
+            fila.update_cells(updates, value_input_option="RAW")
+        todos_p.clear(); todos_r.clear(); updates.clear()
+        _contador["n"] = 0
 
     def _falha(row_i, registro, tentativas, msg):
         updates.extend([gspread.Cell(row_i, col_erro, msg[:300]),
                         gspread.Cell(row_i, col_tent, tentativas + 1)])
         err_regs.append(f"{registro} [{msg[:80]}]")
         print(f"linha {row_i} ({registro}): erro: {msg}")
+        _contador["n"] += 1
 
     for i, r in enumerate(linhas, start=2):
+        if _contador["n"] >= LOTE:
+            _flush_topline("parcial")
         link = str(r.get("link", "")).strip()
         registro_fila = str(r.get("registro", "")).strip()
         if not link or not _verdadeiro(r.get("conferido")) or _verdadeiro(r.get(FLAG_TOPLINE)):
@@ -914,32 +983,9 @@ def cmd_topline():
         ok_regs.append(registro_fila)
         aviso_txt = f" | avisos: {'; '.join(avisos[:2])}" if avisos else ""
         print(f"linha {i} ({registro_fila}): {n_cen} cenário(s) de topline{aviso_txt}")
+        _contador["n"] += 1
 
-    def _gravar(dfs, aba_nome, chaves):
-        if not dfs:
-            return
-        cols = CABECALHOS[aba_nome]
-        df = pd.concat(dfs, ignore_index=True).reindex(columns=cols).fillna("")
-        ws = _aba(sh, aba_nome)
-        # dedup contra o que já está na aba (protege reprocessamento com staging não apagado)
-        existentes = {tuple(str(e.get(c, "")).strip() for c in chaves)
-                      for e in ws.get_all_records()}
-        if existentes:
-            mask = df.apply(lambda rw: tuple(str(rw[c]).strip() for c in chaves) not in existentes,
-                            axis=1)
-            if (~mask).any():
-                print(f"  [dedup {aba_nome}] {int((~mask).sum())} linha(s) já existiam")
-            df = df[mask]
-        if df.empty:
-            return
-        ws.append_rows(df.astype(str).values.tolist(), value_input_option="RAW")
-        print(f"{len(df)} linha(s) gravadas na aba '{aba_nome}'.")
-
-    _gravar(todos_p, "topline_pesquisas", ["scenario_id"])
-    _gravar(todos_r, "topline_resultados", ["scenario_id", "candidato_partido"])
-
-    if updates:
-        fila.update_cells(updates, value_input_option="RAW")
+    _flush_topline("fim")
 
     print("\n───────── resumo ─────────")
     print(f"processados: {len(ok_regs)}  {ok_regs}")
