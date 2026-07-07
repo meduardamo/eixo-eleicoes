@@ -690,7 +690,7 @@ def cmd_topline():
                         escopo["uf"] = r.get("uf", "")   # pode ser nacional (BR), deixa o Gemini decidir
                     payload = extrair_dados_polling_gemini(
                         texto, url_original=link, escopo=escopo,
-                        pdf_bytes=None if texto else pdf)
+                        pdf_bytes=pdf)
                     payload["turno"] = turno   # garante o turno pedido no rótulo/poll_id
                     # registro da fila é a fonte da verdade; só avisa se o registro da
                     # fila NÃO estiver entre os do PDF (compara sem hífen/pontuação;
