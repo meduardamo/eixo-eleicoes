@@ -3,8 +3,12 @@ name: atualiza-relatorios
 on:
   workflow_dispatch:
   schedule:
-    # GitHub Actions usa UTC; Recife = UTC-3.
-    - cron: '0 21 * * *'   # 18:00 Recife, antes da rodada das 20:00
+    # GitHub Actions usa UTC; Recife = UTC-3. Duas rodadas por dia: uma no início
+    # da tarde (pega os PDFs que saíram de manhã, prontos pra conferência) e uma no
+    # fim da tarde (pega os que os institutos publicaram mais tarde). Minuto fora do
+    # :00 pra reduzir o atraso de enfileiramento do GitHub.
+    - cron: '17 16 * * *'   # 13:17 Recife
+    - cron: '17 21 * * *'   # 18:17 Recife
 
 jobs:
   run:
