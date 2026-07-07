@@ -1,579 +1,2480 @@
-"""
-Extração headless do topline (voto estimulado por candidato) de PDFs de pesquisa.
-
-Reaproveita a lógica da página Streamlit `5_Polling_Manual.py` (gerador-de-envios),
-sem depender de Streamlit. Produz DataFrames no formato do `scraper_polling`
-(pesquisas + resultados), tagueados como manual (conferida='manual_streamlit'),
-prontos pra reconciliar com o dado oficial do PollingData quando a assinatura sair.
-"""
-
-import hashlib
-import json
 import os
 import re
 import time
+import json
+import hashlib
 import unicodedata
 from datetime import datetime
+import zoneinfo
+import pandas as pd
+import gspread
+from gspread import Cell
+from gspread.utils import rowcol_to_a1
+from google.oauth2.service_account import Credentials
 
-# fitz (PyMuPDF) e pandas são importados dentro das funções que os usam, pra este
-# módulo poder ser importado só pelos helpers (sigla_uf, instituto_canonico) em
-# ambientes sem essas libs.
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-# Este módulo é independente do scraper_polling.py de propósito: ele fica
-# intocado. As 3 funções abaixo são cópias pequenas do que era usado de lá.
-
-GEMINI_MODEL = "gemini-2.5-flash"
-TIPOS_RESULTADO = ["candidato", "nao_valido"]
-
-# Marca a procedência: estes dados vêm dos PDFs dos relatórios, NÃO do PollingData.
-ORIGEM = "PDF (relatório do instituto)"
-
-
-def _slug(s: str) -> str:
-    s = normalizar_texto_simples(s).lower()
-    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+try:
+    from webdriver_manager.chrome import ChromeDriverManager
+    _HAS_WDM = True
+except Exception:
+    _HAS_WDM = False
 
 
-DISPUTA_CANDIDATO_ALIASES = {
-    "luiz inacio lula da silva": "lula",
-    "lula": "lula",
-    "jair messias bolsonaro": "bolsonaro",
-    "jair bolsonaro": "bolsonaro",
-    "bolsonaro": "bolsonaro",
-    "flavio bolsonaro": "flavio",
-    "flavio": "flavio",
-    "michelle bolsonaro": "michelle",
-    "michelle": "michelle",
-    "geraldo alckmin": "alckmin",
-    "alckmin": "alckmin",
-    "fernando haddad": "haddad",
-    "haddad": "haddad",
-    "ronaldo caiado": "caiado",
-    "caiado": "caiado",
-    "romeu zema": "zema",
-    "zema": "zema",
-    "joaquim barbosa": "joaquim",
-    "joaquim": "joaquim",
-    "tarcisio de freitas": "tarcisio",
-    "tarcisio": "tarcisio",
-    "ratinho junior": "ratinho",
-    "ratinho jr": "ratinho",
-    "ratinho": "ratinho",
+UFS = [
+    "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go",
+    "ma", "mg", "ms", "mt", "pa", "pb", "pe", "pi", "pr",
+    "rj", "rn", "ro", "rr", "rs", "sc", "se", "sp", "to"
+]
+
+PRESIDENTE_URLS_DEFAULT = [
+    "https://www.pollingdata.com.br/2026/presidente/br/2026_presidente_br_t1_lula-flavio-sem-bolsonaros.html",
+]
+
+PRESIDENTE_T2_URLS_DEFAULT = [
+    "https://www.pollingdata.com.br/2026/presidente/br/t2_flavio-lula/",
+    "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-caiado/",
+    "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-zema/",
+    "https://www.pollingdata.com.br/2026/presidente/br/t2_lula-michelle/",
+    "https://www.pollingdata.com.br/2026/presidente/br/t2_joaquim-lula/",
+]
+
+WAIT_CSS = "div#dados-das-pesquisas"
+FORCAR_LOCALE_PLANILHA = True
+LOCALE_PLANILHA = "en_US"
+
+CLASSIFICACAO_INSTITUTOS = {
+    "Datafolha": "A+",
+    "AtlasIntel": "A+",
+    "Jornal Girassol": "A+",
+    "Gazeta Dados": "A+",
+    "Jornal Stylo": "A+",
+    "MDA": "A+",
+    "MAS Opinião": "A",
+    "Badra Comunicação": "A",
+    "Ibope": "A",
+    "DMP": "A",
+    "Paraná Pesquisas": "A",
+    "Real Time Big Data": "A",
+    "Grupo M": "A",
+    "Futura": "A-",
+    "Instituto Amostragem": "A-",
+    "Instituto Gasparetto de Pesquisas": "A-",
+    "Serpes": "A-",
+    "Perfil Pesquisas Técnicas (RN)": "A-",
+    "Voice Pesquisas (MT)": "A-",
+    "Govnet/Instituto Opinião (SP)": "A-",
+    "Instituto Econométrica": "B+",
+    "MT Dados": "B+",
+    "Instituto de Pesquisa Resultado (MS)": "B+",
+    "Data M": "B+",
+    "6 Sigma": "B+",
+    "Prever Pesquisas": "B+",
+    "Solução Treinamento": "B+",
+    "Ágora Pesquisa (RJ)": "B",
+    "EPP": "B",
+    "Exata Pesquisa (MA)": "B",
+    "Instituto Jales": "B",
+    "Dataqualy": "B",
+    "Painel Brasil": "B",
+    "Brand Consultoria": "B",
+    "Instituto Opinião (PR)": "B",
+    "INOPE": "B",
+    "Vox Populi": "B",
+    "IPEMS": "B",
+    "Dataform": "B",
+    "Real Dados": "B",
+    "Incope": "B",
+    "Instituto Datailha": "B-",
+    "Tendência Pesquisa (SC)": "B-",
+    "Certifica Consultoria": "B-",
+    "Opinar Pesquisas": "B-",
+    "FLS Pesquisa": "B-",
+    "IPAT": "B-",
+    "Dados Pesquisa (GO)": "B-",
+    "Agora Pesquisa (BA)": "B-",
+    "Pontual Pesquisas (AM)": "B-",
+    "ABC Dados": "B-",
+    "Mapa Marketing": "B-",
+    "Múltipla Pesquisa (PE)": "B-",
+    "Instituto Múltipla": "B-",
+    "Instituto Haverroth": "B-",
+    "IPPEC (PR)": "B-",
+    "IABR": "B-",
+    "CP2 Pesquisa": "B-",
+    "RF Consultoria": "B-",
+    "IRG Consultoria": "B-",
+    "Fortiori": "B-",
+    "Colectta Consultoria": "B-",
+    "Consult Pesquisa (RN)": "B-",
+    "Agorasei Pesquisa": "B-",
+    "BMO": "B-",
+    "Opinião Pesquisas (PB)": "B-",
+    "Ipespe": "B-",
+    "IPESPE": "B-",
+    "Quaest": "B-",
+    "W J Mendes": "B-",
+    "Instituto Qualitativa": "B-",
+    "Folha Capital": "C+",
+    "AR7 Pesquisa": "C+",
+    "Veritá": "C+",
+    "Instituto Methodus": "C+",
+    "Methodus": "C+",
+    "Estimativa": "C+",
+    "Camminus Marketing": "C+",
+    "Doxa": "C+",
+    "R M Mariath": "C+",
+    "Equação Pesquisas": "C+",
+    "Instituto Seta": "C+",
+    "Polo Pesquisas": "C+",
+    "Ranking Pesquisa": "C+",
+    "Ranking Brasil Inteligência": "C+",
+    "Index Pesquisas": "C+",
+    "Potencial": "C+",
+    "F5 Atualiza Dados": "C",
+    "Jornal Correio Continental": "C",
+    "MBO": "C",
+    "Comunicare": "C",
+    "Naipes Marketing": "C",
+    "Instituto Exatta (PE)": "C",
+    "Escutec": "C",
+    "Instituto França": "C",
+    "Ibrape": "C",
+    "Instituto Datasensus": "C",
+    "INOP": "C",
+    "Instituto Vope": "C",
+    "Vox Opinião Pública (SP)": "C",
+    "Surgiu Pesquisas": "C",
+    "Alternativa Dados": "C-",
+    "Seculus Consultoria": "C-",
+    "Seculus": "C-",
+    "Datavox (PB)": "C-",
+    "Instituto Credibilidade": "C-",
+    "Multidados": "C-",
+    "Voga Pesquisas": "C-",
+    "Jornal O+Positivo": "C-",
+    "Studio Pesquisas": "C-",
+    "Brasil Dados": "C-",
+    "Census Pesquisas": "C-",
+    "Exatus Consultoria (RN)": "C-",
+    "Infornews": "C-",
+    "Zaytec Brasil": "C-",
+    "Access": "C-",
+}
+
+METODOLOGIA_INSTITUTOS = {
+    "Datafolha": "Pesquisa quantitativa, por amostragem, com aplicação de questionário estruturado e abordagem presencial em pontos de fluxo. Universo: população brasileira com 16 anos ou mais.",
+    "AtlasIntel": "Pesquisa quantitativa, com coleta online via questionário estruturado e pós-estratificação da amostra conforme o perfil do eleitorado nacional.",
+    "Jornal Girassol": "Pesquisa quantitativa, com aplicação de questionário estruturado em entrevistas presenciais junto ao eleitorado, realizadas em domicílios e estabelecimentos comerciais na zona urbana. Uma entrevista por domicílio ou estabelecimento.",
+    "Gazeta Dados": "Pesquisa quantitativa, com aplicação de questionário estruturado para aferição de intenção de voto e avaliação de governo.",
+    "MDA": "Pesquisa quantitativa, com entrevistas presenciais realizadas em domicílios e, complementarmente, em pontos de fluxo.",
+    "Badra Comunicação": "Pesquisa quantitativa, por amostragem por cotas, com seleção de entrevistados proporcional ao perfil do universo pesquisado.",
+    "Ibope": "Pesquisa quantitativa, com entrevistas telefônicas e aplicação de questionário estruturado junto a uma amostra representativa do eleitorado.",
+    "DMP": "Pesquisa quantitativa, com entrevistas presenciais e aplicação de questionário estruturado, por amostragem probabilística simples. Universo: eleitorado das zonas eleitorais do município.",
+    "Paraná Pesquisas": "Pesquisa quantitativa, com aplicação de questionário em formato espontâneo (sem apresentação de nomes) e estimulado (com apresentação de nomes).",
+    "Real Time Big Data": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Grupo M": "Pesquisa científica estruturada, com foco em modelagem de sistemas de informação.",
+    "Futura": "Pesquisa quantitativa, com foco em intenção de voto e avaliação de governo.",
+    "Instituto Amostragem": "Pesquisa qualitativa, realizada por meio de grupos de discussão (focus group), entrevistas semiestruturadas e entrevistas em profundidade.",
+    "Instituto Gasparetto de Pesquisas": "Pesquisa quantitativa, com entrevistas presenciais e aplicação de questionário estruturado, por amostragem aleatória estratificada, com base em dados do IBGE/TSE.",
+    "Serpes": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Perfil Pesquisas Técnicas (RN)": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Voice Pesquisas (MT)": "Pesquisa quantitativa, com entrevistas telefônicas (fixo e celular) e aplicação de questionário estruturado, por amostragem probabilística do eleitorado.",
+    "Govnet/Instituto Opinião (SP)": "Pesquisa quantitativa, com foco em intenção de voto e opinião pública junto a uma amostra representativa da população.",
+    "Instituto Econométrica": "Pesquisa quantitativa, com entrevistas presenciais face a face e aplicação de questionário estruturado com questões abertas e fechadas, conduzida por entrevistadores treinados e identificados.",
+    "Instituto de Pesquisa Resultado (MS)": "Pesquisa mista, com abordagens qualitativa e quantitativa, utilizando entrevistas telefônicas (CATI) e coleta online. Foco em intenção de voto, imagem política, tendências de mercado e satisfação de clientes.",
+    "6 Sigma": "Pesquisa quantitativa, com entrevistas presenciais por abordagem aleatória e aplicação de questionário estruturado junto à amostra definida.",
+    "Prever Pesquisas": "Pesquisa quantitativa de campo, com foco em intenção de voto e opinião pública.",
+    "Ágora Pesquisa (RJ)": "Pesquisa quantitativa, de natureza exploratório-descritiva, operacionalizada por meio da técnica survey com aplicação de questionário estruturado. A coleta de dados será realizada exclusivamente por meio de entrevistas pessoais domiciliares, utilizando dispositivos eletrônicos (tablets). O universo é constituído pelos eleitores com 16 anos ou mais, regularmente inscritos no cadastro eleitoral e residentes no estado do Rio de Janeiro.",
+    "EPP": "Pesquisa quantitativa, por amostragem por cotas de gênero, faixa etária, grau de instrução, renda familiar, zona (urbana e rural), microrregiões e municípios.",
+    "Exata Pesquisa (MA)": "Pesquisa quantitativa, com entrevistas domiciliares presenciais e aplicação de questionário estruturado, conduzida por profissionais treinados. Universo: população eleitora com 16 anos ou mais.",
+    "Dataqualy": "Pesquisa mista, com abordagens qualitativa (grupos focais, entrevistas em profundidade, etnografia) e quantitativa (amostragem).",
+    "Painel Brasil": "Pesquisa mista, com abordagens qualitativa e quantitativa, utilizando diversas técnicas de coleta.",
+    "Brand Consultoria": "Pesquisa quantitativa, com entrevistas telefônicas (CATI) e aplicação de questionário estruturado com alternativas randomizadas, junto a uma amostra representativa do eleitorado.",
+    "Vox Populi": "Pesquisa mista, com abordagem qualitativa para análise de motivações e comportamentos e abordagem quantitativa com aplicação de questionário estruturado junto a uma amostra representativa do público-alvo.",
+    "IPEMS": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Real Dados": "Pesquisa quantitativa, com foco em coleta e análise de dados sobre comportamento do consumidor.",
+    "Instituto Datailha": "Pesquisa quantitativa, com entrevistas presenciais e aplicação de questionário estruturado para aferição da opinião do eleitorado.",
+    "Tendência Pesquisa (SC)": "Pesquisa quantitativa, com entrevistas presenciais do tipo intercept em pontos de fluxo, por amostragem aleatória simples com controle de cotas (sexo, faixa etária, grau de instrução e nível econômico).",
+    "Certifica Consultoria": "Pesquisa mista, com abordagens qualitativa e quantitativa combinadas.",
+    "IPAT": "Pesquisa quantitativa, com foco em opinião pública, hábitos e mercado.",
+    "Dados Pesquisa (GO)": "Pesquisa quantitativa, com coleta de dados primários, aplicada a estudos eleitorais, de opinião pública e de mercado.",
+    "Agora Pesquisa (BA)": "Pesquisa quantitativa, com foco em intenção de voto e avaliação de governo.",
+    "Pontual Pesquisas (AM)": "Pesquisa quantitativa, com entrevistas presenciais.",
+    "Instituto Haverroth": "Pesquisa mista, com abordagens qualitativa e quantitativa, voltada à identificação do perfil, expectativas e tendências de eleitores e consumidores.",
+    "IRG Consultoria": "Pesquisa quantitativa, com entrevistas telefônicas individuais e aplicação de questionário estruturado junto a uma amostra representativa do eleitorado.",
+    "Fortiori": "Pesquisa mista, com abordagem quantitativa para análise de dados e qualitativa para compreensão de comportamentos e atitudes.",
+    "Colectta Consultoria": "Pesquisa quantitativa, com entrevistas presenciais por abordagem aleatória e aplicação de questionário estruturado.",
+    "Consult Pesquisa (RN)": "Pesquisa quantitativa, por amostragem probabilística com sorteio em múltiplos estágios.",
+    "Agorasei Pesquisa": "Pesquisa quantitativa de campo, com foco em intenção de voto e avaliação de governo.",
+    "Opinião Pesquisas (PB)": "Pesquisa quantitativa, por amostragem probabilística ou por cotas, visando a representatividade da população estudada.",
+    "Ipespe": "Pesquisa baseada em análise de dados secundários, com foco em histórico eleitoral e comportamento do eleitor.",
+    "Quaest": "Pesquisa quantitativa, com aplicação de questionário estruturado junto a uma amostra representativa, com análise estatística dos dados.",
+    "W J Mendes": "Pesquisa quantitativa, com uso de métodos estatísticos e análise de dados numéricos para identificação de padrões.",
+    "Instituto Qualitativa": "Pesquisa qualitativa, com foco na compreensão de motivações, sentimentos e opiniões sobre fenômenos sociais, políticos ou de mercado.",
+    "AR7 Pesquisa": "Pesquisa quantitativa, com foco em opinião pública.",
+    "Veritá": "Pesquisa quantitativa, com entrevistas e aplicação de questionário estruturado junto a uma amostra representativa do eleitorado estadual.",
+    "Instituto Methodus": "Pesquisa mista, com abordagens qualitativa e quantitativa, presenciais e digitais, com foco em inteligência estratégica.",
+    "Doxa": "Pesquisa quantitativa, por amostragem, com aplicação de questionário estruturado e abordagem presencial junto a uma amostra representativa do eleitorado, com base em dados do TSE, IBGE e FAPESPA.",
+    "Instituto Seta": "Pesquisa quantitativa, com entrevistas presenciais e aplicação de questionário estruturado junto a uma amostra representativa do eleitorado.",
+    "Ranking Pesquisa": "Pesquisa quantitativa, com entrevistas domiciliares presenciais e aplicação de questionário estruturado junto a uma amostra representativa da população. Universo: eleitorado do estado do Rio Grande do Norte. Foco em avaliação do cenário político e administrativo.",
+    "Potencial": "Pesquisa quantitativa, com coleta de dados e uso de tecnologia aplicados à inteligência de mercado.",
+    "F5 Atualiza Dados": "Pesquisa quantitativa, com entrevistas telefônicas (CATI) e aplicação de questionário estruturado.",
+    "MBO": "Pesquisa quantitativa, com aplicação de questionário em formato espontâneo (sem apresentação de nomes) e estimulado (com apresentação de nomes dos pré-candidatos).",
+    "Comunicare": "Pesquisa quantitativa, com foco em opinião pública e preferências do eleitorado e da sociedade civil.",
+    "Naipes Marketing": "Pesquisa quantitativa de mercado, com uso de tecnologia e inteligência de dados.",
+    "Instituto Exatta (PE)": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Escutec": "Pesquisa quantitativa, com aplicação de questionário estruturado.",
+    "Instituto França": "Pesquisa quantitativa, com entrevistas presenciais individuais e aplicação de questionário estruturado junto a uma amostra representativa do eleitorado.",
+    "Ibrape": "Pesquisa quantitativa, com metodologia científica validada.",
+    "Instituto Datasensus": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "INOP": "Pesquisa qualitativa, com metodologia estruturada e em conformidade legal.",
+    "Instituto Vope": "Pesquisa quantitativa, com entrevistas presenciais diretas junto ao eleitorado.",
+    "Vox Opinião Pública (SP)": "Pesquisa quantitativa, com entrevistas presenciais domiciliares.",
+    "Seculus Consultoria": "Pesquisa quantitativa de campo, com aplicação de questionário estruturado, por amostragem probabilística ou por cotas, visando representatividade geográfica e demográfica.",
+    "Datavox (PB)": "Pesquisa quantitativa, com foco em opinião pública e intenção de voto.",
+    "Multidados": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Voga Pesquisas": "Pesquisa mista, com abordagens qualitativa, quantitativa e de monitoramento.",
+    "Studio Pesquisas": "Pesquisa mista, com abordagens qualitativa e quantitativa.",
+    "Census Pesquisas": "Pesquisa quantitativa, com entrevistas domiciliares presenciais e aplicação de questionário estruturado com perguntas espontâneas e estimuladas (alternativas em ordem alfabética ou randomizadas), por amostragem estratificada em 2 estágios com abordagem aleatória simples (gênero, faixa etária, nível de instrução e renda).",
+    "Zaytec Brasil": "Pesquisa mista, com abordagens qualitativa, quantitativa, análise de dados secundários e combinação quali-quanti.",
+    "Access": "Pesquisa baseada em análise de dados secundários e revisão bibliográfica.",
+    "Brasmarket": "Pesquisa quantitativa, com foco em opinião pública e intenção de voto.",
+    "FSB Pesquisa": "Pesquisa quantitativa, com entrevistas telefônicas e aplicação de questionário estruturado para aferição de intenção de voto.",
+    "Gerp": "Pesquisa quantitativa, com aplicação de questionário em formato espontâneo (sem apresentação de lista de candidatos).",
+    "Ideia Big Data": "Pesquisa mista, com abordagens qualitativa, quantitativa e análise combinada quali-quanti.",
+    "Ipec (antigo Ibope)": "Pesquisa quantitativa, com entrevistas presenciais face a face e aplicação de questionário estruturado, por amostragem com base em dados do IBGE para representatividade geográfica e socioeconômica. Amostra típica: 2.000 entrevistas em levantamentos nacionais.",
+    "Sensus": "Pesquisa quantitativa, com entrevistas presenciais face a face.",
+    "121 Labs": "Pesquisa quantitativa, com foco em opinião pública e mercado, com análise de dados.",
+    "Agili Pesquisas": "Pesquisa quantitativa, com foco na captação de percepções e opiniões do público-alvo.",
+    "Alexandre Sócrates Naviskas": "Pesquisa quantitativa, com foco em pesquisas eleitorais e de opinião pública.",
+    "American Analytics": "Pesquisa quantitativa, com coleta, organização e análise de dados para suporte à tomada de decisão estratégica.",
+    "Datasonda": "Pesquisa quantitativa, por amostragem por cotas representativas do eleitorado (gênero, faixa etária, escolaridade, renda e bairros).",
+    "Delta Agência de Pesquisa": "Pesquisa quantitativa, por amostragem por cotas, com entrevistas presenciais face a face e aplicação de questionário estruturado por entrevistadores treinados.",
 }
 
 
-def _norm_ascii(s: str) -> str:
-    s = unicodedata.normalize("NFKD", normalizar_texto_simples(s))
-    s = "".join(ch for ch in s if not unicodedata.combining(ch)).lower()
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", s)).strip()
+# Aliases de instituto: nomes alternativos que devem ser tratados como o
+# instituto canônico (ex.: pesquisas em parceria, grafias variantes). A chave
+# é o nome alternativo, o valor é o nome canônico que deve aparecer na planilha
+# e ser usado para classificação/metodologia.
+ALIASES_INSTITUTO = {
+    # Quaest em parcerias
+    "Genial/Quaest": "Quaest",
+    "Quaest/Genial": "Quaest",
+    "Genial Quaest": "Quaest",
+    # GERP — METODOLOGIA_INSTITUTOS já usa caixa alta
+    "Gerp": "GERP",
+    "gerp": "GERP",
+    # Datamax — maioria dos registros sem espaço
+    "Data Max": "Datamax",
+    "DataMax": "Datamax",
+    "data max": "Datamax",
+}
 
 
-def slug_candidato_disputa(nome: str) -> str:
-    chave = _norm_ascii(nome)
-    if not chave:
-        return ""
-    if chave in DISPUTA_CANDIDATO_ALIASES:
-        return DISPUTA_CANDIDATO_ALIASES[chave]
-    partes = [p for p in chave.split() if p not in {"de", "da", "do", "dos", "das", "e"}]
-    if not partes:
-        return _slug(chave)
-    if partes[0] in {"lula", "ciro", "datena", "tabata", "marina", "simone", "michelle", "flavio"}:
-        return partes[0]
-    return partes[-1] if len(partes) > 1 else partes[0]
+def normalizar_instituto(nome) -> str:
+    """Resolve um nome de instituto via tabela de aliases. Se não houver alias,
+    retorna o nome original (com espaços normalizados)."""
+    nome_norm = _norm_ws(nome)
+    return ALIASES_INSTITUTO.get(nome_norm, nome_norm)
 
 
-def normalizar_disputa_t2(valor: str, itens: list | None = None) -> str:
-    valor = normalizar_texto_simples(valor)
-    if valor:
-        bruto = valor.lower()
-        if bruto.startswith("t2_"):
-            return "t2_" + _slug(bruto[3:])
-        return "t2_" + _slug(bruto)
-
-    nomes = []
-    for item in itens or []:
-        candidato = normalizar_texto_simples(item.get("candidato"))
-        if not candidato or classificar_tipo_resultado(candidato, item.get("tipo", "")) == "nao_valido":
-            continue
-        slug = slug_candidato_disputa(candidato)
-        if slug and slug not in nomes:
-            nomes.append(slug)
-        if len(nomes) == 2:
-            break
-    return f"t2_{nomes[0]}-{nomes[1]}" if len(nomes) == 2 else ""
+def classificar_instituto(nome):
+    return CLASSIFICACAO_INSTITUTOS.get(normalizar_instituto(nome), "Ainda não foi avaliado")
 
 
-def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_block_hash, disputa=""):
-    uf = str(uf).upper()
-    data_campo = normalizar_texto_simples(data_campo)
-    turno_key = disputa if disputa else turno
-    if id_pesquisa and str(id_pesquisa).lower() not in ("sem registro", "sem_registro", "semregistro", "nan", ""):
-        return f"{uf}|{cargo}|{turno_key}|{id_pesquisa}|{data_campo}"
-    return f"{uf}|{cargo}|{turno_key}|{_slug(instituto)}|{data_campo}"
+# Score de confiabilidade por classificação, conforme nota metodológica
+# "Cálculo da Média das Pesquisas Presidenciais 2026". B (sem + ou -) usa o
+# ponto médio entre B+ e B- (0,475) para preservar a ordinalidade da escala.
+SCORE_INSTITUTO = {
+    "A+": 1.00,
+    "A":  0.85,
+    "A-": 0.70,
+    "B+": 0.55,
+    "B":  0.475,
+    "B-": 0.40,
+    "C+": 0.30,
+    "C":  0.20,
+    "C-": 0.10,
+    "Ainda não foi avaliado": 0.25,
+}
 
 
-def gerar_scenario_id(poll_id, scenario_label):
-    return f"{poll_id}|{normalizar_texto_simples(scenario_label)}"
+def score_instituto(classificacao) -> float:
+    """Retorna o peso (0–1) de uma classificação de instituto.
+
+    Classificações desconhecidas (ou vazias) caem no mesmo score de
+    "Ainda não foi avaliado" (0,25) — valor conservador da nota metodológica.
+    """
+    return SCORE_INSTITUTO.get(_norm_ws(classificacao), 0.25)
+
+
+def obter_metodologia(nome):
+    return METODOLOGIA_INSTITUTOS.get(normalizar_instituto(nome), "")
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    v = (os.getenv(name, "") or "").strip().lower()
+    if v == "":
+        return default
+    return v in ("1", "true", "t", "yes", "y", "sim", "on")
+
+
+def _norm_ws(s) -> str:
+    try:
+        if pd.isna(s):
+            s = ""
+    except Exception:
+        pass
+    return re.sub(r"\s+", " ", str(s)).strip()
+
+
+def _strip_html(s: str) -> str:
+    return re.sub(r"<[^>]+>", "", str(s or "")).strip()
+
+
+def _slug(s: str) -> str:
+    s = _norm_ws(s).lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s
+
+
+def _sha1_short(s: str, n=10) -> str:
+    return hashlib.sha1(str(s).encode("utf-8", errors="ignore")).hexdigest()[:n]
 
 
 def normalizar_data_campo_segura(valor) -> str:
-    """Aceita YYYY-MM-DD ou M/D/YYYY (nunca D/M/YYYY) e devolve YYYY-MM-DD."""
-    s = normalizar_texto_simples(valor)
+    """
+    Normaliza datas aceitando apenas estes formatos de entrada:
+    - YYYY-MM-DD
+    - M/D/YYYY ou MM/DD/YYYY
+
+    Importante: não interpreta datas como DD/MM/YYYY.
+    Ex.: 2/3/2026 -> 2026-02-03
+    """
+    s = _norm_ws(valor)
     if not s:
         return ""
+
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
         try:
             return datetime.strptime(s, "%Y-%m-%d").strftime("%Y-%m-%d")
         except ValueError:
             return s
+
     if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", s):
         try:
             return datetime.strptime(s, "%m/%d/%Y").strftime("%Y-%m-%d")
         except ValueError:
             return s
+
     return s
 
 
-# ─────────────────────────── normalizadores ───────────────────────────
-
-def normalizar_texto_simples(valor) -> str:
-    return re.sub(r"\s+", " ", str(valor or "")).strip()
-
-
-def normalizar_percentual_simples(valor):
-    s = normalizar_texto_simples(valor).replace("%", "").replace(",", ".")
-    if not s:
-        return None
-    try:
-        return float(s)
-    except Exception:
-        return None
+def extrair_ultima_data(s: str) -> str:
+    datas = re.findall(r"\d{4}-\d{2}-\d{2}", str(s))
+    return datas[-1] if datas else _norm_ws(s)
 
 
-def normalizar_inteiro_simples(valor):
-    s = re.sub(r"[^\d]", "", normalizar_texto_simples(valor))
-    if not s:
-        return None
-    try:
-        return int(s)
-    except Exception:
-        return None
+def parse_url_meta(url: str):
+    u = url.strip()
+
+    m = re.search(
+        r"/(?P<ano>\d{4})/(?P<cargo>governador)/(?P<uf>[a-z]{2})/.*?_t(?P<turno>\d)\.html",
+        u, re.I
+    )
+    if m:
+        return {
+            "ano": int(m.group("ano")),
+            "cargo": "governador",
+            "uf": m.group("uf").upper(),
+            "turno": f"t{m.group('turno')}"
+        }
+
+    m = re.search(
+        r"/(?P<ano>\d{4})/(?P<cargo>presidente)/(?P<uf>[a-z]{2})/(?:[^/]*_)?(?P<turno>t\d)(?:_(?P<slug>[^/.]+))?(?:\.html)?/?$",
+        u, re.I
+    )
+    if m:
+        turno = m.group("turno")
+        slug = m.group("slug") or ""
+        disputa = f"{turno.lower()}_{slug}" if slug else ""
+        return {
+            "ano": int(m.group("ano")),
+            "cargo": "presidente",
+            "uf": m.group("uf").upper(),
+            "turno": turno.lower(),
+            "disputa": disputa,
+        }
+
+    m = re.search(
+        r"/(?P<ano>\d{4})/(?P<cargo>senador)/(?P<uf>[a-z]{2})/(?:.*?_(?P<turno>t\d)\.html|(?P<turno2>t\d)/?$)",
+        u, re.I
+    )
+    if m:
+        turno = m.group("turno") or m.group("turno2")
+        return {
+            "ano": int(m.group("ano")),
+            "cargo": "senador",
+            "uf": m.group("uf").upper(),
+            "turno": turno.lower()
+        }
+
+    return {"ano": None, "cargo": None, "uf": None, "turno": None, "disputa": None}
 
 
-def classificar_tipo_resultado(nome: str, tipo_informado: str = "") -> str:
-    tipo = normalizar_texto_simples(tipo_informado).lower()
-    if tipo in TIPOS_RESULTADO:
-        return tipo
-    nome_norm = normalizar_texto_simples(nome).lower()
-    marcadores = ["branco", "nulo", "nulos", "ns/nr", "nsnr", "não sabe", "nao sabe",
-                  "indeciso", "indecisos", "nenhum", "não válido", "nao valido",
-                  "não valido", "nao válido", "não respond", "nao respond"]
-    if any(tag in nome_norm for tag in marcadores):
-        return "nao_valido"
-    return "candidato"
+def parsear_pesquisa(texto):
+    nome, id_pesquisa, data = "", "", ""
 
-
-def extrair_json_de_texto_bruto(texto: str) -> dict:
-    bruto = (texto or "").strip()
-    if not bruto:
-        raise RuntimeError("O Gemini não retornou JSON.")
-    bruto = re.sub(r"^```json\s*", "", bruto, flags=re.IGNORECASE)
-    bruto = re.sub(r"^```\s*", "", bruto)
-    bruto = re.sub(r"\s*```$", "", bruto)
-    decoder = json.JSONDecoder()
-    for match in re.finditer(r"\{", bruto):
-        try:
-            obj, _ = decoder.raw_decode(bruto[match.start():])
-            if isinstance(obj, dict):
-                return obj
-        except json.JSONDecodeError:
+    for linha in [l.strip() for l in str(texto).strip().split("\n") if l.strip()]:
+        if re.match(r"^\(\d+\)$", linha):
             continue
-    raise RuntimeError("Não localizei um objeto JSON válido na resposta do Gemini.")
+
+        m = re.search(r"(\d{4}-\d{2}-\d{2})", linha)
+        if m:
+            data = m.group(1)
+            antes = linha[:linha.index(data)].strip()
+            if antes:
+                id_pesquisa = antes
+        else:
+            nome = re.sub(r"\s*\(\d+\)\s*$", "", linha).strip()
+
+    return _norm_ws(nome), _norm_ws(id_pesquisa), _norm_ws(data)
 
 
-# ─────────────────────────── leitura do PDF ───────────────────────────
+def parsear_pct(valor):
+    v = str(valor).strip()
+    if not v or v in ("-", "NaN%", "nan%", "NaN", "nan", "NA", ""):
+        return None
 
-def extrair_texto_pdf_bytes(pdf_bytes, page_indices=None) -> str:
-    import fitz  # PyMuPDF
-    partes = []
-    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-        pages = page_indices if page_indices is not None else list(range(doc.page_count))
-        for idx in pages:
-            if idx < 0 or idx >= doc.page_count:
-                continue
-            raw = doc.load_page(idx).get_text("text") or ""
-            raw = raw.replace("-\n", "").replace("\n", " ")
-            raw = re.sub(r"\s{2,}", " ", raw).strip()
-            if raw:
-                partes.append(raw)
-    return " ".join(partes).strip()
+    try:
+        return float(v.replace("%", "").replace(",", ".").strip())
+    except Exception:
+        return None
 
 
-# ─────────────────────────── Gemini ───────────────────────────
-
-_CLIENT = None
-
-
-def _gemini_client():
-    global _CLIENT
-    if _CLIENT is None:
-        from google import genai
-        key = os.environ.get("GEMINI_API_KEY", "")
-        if not key:
-            raise RuntimeError("GEMINI_API_KEY não definido.")
-        _CLIENT = genai.Client(api_key=key)
-    return _CLIENT
+def normalizar_percentual_planilha(valor):
+    v = str(valor).strip().lstrip("'")
+    if not v or v in ("-", "NaN%", "nan%", "NaN", "nan", "NA", ""):
+        return None
+    try:
+        n = float(v.replace("%", "").replace(",", ".").strip())
+        if abs(n) >= 1000:
+            n = n / 1000.0
+        return round(n, 1)
+    except Exception:
+        return None
 
 
-def gerar_conteudo_gemini(contents, tentativas: int = 3, backoff: float = 1.5):
-    from google.genai import types
-    client = _gemini_client()
-    ultimo = None
-    for t in range(1, tentativas + 1):
+def parsear_candidato_partido(col_header: str):
+    col_clean = _strip_html(str(col_header).replace("<br>", " "))
+    m = re.match(r"^(.+?)\s*\(([^)]+)\)\s*$", col_clean.strip())
+    if m:
+        return _norm_ws(m.group(1)), _norm_ws(m.group(2))
+    return _norm_ws(col_clean), ""
+
+
+def inferir_confianca(s):
+    m = re.search(r"(\d{2,3})\s*%\s*\)", str(s or ""))
+    if m:
         try:
-            try:
-                cfg = types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0,
-                    thinking_config=types.ThinkingConfig(thinking_budget=4000))
-                resp = client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
-            except Exception:
-                resp = client.models.generate_content(model=GEMINI_MODEL, contents=contents)
-            if getattr(resp, "text", None):
-                return resp
-            ultimo = RuntimeError("resposta vazia")
-        except Exception as e:
-            ultimo = e
-        if t < tentativas:
-            time.sleep(backoff * (2 ** (t - 1)))
-    raise RuntimeError(f"Gemini falhou após {tentativas} tentativas: {ultimo}")
-
-
-NOME_UF = {
-    "brasil": "BR", "acre": "AC", "alagoas": "AL", "amapá": "AP", "amapa": "AP",
-    "amazonas": "AM", "bahia": "BA", "ceará": "CE", "ceara": "CE",
-    "distrito federal": "DF", "espírito santo": "ES", "espirito santo": "ES",
-    "goiás": "GO", "goias": "GO", "maranhão": "MA", "maranhao": "MA",
-    "mato grosso": "MT", "mato grosso do sul": "MS", "minas gerais": "MG",
-    "pará": "PA", "para": "PA", "paraíba": "PB", "paraiba": "PB", "paraná": "PR",
-    "parana": "PR", "pernambuco": "PE", "piauí": "PI", "piaui": "PI",
-    "rio de janeiro": "RJ", "rio grande do norte": "RN", "rio grande do sul": "RS",
-    "rondônia": "RO", "rondonia": "RO", "roraima": "RR", "santa catarina": "SC",
-    "são paulo": "SP", "sao paulo": "SP", "sergipe": "SE", "tocantins": "TO",
-}
-
-
-def sigla_uf(valor) -> str:
-    v = normalizar_texto_simples(valor)
-    if len(v) == 2:
-        return v.upper()
-    return NOME_UF.get(v.lower(), v.upper())
-
-
-_CANONICO = None
-
-
-def _canonico() -> dict:
-    global _CANONICO
-    if _CANONICO is None:
-        caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "canonico.json")
-        try:
-            with open(caminho, encoding="utf-8") as f:
-                _CANONICO = json.load(f)
+            return int(m.group(1))
         except Exception:
-            _CANONICO = {"institutos": [], "presidente": [], "governador": {}, "senador": {}}
-    return _CANONICO
+            return None
+    return None
 
 
-def _referencia(cargo, uf):
-    """Retorna (lista de candidatos canônicos do cargo/UF, lista de institutos canônicos)."""
-    c = _canonico()
-    cargo = (cargo or "").lower()
-    if cargo == "presidente":
-        cands = c.get("presidente", [])
-    elif cargo in ("governador", "senador"):
-        cands = c.get(cargo, {}).get(sigla_uf(uf), [])
-    else:
-        cands = []
-    return cands, c.get("institutos", [])
-
-
-# palavras genéricas ignoradas ao casar o nome legal do PesqEle com o canônico
-_STOP_INST = {
-    "de", "da", "do", "e", "ltda", "instituto", "pesquisas", "pesquisa", "consultoria",
-    "me", "eireli", "opiniao", "publica", "analise", "tecnologia", "comunicacao",
-    "marketing", "associados", "midia", "publicidade", "estatistica", "informacao",
-    "consumidor", "dados", "eventos", "agencia",
-}
-
-
-def _tokens_inst(s):
-    s = unicodedata.normalize("NFKD", normalizar_texto_simples(s))
-    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
-    return [t for t in re.sub(r"[^a-z0-9 ]", " ", s).split() if t]
-
-
-def instituto_canonico(nome):
-    """Mapeia o nome legal do PesqEle (ex: 'REAL TIME MIDIA LTDA / REAL TIME BIG DATA')
-    para o nome canônico do PollingData (ex: 'Real Time Big Data'). Se não achar, devolve
-    a marca (parte após '/') em Title Case."""
-    nome = normalizar_texto_simples(nome)
-    if not nome:
-        return ""
-    alvo = set(_tokens_inst(nome))
-    melhor, tam = None, 0
-    for canon in _canonico().get("institutos", []):
-        sig = [t for t in _tokens_inst(canon) if t not in _STOP_INST] or _tokens_inst(canon)
-        if sig and all(t in alvo for t in sig) and len(canon) > tam:
-            melhor, tam = canon, len(canon)   # prefere o canônico mais específico
-    return melhor or (nome.split("/")[-1].strip() or nome).title()
-
-
-def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "",
-                                 escopo: dict | None = None,
-                                 pdf_bytes: bytes | None = None) -> dict:
-    """Extrai via Gemini.
-
-    Quando houver texto_fonte e pdf_bytes, envia ambos: o texto ajuda no foco e
-    o PDF visual cobre tabelas/gráficos/imagens que a extração textual não pegou.
-    Se texto_fonte vier vazio, o PDF sozinho cobre relatório escaneado.
-    """
-    escopo = escopo or {}
-    restricoes = []
-    for chave, rotulo in (("cargo", "cargo"), ("uf", "uf"), ("turno", "turno"), ("instituto", "instituto")):
-        val = normalizar_texto_simples(escopo.get(chave))
-        if val:
-            restricoes.append(f"- {rotulo} = {val}")
-    bloco = ""
-    if restricoes:
-        bloco = ("FOCO DA EXTRAÇÃO (restrições obrigatórias):\n" + "\n".join(restricoes) +
-                 "\nExtraia APENAS o bloco que casa com essas restrições. Ignore outros estados, "
-                 "cargos ou turnos que apareçam no material.\nSe não houver bloco que case, "
-                 "retorne cenarios=[].\n\n")
-
-    cands, institutos = _referencia(escopo.get("cargo"), escopo.get("uf"))
-    bloco_ref = ""
-    if cands:
-        bloco_ref += ("CANDIDATOS CANÔNICOS deste cargo/UF (quando o candidato do relatório for "
-                      "um destes, use EXATAMENTE o mesmo nome curto e a mesma sigla; o texto entre "
-                      "parênteses é o partido):\n" + "\n".join(cands) + "\n\n")
-    if institutos:
-        bloco_ref += ("INSTITUTOS CANÔNICOS (quando o instituto do relatório corresponder a um "
-                      "destes, use EXATAMENTE este nome):\n" + ", ".join(institutos) + "\n\n")
-
-    prompt = f"""
-Você recebe o texto completo de um PDF de uma pesquisa eleitoral brasileira.
-Extraia os dados estruturados para inserção em planilha.
-
-{bloco}{bloco_ref}REGRAS:
-- Responda somente com JSON válido.
-- Não invente dados ausentes. Use string vazia ou null.
-- Datas devem sair em YYYY-MM-DD quando possível.
-- cargo deve ser governador, senador ou presidente.
-- turno deve ser t1 ou t2.
-- uf deve estar em caixa alta. Para presidente nacional use BR.
-- percentual deve ser numérico, sem %. Preserve os números EXATAMENTE como no material;
-  não arredonde, não recalcule, não normalize para somar 100.
-- t1 = cenários de primeiro turno (vários candidatos testados); t2 = simulações de segundo
-  turno (confrontos diretos, tipicamente entre 2 candidatos).
-- Para t2, cada confronto direto deve ser um cenário separado e deve preencher 'disputa'
-  no formato t2_candidato1-candidato2, em minúsculas, sem acento, usando nomes curtos
-  (ex.: t2_flavio-lula, t2_lula-zema, t2_bolsonaro-lula). Este campo é obrigatório
-  para comparar os gráficos de segundo turno.
-- tipo deve ser candidato ou nao_valido.
-- PADRONIZAÇÃO DE NOMES: se o candidato corresponder a um da lista canônica acima, use o nome
-  curto e a sigla EXATAMENTE como lá (campo 'candidato' = a parte antes do parêntese; 'partido' =
-  a sigla dentro do parêntese). Se não estiver na lista, use o nome curto usual + a sigla do partido.
-- 'partido' é SEMPRE a SIGLA curta em caixa alta (PT, PL, MDB, REP, UNIAO, PSD...), nunca o nome
-  por extenso (use REP, não 'Republicanos'; UNIAO, não 'União Brasil'). Sem partido: 'SEM PARTIDO'.
-- INSTITUTO: se corresponder a um da lista canônica, use o nome exato de lá.
-- INVÁLIDOS: consolide TODOS os votos inválidos (branco, nulo, indeciso, não sabe, não respondeu,
-  ns/nr) em UM ÚNICO item por cenário: candidato='Não válido', partido='', tipo='nao_valido',
-  percentual = a soma deles.
-- modo é o método de coleta (ex.: Presencial, Telefônica (CATI), Online, Misto). Vazio se não houver.
-- metodologia é a descrição da metodologia conforme reportada (plano amostral, universo, técnica). Texto livre.
-- Extraia SOMENTE cenários de voto ESTIMULADO (aqueles em que os nomes dos candidatos são
-  apresentados ao entrevistado). NÃO inclua voto ESPONTÂNEO (sem lista de nomes), nem rejeição,
-  nem avaliação/aprovação de governo. Cada cenário estimulado vira um item de "cenarios".
-- votos_por_entrevistado: use 2 quando o relatório indicar que o entrevistado podia citar/votar
-  em até 2 nomes naquele cenário (comum para senador em eleição com 2 vagas; procure notas como
-  'cada entrevistado poderia citar até 2 candidatos'). Caso contrário, use 1.
-
-FORMATO:
-{{
-  "cargo": "", "turno": "", "uf": "", "instituto": "", "registro_tse": "",
-  "data_campo": "", "amostra": null, "margem_erro": null, "confianca": null,
-  "modo": "", "metodologia": "", "fonte_url_original": "{url_original}",
-  "observacoes": "", "pendencias": [],
-  "cenarios": [
-    {{ "scenario_label": "", "descricao": "", "disputa": "", "votos_por_entrevistado": 1,
-       "itens": [ {{ "candidato": "", "partido": "", "percentual": null, "tipo": "candidato" }} ] }}
-  ]
-}}
-""".strip()
-
-    if texto_fonte and pdf_bytes:
-        from google.genai import types
-        contents = [
-            prompt + (
-                "\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA:\n"
-                f"{texto_fonte}\n\n"
-                "PDF ANEXO: confira visualmente as páginas, inclusive tabelas, gráficos "
-                "e imagens. Se algum número aparecer só no anexo visual, extraia do anexo. "
-                "Se houver conflito entre texto extraído e visual do PDF, prefira o PDF."
-            ),
-            types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-        ]
-    elif texto_fonte:
-        contents = prompt + f"\n\nTEXTO FONTE:\n{texto_fonte}"
-    elif pdf_bytes:
-        from google.genai import types
-        contents = [prompt + "\n\nO material é o PDF anexo (leia as páginas, inclusive tabelas e gráficos).",
-                    types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")]
-    else:
-        raise RuntimeError("Passe texto_fonte ou pdf_bytes.")
-
-    resp = gerar_conteudo_gemini(contents)
-    payload = extrair_json_de_texto_bruto(getattr(resp, "text", "") or "")
-    return normalizar_payload_polling(payload)
-
-
-def normalizar_payload_polling(payload: dict) -> dict:
-    payload = payload or {}
-    cenarios_norm = []
-    for idx, cenario in enumerate(payload.get("cenarios") or [], start=1):
-        label = normalizar_texto_simples(cenario.get("scenario_label") or cenario.get("cenario") or idx)
-        itens_norm = []
-        for item in (cenario.get("itens") or cenario.get("resultados") or []):
-            candidato = normalizar_texto_simples(
-                item.get("candidato") or item.get("nome") or item.get("opcao") or item.get("candidato_partido"))
-            partido = normalizar_texto_simples(item.get("partido"))
-            percentual = normalizar_percentual_simples(item.get("percentual"))
-            tipo = classificar_tipo_resultado(candidato, item.get("tipo", ""))
-            if not candidato and percentual is None:
-                continue
-            itens_norm.append({"candidato": candidato, "partido": partido,
-                               "percentual": percentual, "tipo": tipo})
-        votos = normalizar_inteiro_simples(cenario.get("votos_por_entrevistado")) or 1
-        cenarios_norm.append({"scenario_label": label or str(idx),
-                              "descricao": normalizar_texto_simples(cenario.get("descricao") or cenario.get("titulo")),
-                              "disputa": normalizar_texto_simples(cenario.get("disputa")),
-                              "votos_por_entrevistado": max(1, min(votos, 3)),
-                              "itens": itens_norm})
-    return {
-        "cargo": normalizar_texto_simples(payload.get("cargo")).lower() or "governador",
-        "turno": normalizar_texto_simples(payload.get("turno")).lower() or "t1",
-        "uf": normalizar_texto_simples(payload.get("uf")).upper() or "BR",
-        "instituto": normalizar_texto_simples(payload.get("instituto")),
-        "registro_tse": normalizar_texto_simples(payload.get("registro_tse")),
-        "data_campo": normalizar_texto_simples(payload.get("data_campo")),
-        "amostra": normalizar_inteiro_simples(payload.get("amostra")),
-        "margem_erro": normalizar_percentual_simples(payload.get("margem_erro")),
-        "confianca": normalizar_inteiro_simples(payload.get("confianca")),
-        "modo": normalizar_texto_simples(payload.get("modo")),
-        "metodologia": normalizar_texto_simples(payload.get("metodologia")),
-        "fonte_url_original": normalizar_texto_simples(payload.get("fonte_url_original")),
-        "observacoes": normalizar_texto_simples(payload.get("observacoes")),
-        "pendencias": payload.get("pendencias") or [],
-        "cenarios": cenarios_norm or [{"scenario_label": "1", "descricao": "", "itens": []}],
-    }
-
-
-# ─────────────────────── payload -> DataFrames ───────────────────────
-
-def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original: str = "",
-                              instituto_fonte: str = "") -> tuple:
-    import pandas as pd
-    cargo = normalizar_texto_simples(payload.get("cargo")).lower()
-    turno = normalizar_texto_simples(payload.get("turno")).lower()
-    uf = sigla_uf(payload.get("uf"))   # PesqEle manda "ALAGOAS"; polling usa "AL"
-    # instituto vem do PesqEle (fila), normalizado pro canônico; alguns relatórios só
-    # trazem o nome no logo, então não dá pra confiar no que o Gemini leu do PDF.
-    instituto = instituto_canonico(instituto_fonte or payload.get("instituto"))
-    registro_tse = normalizar_texto_simples(payload.get("registro_tse"))
-    data_campo = normalizar_data_campo_segura(normalizar_texto_simples(payload.get("data_campo")))
-    amostra = normalizar_inteiro_simples(payload.get("amostra"))
-    margem_erro = normalizar_percentual_simples(payload.get("margem_erro"))
-    confianca = normalizar_inteiro_simples(payload.get("confianca"))
-    horario_raspagem = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    ano_calc = datetime.now().year
-    if data_campo and len(data_campo) >= 4 and data_campo[:4].isdigit():
+def inferir_margem_erro(s):
+    m = re.search(r"(\d+(?:\.\d+)?)\s*%", str(s or "").replace(",", "."))
+    if m:
         try:
-            ano_calc = int(data_campo[:4])
-        except ValueError:
+            return float(m.group(1))
+        except Exception:
+            return None
+    return None
+
+
+def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_block_hash, disputa=""):
+    uf = uf.upper()
+    data_campo = _norm_ws(data_campo)
+    instituto_slug = _slug(instituto)
+
+    # Para t2, inclui a disputa na chave para diferenciar o mesmo poll
+    # publicado em múltiplos matchups (ex.: AtlasIntel em t2_lula-zema e t2_flavio-lula)
+    turno_key = disputa if disputa else turno
+
+    if id_pesquisa and id_pesquisa.lower() not in ("sem registro", "sem_registro", "semregistro", "nan", ""):
+        return f"{uf}|{cargo}|{turno_key}|{id_pesquisa}|{data_campo}"
+
+    return f"{uf}|{cargo}|{turno_key}|{instituto_slug}|{data_campo}"
+
+
+def gerar_scenario_id(poll_id, scenario_label):
+    return f"{poll_id}|{_norm_ws(scenario_label)}"
+
+
+def eh_cenario_media(scenario_label) -> bool:
+    s = _norm_ws(scenario_label).lower()
+    return bool(re.match(r"^m[eé]dia\b", s))
+
+
+def obter_spreadsheet_id():
+    spreadsheet_id = (os.getenv("SPREADSHEET_ID_POLLINGDATA", "") or "").strip()
+    if spreadsheet_id:
+        return spreadsheet_id
+    raise RuntimeError("SPREADSHEET_ID_POLLINGDATA não definido.")
+
+
+def obter_spreadsheet_id_t2():
+    sid = (os.getenv("SPREADSHEET_ID_POLLINGDATA_T2", "") or "").strip()
+    if sid:
+        return sid
+    raise RuntimeError("SPREADSHEET_ID_POLLINGDATA_T2 não definido.")
+
+
+def urls_presidente_2026_t1(ufs):
+    return [
+        f"https://www.pollingdata.com.br/2026/presidente/{uf}/2026_presidente_{uf}_t1.html"
+        for uf in ufs
+    ]
+
+
+def urls_governador_2026_t1(ufs):
+    return [
+        f"https://www.pollingdata.com.br/2026/governador/{uf}/2026_governador_{uf}_t1.html"
+        for uf in ufs
+    ]
+
+
+def urls_senado_2026_t1(ufs):
+    return [
+        f"https://www.pollingdata.com.br/2026/senador/{uf}/2026_senador_{uf}_t1.html"
+        for uf in ufs
+    ]
+
+
+def montar_urls(incluir_governador: bool, incluir_senado: bool, incluir_presidente: bool, incluir_presidente_t2: bool = True):
+    urls = []
+
+    if incluir_governador:
+        urls += urls_governador_2026_t1(UFS)
+
+    if incluir_senado:
+        urls += urls_senado_2026_t1(UFS)
+
+    if incluir_presidente:
+        urls += list(PRESIDENTE_URLS_DEFAULT)
+        urls += urls_presidente_2026_t1(UFS)
+
+    if incluir_presidente_t2:
+        urls += list(PRESIDENTE_T2_URLS_DEFAULT)
+
+    return urls
+
+
+def criar_driver():
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+
+    if _HAS_WDM:
+        service = Service(ChromeDriverManager().install())
+    else:
+        service = Service()
+
+    driver = webdriver.Chrome(service=service, options=options)
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    return driver
+
+
+def esperar_tabela(driver, timeout=40):
+    # Tenta no frame principal primeiro
+    try:
+        WebDriverWait(driver, min(timeout, 10)).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
+        )
+        time.sleep(2)
+        return
+    except Exception:
+        pass
+
+    # Procura a tabela dentro de iframes
+    for iframe in driver.find_elements(By.TAG_NAME, "iframe"):
+        try:
+            driver.switch_to.frame(iframe)
+            WebDriverWait(driver, min(timeout, 8)).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
+            )
+            time.sleep(2)
+            return  # permanece no iframe para o scraping
+        except Exception:
+            driver.switch_to.default_content()
+
+    # Fallback: espera com timeout completo no frame principal
+    WebDriverWait(driver, timeout).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_CSS))
+    )
+    time.sleep(2)
+
+
+def coletar_headers_visiveis(driver):
+    secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+    headers = []
+
+    for sel in ["thead th", "table th", ".rt-thead .rt-th"]:
+        try:
+            els = secao.find_elements(By.CSS_SELECTOR, sel)
+            for el in els:
+                txt = _norm_ws(el.text)
+                if txt and txt.lower() not in [h.lower() for h in headers]:
+                    headers.append(txt)
+        except Exception:
             pass
 
-    modo_payload = normalizar_texto_simples(payload.get("modo"))
-    metodologia = normalizar_texto_simples(payload.get("metodologia"))
+    return headers
 
-    registro_base = registro_tse
-    if registro_base.lower() in {"sem registro", "sem_registro", "semregistro"}:
-        registro_base = ""
 
-    block_hash = hashlib.sha1(
-        f"manual|{uf}|{cargo}|{turno}|{instituto}|{registro_tse}|{data_campo}".encode("utf-8", errors="ignore")
-    ).hexdigest()[:10]
+def decidir_layout(driver):
+    headers = coletar_headers_visiveis(driver)
+    headers_txt = " | ".join([h.lower() for h in headers])
 
-    fonte_url_original_final = normalizar_texto_simples(fonte_url_original) or normalizar_texto_simples(
-        payload.get("fonte_url_original"))
-    classificacao = ""   # preenchida no roteamento (parte 2), a partir do scraper_polling
+    tem_cnpj_instituto = "cnpj instituto" in headers_txt
+    tem_cnpj_contratante = "cnpj contratante" in headers_txt
 
-    pesquisas_rows, resultados_rows = [], []
-    for idx, cenario in enumerate(payload.get("cenarios") or [], start=1):
-        disputa = ""
-        if turno == "t2":
-            disputa = normalizar_disputa_t2(cenario.get("disputa"), cenario.get("itens"))
-        poll_id = gerar_poll_id(uf, instituto, registro_base, data_campo, cargo, turno, block_hash, disputa=disputa)
-        fonte_url_final = normalizar_texto_simples(fonte_url) or f"pdf://relatorio/{poll_id}"
-        # No t2, a disputa já diferencia cada confronto; o PollingData usa NA como
-        # cenário. No t1, mantém cenários numéricos para média entre cenários.
-        scenario_label = "NA" if turno == "t2" and disputa else str(idx)
-        descricao = normalizar_texto_simples(cenario.get("scenario_label")) or \
-            normalizar_texto_simples(cenario.get("descricao"))
+    if tem_cnpj_instituto and tem_cnpj_contratante:
+        return "novo"
+
+    return "antigo"
+
+
+def detectar_layout_novo_json(driver) -> bool:
+    try:
+        scripts = driver.find_elements(
+            By.CSS_SELECTOR,
+            "script[type='application/json'][data-for='tab_pesquisas']"
+        )
+        return len(scripts) > 0
+    except Exception:
+        return False
+
+
+def scrape_novo_layout(driver, url, horario_raspagem, meta):
+    ano = meta["ano"]
+    cargo = meta["cargo"]
+    uf = meta["uf"]
+    turno = meta["turno"]
+    disputa = meta.get("disputa") or ""
+
+    try:
+        el = driver.find_element(
+            By.CSS_SELECTOR,
+            "script[type='application/json'][data-for='tab_pesquisas']"
+        )
+        raw = el.get_attribute("innerHTML") or el.text
+        data_json = json.loads(raw)
+        d = data_json["x"]["tag"]["attribs"]["data"]
+    except Exception as e:
+        print(f"  [-] erro ao extrair JSON do novo: {e}")
+        return None, None
+
+    institutos = d.get("Instituto", [])
+    urls_fonte = d.get("url", [])
+    modos = d.get("Modo", [])
+    entrevistas = d.get("Entrevistas", [])
+    registros = d.get("registro", [])
+    erros = d.get("erro", [])
+    ranges = d.get("range", [])
+    cenarios_lst = d.get("cenarios", [])
+
+    pesquisas_rows = []
+    resultados_rows = []
+
+    for i in range(len(institutos)):
+        instituto = normalizar_instituto(institutos[i])
+        link_fonte = _norm_ws(urls_fonte[i]) if i < len(urls_fonte) else ""
+        modo = _norm_ws(_strip_html(modos[i])) if i < len(modos) else ""
+        amostra_raw = entrevistas[i] if i < len(entrevistas) else None
+        registro = _norm_ws(registros[i]) if i < len(registros) else ""
+        erro_conf = _strip_html(erros[i]) if i < len(erros) else ""
+        data_campo = extrair_ultima_data(ranges[i]) if i < len(ranges) else ""
+
+        registro_norm = "" if registro.lower().startswith("sem") else registro
+
+        amostra = None
+        try:
+            amostra = int(float(str(amostra_raw)))
+        except Exception:
+            pass
+
+        margem = inferir_margem_erro(erro_conf)
+        confianca = inferir_confianca(erro_conf)
+        classificacao = classificar_instituto(instituto)
+        metodologia = obter_metodologia(instituto)
+
+        block_hash = _sha1_short(f"{instituto}|{registro}|{data_campo}", 10)
+        poll_id = gerar_poll_id(uf, instituto, registro_norm, data_campo, cargo, turno, block_hash, disputa=disputa)
+
+        cenarios_dict = cenarios_lst[i] if i < len(cenarios_lst) else {}
+        cenario_nums = cenarios_dict.get("cenario", [1])
+
+        for c_idx, c_num in enumerate(cenario_nums):
+            scenario_label = str(c_num)
+            scenario_id = gerar_scenario_id(poll_id, scenario_label)
+
+            pesquisas_rows.append({
+                "scenario_id": scenario_id,
+                "poll_id": poll_id,
+                "ano": ano,
+                "uf": uf,
+                "cargo": cargo,
+                "turno": turno,
+                "disputa": disputa,
+                "instituto": instituto,
+                "classificacao_instituto": classificacao,
+                "registro_tse": registro,
+                "data_campo": data_campo,
+                "modo": modo,
+                "amostra": amostra,
+                "margem_erro": margem,
+                "confianca": confianca,
+                "scenario_label": scenario_label,
+                "fonte_url": url,
+                "fonte_url_original": link_fonte,
+                "horario_raspagem": horario_raspagem,
+                "conferida": "",
+                "metodologia": metodologia,
+            })
+
+            for col_key, col_vals in cenarios_dict.items():
+                if col_key == "cenario":
+                    continue
+
+                val = col_vals[c_idx] if c_idx < len(col_vals) else None
+                pct = parsear_pct(val)
+                if pct is None:
+                    continue
+
+                col_clean = _strip_html(col_key.replace("<br>", " "))
+                if col_clean.lower() in ("não válido", "nao valido", "não valido"):
+                    candidato = "Não válido"
+                    partido = ""
+                    tipo = "nao_valido"
+                    candidato_partido = "Não válido"
+                else:
+                    candidato, partido = parsear_candidato_partido(col_key)
+                    tipo = "candidato"
+                    candidato_partido = f"{candidato} ({partido})" if partido else candidato
+
+                resultados_rows.append({
+                    "scenario_id": scenario_id,
+                    "poll_id": poll_id,
+                    "ano": ano,
+                    "uf": uf,
+                    "cargo": cargo,
+                    "turno": turno,
+                    "disputa": disputa,
+                    "data_campo": data_campo,
+                    "instituto": instituto,
+                    "classificacao_instituto": classificacao,
+                    "registro_tse": registro,
+                    "scenario_label": scenario_label,
+                    "candidato": candidato,
+                    "partido": partido,
+                    "candidato_partido": candidato_partido,
+                    "tipo": tipo,
+                    "percentual": pct,
+                    "fonte_url": url,
+                    "horario_raspagem": horario_raspagem,
+                })
+
+    df_p = pd.DataFrame(pesquisas_rows)
+    df_r = pd.DataFrame(resultados_rows)
+
+    print(f"  [novo] {len(df_p)} cenários | {len(df_r)} resultados")
+    return df_p, df_r
+
+
+def expandir_todos_antigo(driver, secao, max_clicks=120):
+    i = 0
+
+    while True:
+        btns = secao.find_elements(By.CSS_SELECTOR, "button.rt-expander-button")
+        fechados = [b for b in btns if (b.get_attribute("aria-expanded") or "").lower() == "false"]
+
+        if not fechados:
+            break
+
+        driver.execute_script("arguments[0].click();", fechados[0])
+        time.sleep(0.8)
+
+        i += 1
+        if i >= max_clicks:
+            break
+
+
+def extrair_link_fonte_do_grupo(group) -> str:
+    for sel in [
+        "table#tab_instituto a[href]",
+        "div.rt-td-inner table a[href]",
+        "div[id^='tab_'] a[href]",
+        ".rt-expandable-content a[href]",
+    ]:
+        try:
+            el = group.find_element(By.CSS_SELECTOR, sel)
+            href = (el.get_attribute("href") or "").strip()
+            if href and href.startswith("http"):
+                return href
+        except Exception:
+            continue
+
+    return ""
+
+
+def extrair_tabela_react(secao):
+    headers = []
+
+    for el in secao.find_elements(By.CSS_SELECTOR, "div.rt-thead .rt-th"):
+        inner = el.find_elements(By.CSS_SELECTOR, ".rt-text-content, .rt-sort-header")
+        text = (inner[0].text.strip() if inner else el.text.strip()).replace("\n", " ").strip()
+        if text:
+            headers.append(text)
+
+    rows_data = []
+    row_group_idx = []
+    links_por_grupo = []
+
+    for g_idx, group in enumerate(secao.find_elements(By.CSS_SELECTOR, "div.rt-tbody div.rt-tr-group")):
+        links_por_grupo.append(extrair_link_fonte_do_grupo(group))
+
+        for row in group.find_elements(By.CSS_SELECTOR, "div.rt-tr"):
+            cells = row.find_elements(By.CSS_SELECTOR, "div.rt-td")
+            if not cells:
+                continue
+
+            vals = [c.text.strip() for c in cells]
+            if any(vals):
+                rows_data.append(vals)
+                row_group_idx.append(g_idx)
+
+    if not rows_data:
+        return None, []
+
+    n_cols = max(len(r) for r in rows_data)
+    if len(headers) < n_cols:
+        headers += [f"Col_{i}" for i in range(len(headers), n_cols)]
+
+    headers = headers[:n_cols]
+
+    for r in rows_data:
+        while len(r) < n_cols:
+            r.append("")
+
+    df = pd.DataFrame(rows_data, columns=headers)
+    df["_link_fonte"] = [links_por_grupo[g] for g in row_group_idx]
+
+    return df, links_por_grupo
+
+
+def scrape_antigo_layout(driver, url, horario_raspagem, meta):
+    ano = meta["ano"]
+    cargo = meta["cargo"]
+    uf = meta["uf"]
+    turno = meta["turno"]
+    disputa = meta.get("disputa") or ""
+
+    secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+    expandir_todos_antigo(driver, secao)
+    time.sleep(2)
+    secao = driver.find_element(By.CSS_SELECTOR, WAIT_CSS)
+
+    df_raw, _ = extrair_tabela_react(secao)
+    if df_raw is None or df_raw.empty:
+        print("  [-] sem tabela no antigo")
+        return None, None
+
+    col_pesquisa = df_raw.columns.tolist()[0]
+    df_raw[col_pesquisa] = df_raw[col_pesquisa].replace("", pd.NA).ffill()
+    df_raw["_link_fonte"] = df_raw["_link_fonte"].replace("", pd.NA).ffill().fillna("")
+
+    parsed = df_raw[col_pesquisa].apply(parsear_pesquisa)
+    df_raw["instituto"] = parsed.apply(lambda x: x[0])
+    df_raw["registro_tse"] = parsed.apply(lambda x: x[1])
+    df_raw["data_campo"] = parsed.apply(lambda x: extrair_ultima_data(x[2]))
+    df_raw["_block_hash"] = df_raw[col_pesquisa].apply(lambda x: _sha1_short(_norm_ws(x), 10))
+    df_raw = df_raw.drop(columns=[col_pesquisa])
+
+    if "Cenários" not in df_raw.columns:
+        df_raw["Cenários"] = ""
+
+    cols_meta = [c for c in df_raw.columns if c in {"Modo Pesquisa", "Entrevistas", "Erro (Confiança)", "Cenários"}]
+    cols_meta += ["instituto", "registro_tse", "data_campo", "_block_hash", "_link_fonte"]
+    cols_meta = [c for c in cols_meta if c in df_raw.columns]
+
+    cols_cand = [c for c in df_raw.columns if c not in cols_meta]
+    cols_cand = [
+        c for c in cols_cand
+        if re.search(r"\([A-Za-z]{2,}\)", str(c)) or str(c).lower().strip() in ("não válido", "nao valido")
+    ]
+
+    pesquisas_rows = []
+    resultados_rows = []
+
+    for _, row in df_raw.iterrows():
+        instituto = normalizar_instituto(row.get("instituto", ""))
+        registro_tse = _norm_ws(row.get("registro_tse", ""))
+        data_campo = _norm_ws(row.get("data_campo", ""))
+        modo = _norm_ws(row.get("Modo Pesquisa", ""))
+        entrevistas_raw = _norm_ws(row.get("Entrevistas", ""))
+        erro_conf = _norm_ws(row.get("Erro (Confiança)", ""))
+        scenario_label = _norm_ws(row.get("Cenários", "")) or "NA"
+        block_hash = _norm_ws(row.get("_block_hash", ""))
+        link_fonte_original = _norm_ws(row.get("_link_fonte", ""))
+        classificacao = classificar_instituto(instituto)
+        metodologia = obter_metodologia(instituto)
+
+        poll_id = gerar_poll_id(uf, instituto, registro_tse, data_campo, cargo, turno, block_hash, disputa=disputa)
         scenario_id = gerar_scenario_id(poll_id, scenario_label)
 
+        amostra = None
+        try:
+            if entrevistas_raw and str(entrevistas_raw).strip().isdigit():
+                amostra = int(entrevistas_raw)
+        except Exception:
+            pass
+
         pesquisas_rows.append({
-            "origem": ORIGEM,
-            "scenario_id": scenario_id, "poll_id": poll_id, "ano": ano_calc, "uf": uf,
-            "cargo": cargo, "turno": turno, "disputa": disputa, "instituto": instituto,
-            "classificacao_instituto": classificacao, "registro_tse": registro_tse,
-            "data_campo": data_campo, "modo": modo_payload, "amostra": amostra,
-            "margem_erro": margem_erro, "confianca": confianca,
-            "scenario_label": scenario_label, "descricao": descricao,
-            "votos_por_entrevistado": cenario.get("votos_por_entrevistado", 1),
-            "fonte_url": fonte_url_final, "fonte_url_original": fonte_url_original_final,
-            "horario_raspagem": horario_raspagem, "conferida": "manual_streamlit",
+            "scenario_id": scenario_id,
+            "poll_id": poll_id,
+            "ano": ano,
+            "uf": uf,
+            "cargo": cargo,
+            "turno": turno,
+            "disputa": disputa,
+            "instituto": instituto,
+            "classificacao_instituto": classificacao,
+            "registro_tse": registro_tse,
+            "data_campo": data_campo,
+            "modo": modo,
+            "amostra": amostra,
+            "margem_erro": inferir_margem_erro(erro_conf),
+            "confianca": inferir_confianca(erro_conf),
+            "scenario_label": scenario_label,
+            "fonte_url": url,
+            "fonte_url_original": link_fonte_original,
+            "horario_raspagem": horario_raspagem,
+            "conferida": "",
             "metodologia": metodologia,
         })
 
-        def _linha_resultado(candidato, partido, candidato_partido, tipo, percentual):
+        for col in cols_cand:
+            pct = parsear_pct(row.get(col, ""))
+            if pct is None:
+                continue
+
+            colname = _norm_ws(col)
+            if colname.lower() in ("não válido", "nao valido"):
+                candidato, partido, tipo = "Não válido", "", "nao_valido"
+                candidato_partido = "Não válido"
+            else:
+                candidato, partido = parsear_candidato_partido(colname)
+                tipo = "candidato"
+                candidato_partido = f"{candidato} ({partido})" if partido else candidato
+
             resultados_rows.append({
-                "origem": ORIGEM,
-                "scenario_id": scenario_id, "poll_id": poll_id, "ano": ano_calc, "uf": uf,
-                "cargo": cargo, "turno": turno, "disputa": disputa, "data_campo": data_campo, "instituto": instituto,
-                "classificacao_instituto": classificacao, "registro_tse": registro_tse,
-                "scenario_label": scenario_label, "candidato": candidato, "partido": partido,
-                "candidato_partido": candidato_partido, "tipo": tipo, "percentual": percentual,
-                "fonte_url": fonte_url_final, "horario_raspagem": horario_raspagem,
+                "scenario_id": scenario_id,
+                "poll_id": poll_id,
+                "ano": ano,
+                "uf": uf,
+                "cargo": cargo,
+                "turno": turno,
+                "disputa": disputa,
+                "data_campo": data_campo,
+                "instituto": instituto,
+                "classificacao_instituto": classificacao,
+                "registro_tse": registro_tse,
+                "scenario_label": scenario_label,
+                "candidato": candidato,
+                "partido": partido,
+                "candidato_partido": candidato_partido,
+                "tipo": tipo,
+                "percentual": pct,
+                "fonte_url": url,
+                "horario_raspagem": horario_raspagem,
             })
 
-        invalido, tem_invalido = 0.0, False
-        for item in cenario.get("itens") or []:
-            candidato = normalizar_texto_simples(item.get("candidato"))
-            partido = normalizar_texto_simples(item.get("partido"))
-            percentual = normalizar_percentual_simples(item.get("percentual"))
-            if percentual is None:
-                continue
-            if classificar_tipo_resultado(candidato, item.get("tipo", "")) == "nao_valido":
-                invalido += percentual          # consolida todos os inválidos
-                tem_invalido = True
-                continue
-            if not candidato:
-                continue
-            cp = f"{candidato} ({partido})" if partido else candidato
-            _linha_resultado(candidato, partido, cp, "candidato", percentual)
-        if tem_invalido:
-            _linha_resultado("Não válido", "", "Não válido", "nao_valido", round(invalido, 1))
+    df_p = pd.DataFrame(pesquisas_rows)
+    df_r = pd.DataFrame(resultados_rows)
 
-    return pd.DataFrame(pesquisas_rows), pd.DataFrame(resultados_rows)
+    print(f"  [antigo] {len(df_p)} cenários | {len(df_r)} resultados")
+    return df_p, df_r
+
+
+def scrape_url(driver, url, horario_raspagem):
+    meta = parse_url_meta(url)
+
+    if not meta["cargo"]:
+        print(f"[-] URL não reconhecida: {url}")
+        return None, None
+
+    print(f"[+] {meta['cargo'].upper()} {meta['uf']} {meta['turno']} -> {url}")
+
+    driver.switch_to.default_content()
+    driver.get(url)
+    esperar_tabela(driver)  # pode trocar para iframe internamente
+
+    try:
+        layout = decidir_layout(driver)
+
+        if layout == "novo":
+            if not detectar_layout_novo_json(driver):
+                print("  [-] headers indicaram novo, mas o JSON do novo não apareceu")
+                return None, None
+            return scrape_novo_layout(driver, url, horario_raspagem, meta)
+
+        return scrape_antigo_layout(driver, url, horario_raspagem, meta)
+    finally:
+        driver.switch_to.default_content()
+
+
+def gs_client_from_env():
+    raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
+    if not raw:
+        raise RuntimeError("GOOGLE_CREDENTIALS_JSON não definido.")
+
+    creds_dict = json.loads(raw)
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return gspread.authorize(credentials)
+
+
+def garantir_aba(sh, nome, rows=50000, cols=25):
+    try:
+        return sh.worksheet(nome)
+    except gspread.exceptions.WorksheetNotFound:
+        return sh.add_worksheet(title=nome, rows=rows, cols=cols)
+
+
+def _aba_vazia(values):
+    if not values:
+        return True
+
+    if len(values) == 1 and all(str(x).strip() == "" for x in values[0]):
+        return True
+
+    return False
+
+
+def reordenar_metodologia_para_ultima_coluna(df: pd.DataFrame) -> pd.DataFrame:
+    cols_final = [
+        "percentual_media_cenarios",
+        "origem_percentual_media",
+        "metodologia",
+    ]
+    cols = [c for c in df.columns if c not in cols_final]
+    cols += [c for c in cols_final if c in df.columns]
+    return df[cols]
+
+
+def adicionar_posicao_pesquisa(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Mantém compatibilidade com o fluxo atual, mas calcula a posição usando
+    a média dos cenários por pesquisa.
+    """
+    if df.empty:
+        return df
+
+    return adicionar_metricas_media_cenarios(df)
+
+
+def adicionar_metricas_media_cenarios(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcula um percentual de referência por candidato dentro de cada poll_id.
+
+    Regra:
+    - se existirem cenários individuais para o candidato, usa a média
+      calculada a partir desses cenários em que ele aparece;
+    - só usa o cenário de média já salvo como fallback quando não houver
+      cenários individuais disponíveis;
+    - a ausência de um candidato em outro cenário não entra como zero no
+      cálculo dessa média de referência.
+
+    A posição passa a ser calculada por poll_id com base nesse percentual
+    de referência, e não mais por scenario_id.
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+    cols_auxiliares = [
+        "percentual_media_cenarios",
+        "origem_percentual_media",
+        "posicao_pesquisa",
+        "percentual_media_existente",
+        "percentual_media_calculada",
+        "eh_cenario_media",
+    ]
+    cols_para_remover = [c for c in cols_auxiliares if c in df.columns]
+    if cols_para_remover:
+        df = df.drop(columns=cols_para_remover)
+
+    df["scenario_label"] = df["scenario_label"].fillna("").astype(str)
+    df["eh_cenario_media"] = df["scenario_label"].apply(eh_cenario_media)
+
+    chaves = ["poll_id", "tipo", "candidato"]
+    df_media = (
+        df[df["eh_cenario_media"]]
+        .groupby(chaves, dropna=False)["percentual"]
+        .mean()
+        .reset_index(name="percentual_media_existente")
+    )
+    df_cenarios = (
+        df[~df["eh_cenario_media"]]
+        .groupby(chaves, dropna=False)["percentual"]
+        .mean()
+        .reset_index(name="percentual_media_calculada")
+    )
+
+    df_ref = (
+        df[chaves]
+        .drop_duplicates()
+        .merge(df_media, on=chaves, how="left")
+        .merge(df_cenarios, on=chaves, how="left")
+    )
+    df_ref["percentual_media_cenarios"] = df_ref["percentual_media_calculada"].combine_first(
+        df_ref["percentual_media_existente"]
+    )
+    df_ref["origem_percentual_media"] = df_ref["percentual_media_calculada"].apply(
+        lambda x: "media_calculada_no_codigo" if pd.notna(x) else ""
+    )
+    df_ref.loc[
+        df_ref["origem_percentual_media"].eq("") & df_ref["percentual_media_existente"].notna(),
+        "origem_percentual_media"
+    ] = "cenario_media_existente"
+    df_ref["posicao_pesquisa"] = (
+        df_ref.groupby("poll_id")["percentual_media_cenarios"]
+        .rank(method="min", ascending=False)
+        .astype("Int64")
+    )
+
+    df = df.merge(
+        df_ref[chaves + ["percentual_media_cenarios", "origem_percentual_media", "posicao_pesquisa"]],
+        on=chaves,
+        how="left",
+    )
+
+    return df.drop(columns=["eh_cenario_media"])
+
+
+def preencher_posicao_pesquisa_na_aba(aba):
+    """
+    Lê a aba 'resultados', recalcula a média dos cenários e a posição
+    consolidada por pesquisa, e atualiza apenas as células necessárias.
+    """
+    print("  [posicao] recalculando média dos cenários e posição consolidada...")
+    values = aba.get_all_values()
+
+    if _aba_vazia(values) or len(values) < 2:
+        print("  [posicao] aba vazia ou sem dados, nada a preencher")
+        return
+
+    header = values[0]
+
+    if "posicao_pesquisa" not in header:
+        print("  [posicao] coluna posicao_pesquisa ainda não existe na aba, será criada no próximo insert")
+        return
+
+    col_idx_pos = header.index("posicao_pesquisa")
+
+    if "percentual_media_cenarios" not in header:
+        print("  [posicao] coluna percentual_media_cenarios ainda não existe na aba, será criada no próximo insert")
+        return
+
+    col_idx_pct_media = header.index("percentual_media_cenarios")
+
+    if "poll_id" not in header or "percentual" not in header:
+        print("  [posicao] colunas poll_id ou percentual ausentes, impossível recalcular")
+        return
+
+    if "tipo" not in header or "candidato" not in header:
+        print("  [posicao] colunas tipo ou candidato ausentes, impossível recalcular")
+        return
+
+    col_idx_poll = header.index("poll_id")
+    col_idx_pct = header.index("percentual")
+    col_idx_tipo = header.index("tipo")
+    col_idx_candidato = header.index("candidato")
+    col_idx_scenario_label = header.index("scenario_label") if "scenario_label" in header else None
+    col_idx_origem = header.index("origem_percentual_media") if "origem_percentual_media" in header else None
+
+    rows = values[1:]
+    registros = []
+    for i, row in enumerate(rows):
+        def safe_get(r, idx):
+            return r[idx] if idx < len(r) else ""
+
+        poll_id = safe_get(row, col_idx_poll).strip()
+        pct_raw = safe_get(row, col_idx_pct).strip()
+        pos_atual = safe_get(row, col_idx_pos).strip()
+        pct_media_atual = safe_get(row, col_idx_pct_media).strip()
+        origem_atual = safe_get(row, col_idx_origem).strip() if col_idx_origem is not None else ""
+
+        pct = parsear_pct(pct_raw)
+
+        registros.append({
+            "row_num": i + 2,
+            "poll_id": poll_id,
+            "percentual": pct,
+            "tipo": safe_get(row, col_idx_tipo).strip(),
+            "candidato": safe_get(row, col_idx_candidato).strip(),
+            "scenario_label": safe_get(row, col_idx_scenario_label).strip() if col_idx_scenario_label is not None else "",
+            "posicao_atual": pos_atual,
+            "percentual_media_atual": parsear_pct(pct_media_atual),
+            "origem_percentual_media_atual": origem_atual,
+        })
+
+    df = pd.DataFrame(registros)
+
+    df_valido = df[df["poll_id"].ne("") & df["percentual"].notna()].copy()
+
+    if df_valido.empty:
+        print("  [posicao] nenhuma linha com dados válidos para recalcular")
+        return
+
+    df_valido = adicionar_metricas_media_cenarios(df_valido)
+
+    def col_idx_to_letter(idx):
+        result = ""
+        while idx >= 0:
+            result = chr(idx % 26 + ord("A")) + result
+            idx = idx // 26 - 1
+        return result
+
+    col_letter_pos = col_idx_to_letter(col_idx_pos)
+    col_letter_pct_media = col_idx_to_letter(col_idx_pct_media)
+    col_letter_origem = col_idx_to_letter(col_idx_origem) if col_idx_origem is not None else None
+
+    cell_updates = []
+    for _, row in df_valido.iterrows():
+        posicao_nova = row["posicao_pesquisa"]
+        pct_media_novo = row["percentual_media_cenarios"]
+
+        if pd.notna(posicao_nova):
+            posicao_nova_str = str(int(posicao_nova))
+            if row["posicao_atual"] != posicao_nova_str:
+                cell_updates.append({
+                    "range": f"{col_letter_pos}{row['row_num']}",
+                    "values": [[posicao_nova_str]]
+                })
+
+        if pd.notna(pct_media_novo):
+            pct_media_atual = row["percentual_media_atual"]
+            if pd.isna(pct_media_atual) or abs(float(pct_media_atual) - float(pct_media_novo)) > 1e-9:
+                cell_updates.append({
+                    "range": f"{col_letter_pct_media}{row['row_num']}",
+                    "values": [[str(pct_media_novo)]]
+                })
+
+        if col_letter_origem is not None:
+            origem = row.get("origem_percentual_media", "") or ""
+            if row.get("origem_percentual_media_atual", "") != origem:
+                cell_updates.append({
+                    "range": f"{col_letter_origem}{row['row_num']}",
+                    "values": [[origem]]
+                })
+
+    if cell_updates:
+        aba.batch_update(cell_updates)
+        print(f"  [posicao] {len(cell_updates)} células atualizadas com média dos cenários e posição")
+    else:
+        print("  [posicao] planilha já estava consistente com a média dos cenários")
+
+
+def carregar_df_da_aba(aba) -> pd.DataFrame:
+    values = aba.get_all_values()
+    if _aba_vazia(values) or len(values) < 2:
+        return pd.DataFrame()
+
+    header = values[0]
+    rows = values[1:]
+    rows_norm = []
+    for row in rows:
+        if len(row) < len(header):
+            row = row + [""] * (len(header) - len(row))
+        rows_norm.append(row[:len(header)])
+
+    return pd.DataFrame(rows_norm, columns=header)
+
+
+def sobrescrever_aba(aba, df: pd.DataFrame):
+    df = reordenar_metodologia_para_ultima_coluna(df)
+    aba.clear()
+    n_cols_schema = max(1, len(df.columns))
+    n_rows_desejado = max(2, len(df) + 1)  # +1 do header, mínimo 2 para não rejeitar
+
+    try:
+        if aba.col_count != n_cols_schema or aba.row_count > max(n_rows_desejado, 100):
+            aba.resize(rows=n_rows_desejado, cols=n_cols_schema)
+    except Exception as e:
+        print(f"  [rewrite] não foi possível redimensionar '{aba.title}': {e}")
+
+    if df.empty:
+        aba.update([df.columns.tolist()])
+        print(f"  [rewrite] aba '{aba.title}' limpa e mantido apenas header")
+        return
+
+    df_export = df.astype(object).where(pd.notna(df), "")
+    aba.update([df.columns.tolist()] + df_export.astype(str).values.tolist())
+    print(f"  [rewrite] aba '{aba.title}' regravada com {len(df)} linhas × {n_cols_schema} colunas")
+
+
+def corrigir_coluna_numerica_na_aba(aba, nome_coluna: str, padrao: str = "0.0"):
+    values_raw = aba.get_all_values(value_render_option="UNFORMATTED_VALUE")
+    if _aba_vazia(values_raw) or len(values_raw) < 2:
+        return
+
+    header = values_raw[0]
+    if nome_coluna not in header:
+        return
+
+    col_idx = header.index(nome_coluna) + 1
+    updates = []
+
+    for row_idx, row in enumerate(values_raw[1:], start=2):
+        atual_raw = row[col_idx - 1] if len(row) >= col_idx else ""
+        novo = normalizar_percentual_planilha(atual_raw)
+        if novo is None:
+            continue
+
+        atual_raw_txt = str(atual_raw).strip()
+        veio_como_texto = isinstance(atual_raw, str)
+        exige_forcar_numero = veio_como_texto and (
+            atual_raw_txt.startswith("'")
+            or "%" in atual_raw_txt
+            or "," in atual_raw_txt
+            or "." in atual_raw_txt
+        )
+
+        atual_f = None
+        if isinstance(atual_raw, (int, float)):
+            atual_f = float(atual_raw)
+        else:
+            atual_txt = str(atual_raw).strip().lstrip("'")
+            try:
+                atual_f = float(atual_txt.replace("%", "").replace(",", "."))
+            except Exception:
+                atual_f = None
+
+        if veio_como_texto and atual_f is not None:
+            exige_forcar_numero = True
+
+        if (
+            atual_f is not None
+            and round(atual_f, 1) == novo
+            and abs(atual_f) < 1000
+            and not exige_forcar_numero
+        ):
+            continue
+
+        updates.append(Cell(row=row_idx, col=col_idx, value=float(novo)))
+
+    if updates:
+        aba.update_cells(updates, value_input_option="RAW")
+        print(f"  [fmt] aba '{aba.title}': {len(updates)} célula(s) corrigidas na coluna '{nome_coluna}'")
+
+    n_linhas = len(values_raw)
+    col_letra = rowcol_to_a1(1, col_idx)[:-1]
+    intervalo = f"{col_letra}2:{col_letra}{n_linhas}"
+    aba.format(intervalo, {"numberFormat": {"type": "NUMBER", "pattern": padrao}})
+
+
+def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Expande cada série para o grão diário e calcula uma média móvel de 13 dias
+    por candidato em cada combinação de ano/cargo/uf/turno/disputa/tipo/candidato_partido.
+    disputa distingue os confrontos do 2º turno (ex.: Lula x Bolsonaro vs.
+    Lula x Tarcísio); no 1º turno vem vazia e não afeta o agrupamento.
+
+    A média móvel é **ponderada pelo score do instituto**: para cada janela de
+    13 dias, mm = Σ(pct_dia × peso_total_dia) / Σ(peso_total_dia). Quando
+    peso_total_dia não está disponível (ex.: dados antigos), cai para média
+    aritmética simples para preservar compatibilidade.
+
+    Nos dias sem pesquisa, percentual_base e demais métricas diárias permanecem
+    vazios, mas media_movel_13d continua preenchida para permitir linha contínua
+    no BI.
+    """
+    if df.empty:
+        df = df.copy()
+        df["media_movel_13d"] = None
+        return df
+
+    df = df.copy()
+    df["media_movel_13d"] = None
+
+    if "data_campo" not in df.columns or "percentual_base" not in df.columns:
+        return df
+
+    if "peso_total_dia" not in df.columns:
+        df["peso_total_dia"] = pd.NA
+
+    for col in ["ano", "cargo", "uf", "turno", "disputa", "tipo", "candidato", "partido", "candidato_partido"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    df["candidato_partido"] = (
+        df["candidato_partido"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+    vazio_candidato_partido = df["candidato_partido"].eq("")
+    if vazio_candidato_partido.any():
+        candidato = df["candidato"].fillna("").astype(str).str.strip()
+        partido = df["partido"].fillna("").astype(str).str.strip()
+        composto = candidato.where(partido.eq(""), candidato + " (" + partido + ")")
+        df.loc[vazio_candidato_partido, "candidato_partido"] = composto.loc[vazio_candidato_partido]
+
+    for col in ["ano", "cargo", "uf", "turno", "disputa", "tipo", "candidato_partido", "data_campo"]:
+        df[col] = df[col].fillna("").astype(str).str.strip()
+
+    df["_data_campo_dt"] = pd.to_datetime(df["data_campo"], errors="coerce")
+    df["_percentual_base_num"] = pd.to_numeric(
+        df["percentual_base"].astype(str).str.replace(",", ".", regex=False),
+        errors="coerce",
+    )
+    df["_peso_total_dia_num"] = pd.to_numeric(
+        df["peso_total_dia"].astype(str).str.replace(",", ".", regex=False),
+        errors="coerce",
+    )
+
+    # disputa junto de turno: no 2º turno cada confronto (Lula x Bolsonaro,
+    # Lula x Tarcísio etc.) é uma série própria, senão a janela de 13 dias
+    # mistura dias de confrontos diferentes na mesma média móvel.
+    chaves_escopo = ["ano", "cargo", "uf", "turno", "disputa", "tipo"]
+    chaves_serie = chaves_escopo + ["candidato_partido"]
+    colunas_dimensao = ["ano", "uf", "cargo", "turno", "disputa", "tipo", "candidato", "partido", "candidato_partido"]
+
+    df_com_serie = df[
+        df["_data_campo_dt"].notna()
+        & df["candidato_partido"].astype(str).str.strip().ne("")
+    ].copy()
+    df_sem_serie = df[~df.index.isin(df_com_serie.index)].copy()
+
+    if df_com_serie.empty:
+        return df.drop(columns=["_data_campo_dt", "_percentual_base_num"], errors="ignore")
+
+    datas_finais_por_escopo = (
+        df_com_serie.groupby(chaves_escopo, dropna=False)["_data_campo_dt"]
+        .max()
+        .to_dict()
+    )
+
+    partes_expandidas = []
+
+    for chave_serie, grupo in df_com_serie.groupby(chaves_serie, dropna=False):
+        grupo = grupo.sort_values("_data_campo_dt").copy()
+        datas_validas = grupo["_data_campo_dt"].dropna().sort_values()
+        if datas_validas.empty:
+            partes_expandidas.append(grupo)
+            continue
+
+        chave_escopo = chave_serie[:len(chaves_escopo)] if isinstance(chave_serie, tuple) else (chave_serie,)
+        data_final_escopo = datas_finais_por_escopo.get(chave_escopo, datas_validas.iloc[-1])
+        faixa_datas = pd.date_range(datas_validas.iloc[0], data_final_escopo, freq="D")
+        base_datas = pd.DataFrame({"_data_campo_dt": faixa_datas})
+
+        # Ponderação por score do instituto: na janela rolling de 13 dias,
+        # mm = Σ(pct_dia × peso_dia) / Σ(peso_dia). Se peso_total_dia não
+        # estiver disponível para uma linha (NaN ou 0), assumimos peso 1
+        # — fallback para média aritmética simples, preservando compatibilidade
+        # com séries antigas que ainda não tinham peso_total_dia.
+        grupo_diario = (
+            grupo.groupby("_data_campo_dt")
+            .agg(
+                _pct=("_percentual_base_num", "mean"),
+                _peso=("_peso_total_dia_num", "sum"),
+            )
+        )
+        peso_vazio = grupo_diario["_peso"].isna() | grupo_diario["_peso"].eq(0)
+        grupo_diario.loc[peso_vazio & grupo_diario["_pct"].notna(), "_peso"] = 1.0
+
+        num = (grupo_diario["_pct"] * grupo_diario["_peso"]).reindex(faixa_datas, fill_value=0.0)
+        den = grupo_diario["_peso"].reindex(faixa_datas, fill_value=0.0)
+        num.index = pd.to_datetime(num.index, utc=True).tz_localize(None)
+        den.index = pd.to_datetime(den.index, utc=True).tz_localize(None)
+
+        roll_num = num.rolling(window="13D", min_periods=1).sum()
+        roll_den = den.rolling(window="13D", min_periods=1).sum()
+        mm_diaria = roll_num / roll_den.where(roll_den > 0, other=pd.NA)
+
+        grupo_merge = (
+            grupo.drop(columns=["media_movel_13d"], errors="ignore")
+            .drop_duplicates(subset=["_data_campo_dt"], keep="first")
+            .copy()
+        )
+
+        expandido = base_datas.merge(grupo_merge, on="_data_campo_dt", how="left")
+
+        referencia = grupo.iloc[0]
+        for col in colunas_dimensao:
+            expandido[col] = expandido[col].fillna(referencia.get(col, ""))
+
+        expandido["data_campo"] = expandido["_data_campo_dt"].dt.strftime("%Y-%m-%d")
+        expandido["media_movel_13d"] = mm_diaria.to_numpy()
+        partes_expandidas.append(expandido)
+
+    frames_concat = [parte for parte in partes_expandidas if parte is not None and not parte.empty]
+    if not df_sem_serie.empty:
+        frames_concat.append(df_sem_serie)
+    df_expandido = pd.concat(frames_concat, ignore_index=True, sort=False) if frames_concat else df.copy()
+    if not df_expandido.empty:
+        df_expandido = df_expandido.convert_dtypes(convert_string=False)
+    return df_expandido.drop(
+        columns=["_data_campo_dt", "_percentual_base_num", "_peso_total_dia_num"],
+        errors="ignore",
+    )
+
+
+def deduplicar_resultados_bi_preferindo_cenario_media(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove duplicatas lógicas no BI quando a mesma pesquisa aparece com
+    poll_ids diferentes ao longo do tempo.
+
+    Regra de preferência:
+    - prioriza linhas com origem_percentual_base = cenario_media_existente;
+    - depois media_calculada_no_codigo;
+    - por fim qualquer outra origem.
+
+    Para pesquisas sem registro válido, a chave lógica usa instituto + data +
+    escopo eleitoral, evitando que mudanças no block_hash gerem duplicatas no BI.
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+
+    def registro_valido(valor: str) -> bool:
+        s = _norm_ws(valor).lower()
+        return s not in ("", "sem registro", "sem_registro", "semregistro", "nan")
+
+    def chave_pesquisa_logica(row) -> str:
+        # Inclui disputa: no 2º turno, o mesmo registro/pesquisa pode trazer
+        # vários confrontos hipotéticos (ex.: Lula x Bolsonaro, Lula x Tarcísio).
+        # Sem isso, o dedup trata os candidatos comuns como duplicata e apaga
+        # o cenário do outro confronto.
+        registro = _norm_ws(row.get("registro_tse", ""))
+        if registro_valido(registro):
+            return "|".join([
+                "registro",
+                registro,
+                _norm_ws(row.get("ano", "")),
+                _norm_ws(row.get("uf", "")),
+                _norm_ws(row.get("cargo", "")),
+                _norm_ws(row.get("turno", "")),
+                _norm_ws(row.get("disputa", "")),
+            ])
+
+        return "|".join([
+            "sem_registro",
+            _slug(row.get("instituto", "")),
+            _norm_ws(row.get("data_campo", "")),
+            _norm_ws(row.get("ano", "")),
+            _norm_ws(row.get("uf", "")),
+            _norm_ws(row.get("cargo", "")),
+            _norm_ws(row.get("turno", "")),
+            _norm_ws(row.get("disputa", "")),
+        ])
+
+    prioridade_origem = {
+        "cenario_media_existente": 0,
+        "media_calculada_no_codigo": 1,
+    }
+
+    df["_chave_pesquisa_logica"] = df.apply(chave_pesquisa_logica, axis=1)
+    df["_chave_bi_dedup"] = (
+        df["_chave_pesquisa_logica"].astype(str)
+        + "|" + df["tipo"].fillna("").astype(str).str.strip()
+        + "|" + df["candidato_partido"].fillna("").astype(str).str.strip()
+    )
+    df["_prioridade_origem_bi"] = (
+        df["origem_percentual_base"]
+        .fillna("")
+        .astype(str)
+        .map(lambda x: prioridade_origem.get(x, 9))
+    )
+
+    df = (
+        df.sort_values(
+            by=["_chave_bi_dedup", "_prioridade_origem_bi", "poll_id"],
+            ascending=[True, True, True],
+            na_position="last",
+        )
+        .drop_duplicates(subset=["_chave_bi_dedup"], keep="first")
+        .copy()
+    )
+
+    return df.drop(
+        columns=["_chave_pesquisa_logica", "_chave_bi_dedup", "_prioridade_origem_bi"],
+        errors="ignore",
+    )
+
+
+def agregar_resultados_bi_diario(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agrega a base de BI no grão diário antes do cálculo da média móvel.
+
+    A média diária por candidato é **ponderada pelo score do instituto**
+    (ver SCORE_INSTITUTO). Cada pesquisa contribui com uma observação
+    (já consolidada por cenário em adicionar_metricas_media_cenarios)
+    multiplicada pelo seu peso. Também devolve peso_total_dia
+    (Σ w_i no dia), usado depois pela média móvel ponderada.
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+    prioridade_origem = {
+        "cenario_media_existente": 0,
+        "media_calculada_no_codigo": 1,
+    }
+
+    for col in [
+        "ano", "uf", "cargo", "turno", "disputa", "data_campo", "tipo", "candidato",
+        "partido", "candidato_partido", "instituto", "classificacao_instituto",
+        "registro_tse", "origem_percentual_base", "cenario_usado_no_calculo",
+        "fonte_url", "poll_id", "horario_raspagem"
+    ]:
+        if col not in df.columns:
+            df[col] = ""
+
+    df["_prioridade_origem_bi"] = (
+        df["origem_percentual_base"]
+        .fillna("")
+        .astype(str)
+        .map(lambda x: prioridade_origem.get(x, 9))
+    )
+
+    df["_peso"] = df["classificacao_instituto"].apply(score_instituto).astype(float)
+    df["_pct_num"] = pd.to_numeric(df["percentual_base"], errors="coerce")
+    df["_pct_x_peso"] = df["_pct_num"] * df["_peso"]
+    # Linhas sem percentual válido não devem entrar no denominador
+    df.loc[df["_pct_num"].isna(), "_peso"] = 0.0
+    df["_pct_x_peso"] = df["_pct_x_peso"].fillna(0.0)
+
+    # disputa entra na dimensão: no 2º turno, cada confronto (ex.: Lula x
+    # Bolsonaro vs. Lula x Tarcísio) é uma série própria, não pode ser
+    # agregado junto só porque o candidato e o dia são os mesmos.
+    dims = [
+        "ano", "uf", "cargo", "turno", "disputa", "data_campo", "tipo",
+        "candidato", "partido", "candidato_partido"
+    ]
+
+    def juntar_unicos(series: pd.Series) -> str:
+        valores = sorted({_norm_ws(v) for v in series if _norm_ws(v)})
+        return " | ".join(valores)
+
+    df = df.sort_values(
+        by=dims + ["_prioridade_origem_bi", "poll_id"],
+        ascending=[True] * len(dims) + [True, True],
+        na_position="last",
+    )
+
+    df_diario = (
+        df.groupby(dims, dropna=False)
+        .agg(
+            _peso_total=("_peso", "sum"),
+            _pct_x_peso_sum=("_pct_x_peso", "sum"),
+            qtd_pesquisas_dia=("poll_id", "nunique"),
+            qtd_cenarios_considerados=("qtd_cenarios_considerados", "sum"),
+            origem_percentual_base=("origem_percentual_base", "first"),
+            cenario_usado_no_calculo=("cenario_usado_no_calculo", "first"),
+            institutos_no_dia=("instituto", juntar_unicos),
+            classificacoes_instituto_no_dia=("classificacao_instituto", juntar_unicos),
+            registros_tse_no_dia=("registro_tse", juntar_unicos),
+            fontes_no_dia=("fonte_url", juntar_unicos),
+            poll_ids_agregados=("poll_id", juntar_unicos),
+            horario_raspagem=("horario_raspagem", "max"),
+        )
+        .reset_index()
+    )
+
+    peso_total = df_diario["_peso_total"].astype(float)
+    df_diario["percentual_base"] = (
+        df_diario["_pct_x_peso_sum"] / peso_total.where(peso_total > 0, other=pd.NA)
+    )
+    df_diario["peso_total_dia"] = peso_total.round(4)
+    df_diario["score_medio_dia"] = (
+        peso_total / df_diario["qtd_pesquisas_dia"].replace(0, pd.NA)
+    ).round(4)
+
+    return df_diario.drop(columns=["_peso_total", "_pct_x_peso_sum"])
+
+
+def construir_resultados_bi(df_resultados: pd.DataFrame) -> pd.DataFrame:
+    """
+    Gera uma base consolidada para BI no grão diário por candidato_partido.
+    Primeiro consolida cada pesquisa usando a média dos cenários; depois
+    agrega por dia e só então calcula a média móvel.
+    """
+    # Apenas colunas consumidas pelo painel Streamlit. Para auditoria detalhada
+    # (poll_ids, registros TSE, fontes, peso de cada dia, origem do cálculo,
+    # candidato/partido separados, ano) consulte a aba `resultados`, que mantém
+    # o grão por scenario_id.
+    cols = [
+        "uf", "cargo", "turno", "disputa", "data_campo",
+        "candidato_partido", "tipo",
+        "percentual_base", "media_movel_13d",
+        "qtd_pesquisas_dia",
+        "cenario_usado_no_calculo",
+        "eh_lider", "eh_segundo",
+        "institutos_no_dia", "classificacoes_instituto_no_dia",
+    ]
+
+    if df_resultados is None or df_resultados.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = df_resultados.copy()
+    if "percentual" in df.columns:
+        df["percentual"] = df["percentual"].apply(parsear_pct)
+    else:
+        df["percentual"] = None
+
+    if "data_campo" not in df.columns:
+        df["data_campo"] = ""
+    else:
+        df["data_campo"] = df["data_campo"].apply(normalizar_data_campo_segura)
+
+    for col in ["poll_id", "tipo", "candidato", "scenario_label"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    df = df[df["poll_id"].astype(str).str.strip().ne("") & df["percentual"].notna()].copy()
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = adicionar_metricas_media_cenarios(df)
+    df["eh_cenario_media"] = df["scenario_label"].apply(eh_cenario_media)
+
+    chaves = ["poll_id", "tipo", "candidato"]
+    df_qtd = (
+        df[~df["eh_cenario_media"]]
+        .groupby(chaves, dropna=False)["scenario_label"]
+        .nunique()
+        .reset_index(name="qtd_cenarios_considerados")
+    )
+
+    df_media_lbl = (
+        df[df["eh_cenario_media"]]
+        .sort_values(chaves + ["scenario_label"])
+        .drop_duplicates(subset=chaves, keep="first")[chaves + ["scenario_label"]]
+        .rename(columns={"scenario_label": "cenario_usado_no_calculo"})
+    )
+
+    df_pref = df.copy()
+    df_pref["_ordem_escolha"] = df_pref["eh_cenario_media"].astype(int) * -1
+    df_base = (
+        df_pref
+        .sort_values(chaves + ["_ordem_escolha", "scenario_label"])
+        .drop_duplicates(subset=chaves, keep="first")
+        .copy()
+    )
+
+    df_base = df_base.merge(df_qtd, on=chaves, how="left")
+    df_base = df_base.merge(df_media_lbl, on=chaves, how="left")
+
+    df_base["origem_percentual_base"] = df_base["origem_percentual_media"]
+    df_base["percentual_base"] = df_base["percentual_media_cenarios"]
+    df_base["qtd_cenarios_considerados"] = df_base["qtd_cenarios_considerados"].fillna(0).astype(int)
+    df_base["cenario_usado_no_calculo"] = df_base["cenario_usado_no_calculo"].fillna("")
+    df_base.loc[
+        df_base["origem_percentual_base"].eq("media_calculada_no_codigo"),
+        "cenario_usado_no_calculo"
+    ] = "media_calculada_no_codigo"
+
+    df_candidatos = df_base[df_base["tipo"].astype(str).str.lower().eq("candidato")].copy()
+    df_candidatos = deduplicar_resultados_bi_preferindo_cenario_media(df_candidatos)
+    df_candidatos = agregar_resultados_bi_diario(df_candidatos)
+
+    # disputa entra na chave de ranking: senão, candidatos de confrontos
+    # diferentes do 2º turno (Lula x Bolsonaro, Lula x Tarcísio) competem
+    # juntos pelo 1º/2º lugar em vez de dentro do próprio confronto.
+    chaves_posicao = ["ano", "uf", "cargo", "turno", "disputa", "data_campo"]
+    df_candidatos["posicao_candidato"] = (
+        df_candidatos.groupby(chaves_posicao)["percentual_base"]
+        .rank(method="min", ascending=False)
+        .astype("Int64")
+    )
+    df_candidatos["eh_lider"] = df_candidatos["posicao_candidato"].eq(1)
+    df_candidatos["eh_segundo"] = df_candidatos["posicao_candidato"].eq(2)
+    df_candidatos = adicionar_media_movel_13d_resultados_bi(df_candidatos)
+
+    for col in cols:
+        if col not in df_candidatos.columns:
+            df_candidatos[col] = ""
+
+    df_candidatos = df_candidatos[cols].copy()
+    # Ordenação por percentual_base desc é equivalente a ordenar por posicao_candidato asc
+    # (líder vem primeiro), e permite remover posicao_candidato do schema exportado.
+    df_candidatos = df_candidatos.sort_values(
+        by=["cargo", "uf", "turno", "disputa", "data_campo", "percentual_base", "candidato_partido"],
+        ascending=[True, True, True, True, False, False, True],
+        na_position="last",
+    ).reset_index(drop=True)
+
+    df_candidatos["eh_lider"] = df_candidatos["eh_lider"].map({True: "TRUE", False: "FALSE"}).fillna("")
+    df_candidatos["eh_segundo"] = df_candidatos["eh_segundo"].map({True: "TRUE", False: "FALSE"}).fillna("")
+
+    return df_candidatos
+
+
+def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
+    if key_col not in df.columns:
+        raise RuntimeError(f"df não tem coluna de chave: '{key_col}'")
+
+    df = reordenar_metodologia_para_ultima_coluna(df)
+
+    antes = len(df)
+    df = df.drop_duplicates(subset=[key_col], keep="first").reset_index(drop=True)
+
+    if len(df) < antes:
+        print(f"  [dedup interno] removidas {antes - len(df)} duplicatas na coleta")
+
+    values = aba.get_all_values()
+
+    if _aba_vazia(values):
+        aba.clear()
+        aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
+        print(f"  [aba vazia] {len(df)} linhas gravadas")
+        return len(df), 0
+
+    header = values[0]
+    if key_col not in header:
+        print(f"  [aviso] chave '{key_col}' ausente no header. Reescrevendo aba.")
+        aba.clear()
+        aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
+        return len(df), 0
+
+    colunas_novas = [c for c in df.columns if c not in header]
+    cols_final = ["percentual_media_cenarios", "origem_percentual_media", "metodologia"]
+    header_base = [c for c in header if c not in cols_final]
+    novas_base = [c for c in colunas_novas if c not in cols_final]
+    header_final = header_base + novas_base
+    header_final += [c for c in cols_final if c in df.columns or c in header]
+
+    if header_final != header:
+        aba.update([header_final], range_name="A1")
+        if colunas_novas:
+            print(f"  [schema] {len(colunas_novas)} coluna(s) nova(s): {colunas_novas}")
+        else:
+            print(f"  [schema] colunas finais reposicionadas: {[c for c in cols_final if c in header_final]}")
+
+    idx_key = header_final.index(key_col)
+    values = aba.get_all_values()
+    existing = {row[idx_key] for row in values[1:] if len(row) > idx_key and row[idx_key].strip()}
+
+    df_add = df[~df[key_col].astype(str).isin(existing)].reset_index(drop=True)
+
+    if df_add.empty:
+        print(f"  [sem novidades] {len(existing)} já existiam")
+        return 0, len(existing)
+
+    df_add = df_add.reindex(columns=header_final, fill_value="")
+    aba.insert_rows(df_add.fillna("").astype(str).values.tolist(), row=2)
+
+    print(f"  [insert] {len(df_add)} nova(s) | {len(existing)} já existiam")
+    return len(df_add), len(existing)
+
+
+def _norm_key_text(s) -> str:
+    txt = _norm_ws(s)
+    if not txt:
+        return ""
+    txt = unicodedata.normalize("NFKD", txt)
+    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+    txt = txt.lower()
+    txt = re.sub(r"[^a-z0-9]+", " ", txt)
+    return re.sub(r"\s+", " ", txt).strip()
+
+
+def _registro_tse_valido(valor) -> bool:
+    s = _norm_ws(valor).lower()
+    return s not in ("", "sem registro", "sem_registro", "semregistro", "nan", "none")
+
+
+def _eh_linha_manual(conferida_valor) -> bool:
+    return _norm_ws(conferida_valor).lower() == "manual_streamlit"
+
+
+def _parse_data_yyyy_mm_dd(valor):
+    s = normalizar_data_campo_segura(valor)
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _assinatura_poll(df_resultados: pd.DataFrame, poll_id: str) -> dict:
+    if df_resultados is None or df_resultados.empty or not poll_id:
+        return {}
+
+    df = df_resultados.copy()
+    for col in ["poll_id", "tipo", "candidato_partido", "candidato", "percentual"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    recorte = df[df["poll_id"].astype(str).str.strip().eq(_norm_ws(poll_id))].copy()
+    if recorte.empty:
+        return {}
+
+    recorte["_tipo_key"] = recorte["tipo"].apply(_norm_key_text)
+    recorte["_cand_key"] = recorte["candidato_partido"].apply(_norm_key_text)
+    recorte["_cand_key"] = recorte["_cand_key"].mask(
+        recorte["_cand_key"].eq(""),
+        recorte["candidato"].apply(_norm_key_text),
+    )
+    recorte["_item_key"] = recorte["_tipo_key"] + "|" + recorte["_cand_key"]
+    recorte["_pct"] = recorte["percentual"].apply(parsear_pct)
+    recorte = recorte[recorte["_item_key"].str.strip().ne("") & recorte["_pct"].notna()].copy()
+    if recorte.empty:
+        return {}
+
+    medias = recorte.groupby("_item_key", dropna=False)["_pct"].mean()
+    return {k: float(v) for k, v in medias.items()}
+
+
+def _avaliar_similaridade_polls(assinatura_manual: dict, assinatura_oficial: dict) -> tuple[int, float | None]:
+    if not assinatura_manual or not assinatura_oficial:
+        return 0, None
+
+    itens_comuns = sorted(set(assinatura_manual.keys()) & set(assinatura_oficial.keys()))
+    if not itens_comuns:
+        return 0, None
+
+    erros = [abs(assinatura_manual[k] - assinatura_oficial[k]) for k in itens_comuns]
+    mae = sum(erros) / len(erros)
+    return len(itens_comuns), float(mae)
+
+
+def reconciliar_manuais_com_oficiais(
+    df_p_existente: pd.DataFrame,
+    df_r_existente: pd.DataFrame,
+    df_p_novo: pd.DataFrame,
+    df_r_novo: pd.DataFrame,
+    janela_dias_fallback: int = 3,
+    mae_max_fallback: float = 1.5,
+):
+    """
+    Remove entradas manuais já cobertas por entrada oficial recém-coletada.
+    Regras:
+    1) Match forte: mesmo registro_tse + escopo (uf/cargo/turno);
+    2) Fallback: mesmo instituto + escopo + data próxima + resultados parecidos.
+    """
+    if df_p_existente is None:
+        df_p_existente = pd.DataFrame()
+    if df_r_existente is None:
+        df_r_existente = pd.DataFrame()
+    if df_p_novo is None:
+        df_p_novo = pd.DataFrame()
+    if df_r_novo is None:
+        df_r_novo = pd.DataFrame()
+
+    if df_p_existente.empty or df_p_novo.empty:
+        return df_p_existente, df_r_existente, pd.DataFrame()
+
+    p_exist = df_p_existente.copy()
+    p_novo = df_p_novo.copy()
+
+    for df in [p_exist, p_novo]:
+        for col in ["poll_id", "uf", "cargo", "turno", "instituto", "registro_tse", "data_campo", "conferida"]:
+            if col not in df.columns:
+                df[col] = ""
+
+    p_exist["_is_manual"] = p_exist["conferida"].apply(_eh_linha_manual)
+    p_novo["_is_manual"] = p_novo["conferida"].apply(_eh_linha_manual)
+
+    p_manual = (
+        p_exist[p_exist["_is_manual"]]
+        .sort_values(by=["poll_id", "scenario_id"] if "scenario_id" in p_exist.columns else ["poll_id"])
+        .drop_duplicates(subset=["poll_id"], keep="first")
+        .copy()
+    )
+    p_oficial = (
+        p_novo[~p_novo["_is_manual"]]
+        .sort_values(by=["poll_id", "scenario_id"] if "scenario_id" in p_novo.columns else ["poll_id"])
+        .drop_duplicates(subset=["poll_id"], keep="first")
+        .copy()
+    )
+
+    if p_manual.empty or p_oficial.empty:
+        return df_p_existente, df_r_existente, pd.DataFrame()
+
+    for df in [p_manual, p_oficial]:
+        df["_uf_key"] = df["uf"].apply(_norm_key_text)
+        df["_cargo_key"] = df["cargo"].apply(_norm_key_text)
+        df["_turno_key"] = df["turno"].apply(_norm_key_text)
+        df["_inst_key"] = df["instituto"].apply(_norm_key_text)
+        df["_registro_key"] = df["registro_tse"].apply(lambda x: _norm_ws(x).upper())
+        df["_registro_ok"] = df["registro_tse"].apply(_registro_tse_valido)
+        df["_data_dt"] = df["data_campo"].apply(_parse_data_yyyy_mm_dd)
+
+    remover_poll_ids = set()
+    detalhes = []
+    cache_assin_manual = {}
+    cache_assin_oficial = {}
+
+    def assinatura_manual(pid: str) -> dict:
+        if pid not in cache_assin_manual:
+            cache_assin_manual[pid] = _assinatura_poll(df_r_existente, pid)
+        return cache_assin_manual[pid]
+
+    def assinatura_oficial(pid: str) -> dict:
+        if pid not in cache_assin_oficial:
+            cache_assin_oficial[pid] = _assinatura_poll(df_r_novo, pid)
+        return cache_assin_oficial[pid]
+
+    for _, off in p_oficial.iterrows():
+        off_poll_id = _norm_ws(off.get("poll_id", ""))
+        if not off_poll_id:
+            continue
+
+        base_escopo = (
+            p_manual["_uf_key"].eq(off["_uf_key"])
+            & p_manual["_cargo_key"].eq(off["_cargo_key"])
+            & p_manual["_turno_key"].eq(off["_turno_key"])
+        )
+        cand = p_manual[base_escopo].copy()
+        if cand.empty:
+            continue
+
+        # Regra 1: match forte por registro TSE
+        if bool(off.get("_registro_ok")):
+            cand_reg = cand[
+                cand["_registro_ok"] & cand["_registro_key"].eq(off["_registro_key"])
+            ].copy()
+            if not cand_reg.empty:
+                for _, man in cand_reg.iterrows():
+                    man_poll_id = _norm_ws(man.get("poll_id", ""))
+                    if not man_poll_id or man_poll_id in remover_poll_ids:
+                        continue
+                    remover_poll_ids.add(man_poll_id)
+                    detalhes.append({
+                        "poll_id_manual_removido": man_poll_id,
+                        "poll_id_oficial": off_poll_id,
+                        "regra_match": "registro_tse_igual",
+                        "itens_em_comum": "",
+                        "mae_percentual": "",
+                        "dif_dias_data_campo": "",
+                    })
+                continue
+
+        # Regra 2: fallback por instituto + data próxima + similaridade
+        cand_fb = cand[cand["_inst_key"].eq(off["_inst_key"])].copy()
+        if cand_fb.empty:
+            continue
+
+        data_off = off.get("_data_dt")
+        if data_off is not None:
+            cand_fb["_dif_dias"] = cand_fb["_data_dt"].apply(
+                lambda d: abs((d - data_off).days) if d is not None else None
+            )
+            cand_fb = cand_fb[
+                cand_fb["_dif_dias"].notna() & cand_fb["_dif_dias"].le(janela_dias_fallback)
+            ].copy()
+        else:
+            cand_fb["_dif_dias"] = None
+
+        if cand_fb.empty:
+            continue
+
+        assinatura_off = assinatura_oficial(off_poll_id)
+        melhor = None
+        for _, man in cand_fb.iterrows():
+            man_poll_id = _norm_ws(man.get("poll_id", ""))
+            if not man_poll_id or man_poll_id in remover_poll_ids:
+                continue
+            assinatura_man = assinatura_manual(man_poll_id)
+            itens_comuns, mae = _avaliar_similaridade_polls(assinatura_man, assinatura_off)
+            if itens_comuns == 0 or mae is None:
+                continue
+            if mae > mae_max_fallback:
+                continue
+
+            cand_item = {
+                "man_poll_id": man_poll_id,
+                "itens_comuns": itens_comuns,
+                "mae": mae,
+                "dif_dias": man.get("_dif_dias"),
+            }
+            if melhor is None:
+                melhor = cand_item
+            else:
+                # prioriza menor erro; empate: mais itens comuns
+                if (cand_item["mae"] < melhor["mae"]) or (
+                    cand_item["mae"] == melhor["mae"] and cand_item["itens_comuns"] > melhor["itens_comuns"]
+                ):
+                    melhor = cand_item
+
+        if melhor is not None:
+            remover_poll_ids.add(melhor["man_poll_id"])
+            detalhes.append({
+                "poll_id_manual_removido": melhor["man_poll_id"],
+                "poll_id_oficial": off_poll_id,
+                "regra_match": "fallback_instituto_data_similaridade",
+                "itens_em_comum": melhor["itens_comuns"],
+                "mae_percentual": round(melhor["mae"], 3),
+                "dif_dias_data_campo": int(melhor["dif_dias"]) if pd.notna(melhor["dif_dias"]) else "",
+            })
+
+    if not remover_poll_ids:
+        return df_p_existente, df_r_existente, pd.DataFrame()
+
+    p_limpo = df_p_existente[~df_p_existente["poll_id"].astype(str).str.strip().isin(remover_poll_ids)].copy()
+    r_limpo = df_r_existente[~df_r_existente["poll_id"].astype(str).str.strip().isin(remover_poll_ids)].copy()
+    df_det = pd.DataFrame(detalhes).drop_duplicates().reset_index(drop=True)
+    return p_limpo, r_limpo, df_det
+
+
+def append_log_resultados_manual(gc, spreadsheet_id: str, df_log: pd.DataFrame, aba_nome: str = "resultados_manual") -> int:
+    """
+    Registra histórico manual em aba append-only.
+    Não interfere nas abas operacionais (`pesquisas`, `resultados`, `resultados_bi`).
+    """
+    if df_log is None or df_log.empty:
+        return 0
+
+    sh = gc.open_by_key(spreadsheet_id)
+    aba = garantir_aba(sh, aba_nome, rows=50000, cols=50)
+
+    values = aba.get_all_values()
+    header_novo = df_log.columns.tolist()
+
+    if _aba_vazia(values):
+        aba.clear()
+        aba.update([header_novo])
+        header_final = header_novo
+    else:
+        header_atual = values[0]
+        cols_novas = [c for c in header_novo if c not in header_atual]
+        header_final = header_atual + cols_novas
+        if header_final != header_atual:
+            aba.update([header_final], range_name="A1")
+            print(f"  [schema:{aba_nome}] {len(cols_novas)} coluna(s) nova(s): {cols_novas}")
+
+    df_export = (
+        df_log.reindex(columns=header_final, fill_value="")
+        .astype(object)
+        .where(pd.notna(df_log.reindex(columns=header_final, fill_value="")), "")
+        .astype(str)
+    )
+
+    aba.append_rows(df_export.values.tolist(), value_input_option="USER_ENTERED")
+    print(f"  [append:{aba_nome}] {len(df_export)} linha(s) adicionadas")
+    return len(df_export)
+
+
+def normalizar_institutos_retroativo(aba_pesquisas, aba_resultados):
+    """Aplica ALIASES_INSTITUTO em entradas já gravadas. Idempotente: se a
+    planilha já está normalizada, não toca em nada.
+
+    Para pesquisas: também recomputa classificacao_instituto e metodologia
+    quando o instituto canônico tem entrada nos dicts estáticos.
+    """
+    def _aplicar(df: pd.DataFrame, recomputar_classif_e_metod: bool) -> tuple[pd.DataFrame, int]:
+        if df.empty or "instituto" not in df.columns:
+            return df, 0
+        df = df.copy()
+        original = df["instituto"].astype(str)
+        novo = original.apply(normalizar_instituto)
+        mudou = (original != novo)
+        if not mudou.any():
+            return df, 0
+        df["instituto"] = novo
+        if recomputar_classif_e_metod:
+            if "classificacao_instituto" in df.columns:
+                df.loc[mudou, "classificacao_instituto"] = df.loc[mudou, "instituto"].apply(classificar_instituto)
+            if "metodologia" in df.columns:
+                # só sobrescreve quando o canônico tem metodologia conhecida;
+                # caso contrário mantém o texto anterior (pode ser texto livre do polling manual)
+                def _metod_se_conhecida(inst):
+                    m = obter_metodologia(inst)
+                    return m if m else None
+                metod_nova = df.loc[mudou, "instituto"].apply(_metod_se_conhecida)
+                idx_validos = metod_nova.dropna().index
+                df.loc[idx_validos, "metodologia"] = metod_nova.loc[idx_validos]
+        return df, int(mudou.sum())
+
+    df_p_existente = carregar_df_da_aba(aba_pesquisas)
+    df_p_norm, n_p = _aplicar(df_p_existente, recomputar_classif_e_metod=True)
+    if n_p > 0:
+        sobrescrever_aba(aba_pesquisas, df_p_norm)
+        print(f"[normalizacao] aba 'pesquisas': {n_p} linha(s) com instituto normalizado")
+
+    df_r_existente = carregar_df_da_aba(aba_resultados)
+    df_r_norm, n_r = _aplicar(df_r_existente, recomputar_classif_e_metod=True)
+    if n_r > 0:
+        sobrescrever_aba(aba_resultados, df_r_norm)
+        print(f"[normalizacao] aba 'resultados': {n_r} linha(s) com instituto normalizado")
+
+
+def reconstruir_resultados_bi(gc, sheet_id: str):
+    """Reconstrói resultados_bi a partir do que já está salvo em `resultados`,
+    sem raspar o site de novo. Usado por `pesquisas.py rebuild_bi` pra aplicar
+    correções de agregação/média móvel no histórico já coletado, sem esperar
+    a próxima rodada de raspagem."""
+    sh = gc.open_by_key(sheet_id)
+    aba_resultados = garantir_aba(sh, "resultados", rows=20000, cols=35)
+    aba_resultados_bi = garantir_aba(sh, "resultados_bi", rows=20000, cols=40)
+
+    df_resultados_all = carregar_df_da_aba(aba_resultados)
+    df_resultados_bi = construir_resultados_bi(df_resultados_all)
+    sobrescrever_aba(aba_resultados_bi, df_resultados_bi)
+    print(f"[+] resultados_bi: {len(df_resultados_bi)} linhas consolidadas para Looker")
+
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "percentual_base")
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "media_movel_13d")
+
+
+def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame):
+    if (df_p is None or df_p.empty) and (df_r is None or df_r.empty):
+        print("[-] nada para salvar")
+        return
+
+    sh = gc.open_by_key(spreadsheet_id)
+    if FORCAR_LOCALE_PLANILHA:
+        try:
+            sh.update_locale(LOCALE_PLANILHA)
+        except Exception as e:
+            print(f"  [fmt] não foi possível definir locale da planilha para {LOCALE_PLANILHA}: {e}")
+
+    aba_pesquisas = garantir_aba(sh, "pesquisas", rows=50000, cols=35)
+    aba_resultados = garantir_aba(sh, "resultados", rows=20000, cols=35)
+    aba_resultados_bi = garantir_aba(sh, "resultados_bi", rows=20000, cols=40)
+
+    # Passada de normalização retroativa: aplica ALIASES_INSTITUTO em entradas
+    # já gravadas. Idempotente; só reescreve se algo de fato mudou.
+    normalizar_institutos_retroativo(aba_pesquisas, aba_resultados)
+
+    # Reconciliação automática: quando entra dado oficial, remove duplicata manual equivalente.
+    if df_p is not None and not df_p.empty:
+        df_p_chk = df_p.copy()
+        if "conferida" not in df_p_chk.columns:
+            df_p_chk["conferida"] = ""
+        tem_linha_oficial_entrante = (~df_p_chk["conferida"].apply(_eh_linha_manual)).any()
+
+        if tem_linha_oficial_entrante:
+            df_p_existente = carregar_df_da_aba(aba_pesquisas)
+            df_r_existente = carregar_df_da_aba(aba_resultados)
+            df_p_limpo, df_r_limpo, df_recon = reconciliar_manuais_com_oficiais(
+                df_p_existente=df_p_existente,
+                df_r_existente=df_r_existente,
+                df_p_novo=df_p,
+                df_r_novo=df_r if df_r is not None else pd.DataFrame(),
+            )
+            if not df_recon.empty:
+                sobrescrever_aba(aba_pesquisas, df_p_limpo)
+                sobrescrever_aba(aba_resultados, df_r_limpo)
+                print(
+                    "[reconciliacao] removidas "
+                    f"{len(df_recon)} pesquisa(s) manual(is) substituída(s) por entrada oficial"
+                )
+                for _, row in df_recon.iterrows():
+                    print(
+                        "  - manual: "
+                        f"{row.get('poll_id_manual_removido', '')} -> oficial: {row.get('poll_id_oficial', '')} "
+                        f"[{row.get('regra_match', '')}]"
+                    )
+
+    if df_p is not None and not df_p.empty:
+        novos, exist = dedup_e_salvar(aba_pesquisas, df_p, key_col="scenario_id")
+        print(f"[+] pesquisas: {novos} novas | {exist} já existiam")
+
+    if df_r is not None and not df_r.empty:
+        df_r = df_r.copy()
+
+        df_r = adicionar_posicao_pesquisa(df_r)
+
+        df_r["_dedup_key"] = (
+            df_r["scenario_id"].astype(str)
+            + "|" + df_r["data_campo"].fillna("").astype(str)
+            + "|" + df_r["tipo"].fillna("").astype(str)
+            + "|" + df_r["candidato_partido"].fillna("").astype(str)
+        )
+        novos, exist = dedup_e_salvar(aba_resultados, df_r, key_col="_dedup_key")
+        print(f"[+] resultados: {novos} novas | {exist} já existiam")
+
+    preencher_posicao_pesquisa_na_aba(aba_resultados)
+
+    df_resultados_all = carregar_df_da_aba(aba_resultados)
+    df_resultados_bi = construir_resultados_bi(df_resultados_all)
+    sobrescrever_aba(aba_resultados_bi, df_resultados_bi)
+    print(f"[+] resultados_bi: {len(df_resultados_bi)} linhas consolidadas para Looker")
+
+    corrigir_coluna_numerica_na_aba(aba_resultados, "percentual")
+    corrigir_coluna_numerica_na_aba(aba_resultados, "percentual_media_cenarios")
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "percentual_base")
+    corrigir_coluna_numerica_na_aba(aba_resultados_bi, "media_movel_13d")
+
+
+def _buscar_urls_no_json(obj, urls: set, pattern: str):
+    if isinstance(obj, str):
+        if re.search(pattern, obj, re.I):
+            urls.add(obj)
+    elif isinstance(obj, list):
+        for item in obj:
+            _buscar_urls_no_json(item, urls, pattern)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _buscar_urls_no_json(v, urls, pattern)
+
+
+def descobrir_urls_presidente_t2(driver) -> list[str]:
+    """
+    Carrega a página de 2º turno do PollingData e coleta todos os slugs
+    de presidente via JSON embutido ou HTML.
+    """
+    PATTERN = r"/presidente/[a-z]{2}/t\d_[^/\s\"'>]+"
+    BASE = "https://www.pollingdata.com.br"
+    URL_T2 = "https://www.pollingdata.com.br/capa2026/previsao_brasil2026.html"
+
+    print("[descoberta t2] carregando página de 2º turno...")
+    driver.get(URL_T2)
+
+    try:
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "script[type='application/json']"))
+        )
+    except Exception:
+        pass
+    time.sleep(4)
+
+    encontradas: set[str] = set()
+
+    # Abordagem 1: JSON embutido nos script tags
+    for script in driver.find_elements(By.CSS_SELECTOR, "script[type='application/json']"):
+        try:
+            raw = script.get_attribute("innerHTML") or script.text
+            _buscar_urls_no_json(json.loads(raw), encontradas, PATTERN)
+        except Exception:
+            pass
+
+    # Abordagem 2: busca em todo o HTML da página
+    if not encontradas:
+        matches = re.findall(r'(/2026/presidente/[a-z]{2}/t\d_[^/"\'\s>]+)', driver.page_source, re.I)
+        encontradas.update(matches)
+
+    urls_completas = sorted({
+        BASE + p.rstrip("/") + "/"
+        if not p.startswith("http") else p.rstrip("/") + "/"
+        for p in encontradas
+    })
+
+    print(f"  [descoberta t2] {len(urls_completas)} URL(s) encontrada(s)")
+    return urls_completas
+
+
+def main():
+    incluir_governador = env_bool("INCLUIR_GOVERNADOR", True)
+    incluir_senado = env_bool("INCLUIR_SENADO", True)
+    incluir_presidente = env_bool("INCLUIR_PRESIDENTE", True)
+    incluir_presidente_t2 = env_bool("INCLUIR_PRESIDENTE_T2", True)
+
+    tem_t1 = incluir_governador or incluir_senado or incluir_presidente
+    spreadsheet_id = obter_spreadsheet_id() if tem_t1 else None
+    # URLs de t2 são descobertas dinamicamente após iniciar o driver; passa False aqui
+    urls = montar_urls(incluir_governador, incluir_senado, incluir_presidente, incluir_presidente_t2=False)
+
+    if not urls and not incluir_presidente_t2:
+        print("[-] Nenhuma URL selecionada. Ajuste INCLUIR_*.")
+        return
+
+    horario_raspagem = datetime.now(
+        zoneinfo.ZoneInfo("America/Recife")
+    ).strftime("%Y-%m-%d %H:%M:%S")
+
+    print("[+] Conectando ao Google Sheets...")
+    gc = gs_client_from_env()
+
+    print("[+] Iniciando Chrome...")
+    driver = criar_driver()
+
+    if incluir_presidente_t2:
+        try:
+            urls_t2 = descobrir_urls_presidente_t2(driver)
+        except Exception as e:
+            print(f"[!] descoberta de t2 falhou, usando lista padrão: {e}")
+            urls_t2 = list(PRESIDENTE_T2_URLS_DEFAULT)
+        if not urls_t2:
+            print("[!] descoberta de t2 retornou vazio, usando lista padrão")
+            urls_t2 = list(PRESIDENTE_T2_URLS_DEFAULT)
+        urls += urls_t2
+
+    if not urls:
+        print("[-] Nenhuma URL selecionada. Ajuste INCLUIR_*.")
+        driver.quit()
+        return
+
+    all_p = []
+    all_r = []
+
+    try:
+        for url in urls:
+            try:
+                df_p, df_r = scrape_url(driver, url, horario_raspagem)
+
+                if df_p is not None and not df_p.empty:
+                    all_p.append(df_p)
+
+                if df_r is not None and not df_r.empty:
+                    all_r.append(df_r)
+            except Exception as e:
+                print(f"  [-] erro ao processar URL {url}: {e}")
+    finally:
+        driver.quit()
+
+    all_p = [df for df in all_p if df is not None and not df.empty]
+    all_r = [df for df in all_r if df is not None and not df.empty]
+    df_p_all = pd.concat(all_p, ignore_index=True) if all_p else pd.DataFrame()
+    df_r_all = pd.concat(all_r, ignore_index=True) if all_r else pd.DataFrame()
+
+    def _filtrar_turno(df: pd.DataFrame, turno: str) -> pd.DataFrame:
+        if df.empty or "turno" not in df.columns:
+            return pd.DataFrame()
+        return df[df["turno"].astype(str).str.lower() == turno].reset_index(drop=True)
+
+    df_p_t1 = _filtrar_turno(df_p_all, "t1") if not df_p_all.empty else df_p_all
+    df_r_t1 = _filtrar_turno(df_r_all, "t1") if not df_r_all.empty else df_r_all
+    df_p_t2 = _filtrar_turno(df_p_all, "t2") if not df_p_all.empty else df_p_all
+    df_r_t2 = _filtrar_turno(df_r_all, "t2") if not df_r_all.empty else df_r_all
+
+    # Planilha principal — tudo que não é t2
+    if not df_p_all.empty and "turno" not in df_p_all.columns:
+        df_p_t1, df_r_t1 = df_p_all, df_r_all
+
+    if tem_t1 and spreadsheet_id:
+        salvar_tudo(gc, spreadsheet_id, df_p_t1, df_r_t1)
+
+    if incluir_presidente_t2 and (not df_p_t2.empty or not df_r_t2.empty):
+        print("[+] Salvando 2º turno na planilha separada...")
+        spreadsheet_id_t2 = obter_spreadsheet_id_t2()
+        salvar_tudo(gc, spreadsheet_id_t2, df_p_t2, df_r_t2)
+
+    print("[+] OK")
+
+
+if __name__ == "__main__":
+    main()
