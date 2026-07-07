@@ -320,51 +320,6 @@ def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, d
         return {"tipo": "nao_encontrado"}
 
 
-def agente_buscar_pesquisas_dia(gemini_client):
-    hoje = datetime.now(BRT).strftime("%d/%m/%Y")
-    prompt = f"""
-    Você é um agente de inteligência da Eixo monitorando o ciclo eleitoral de 2026.
-    Sua missão é varrer a web atrás de pesquisas eleitorais de intenção de voto divulgadas EXATAMENTE HOJE ({hoje}) ou ontem.
-
-    COBERTURA AMPLA E IRRESTRITA:
-    1. TODOS OS ESTADOS: Você deve monitorar o cenário de forma igualitária para TODOS os 27 estados do Brasil (UFs) e para a Presidência (Nacional). Trate todos os estados com a mesma importância e dedicação.
-    2. TODOS OS INSTITUTOS: Embora grandes institutos (Datafolha, Quaest, AtlasIntel, Paraná Pesquisas, Veritá, Real Time Big Data, Futura, Vox Brasil, etc.) exijam buscas nominais dedicadas para evitar que passem despercebidos, NÃO limite a sua coleta a eles. Capture igualmente pesquisas de institutos locais, regionais, estaduais ou de menor porte (como Doxa, Ranking Brasil, Gerp, IRG Pesquisas, IPESPE, etc.) que tenham sido publicadas hoje ou ontem.
-
-    REGRAS DE OURO:
-    1. IGNORE TEASERS: Descarte matérias que dizem "vai ser divulgada", "foi registrada" ou "está em campo". Colete apenas resultados JÁ publicados com números de intenção de voto ou rejeição.
-    2. ALUCINAÇÃO DE ANO: Filtre rigorosamente pesquisas passadas (2022/2024). Queremos apenas 2026.
-    2b. PROIBIDO VÍDEO: NÃO retorne links de YouTube, TikTok, Vimeo ou qualquer vídeo. Só PDF, matéria de site ou imagem do relatório; vídeo não tem os números em texto e não serve.
-    3. REGISTRO DUPLO: Se uma pesquisa estadual testou Governador e Presidente, ela geralmente tem um registro Estadual (UF-00000/2026) e um Nacional (BR-00000/2026). Se a matéria citar ambos, crie DOIS itens separados na lista JSON abaixo.
-    4. CARGOS MONITORADOS: Retorne apenas pesquisas para Presidente, Governador ou Senador. Ignore Deputado Federal, Deputado Estadual e outros cargos.
-
-    Retorne APENAS um JSON válido (sem tags markdown):
-    {{
-      "pesquisas": [
-        {{
-          "registro": "BR-12345/2026",
-          "cargo": "Presidente",
-          "uf": "BRASIL",
-          "instituto": "Nome do Instituto",
-          "data_divulgacao": "DD/MM/YYYY",
-          "link": "URL_DA_FONTE",
-          "tipo": "pdf", "imagem", "materia" ou "paywall",
-          "origem_texto": "Reportagem do site X"
-        }}
-      ]
-    }}
-    """
-    try:
-        config = types.GenerateContentConfig(temperature=0.15, tools=[types.Tool(google_search=types.GoogleSearch())])
-        res = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=config)
-        pesquisas = _extrair_json_objeto(getattr(res, "text", "") or "").get("pesquisas", [])
-        if not isinstance(pesquisas, list):
-            return []
-        return [p for p in pesquisas if isinstance(p, dict)]
-    except Exception as e:
-        print(f"  [AVISO] Varredura Gemini/search falhou: {str(e)[:200]}")
-        return []
-
-
 def _norm(s):
     import unicodedata
     s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().lower()
@@ -1439,10 +1394,6 @@ def atualizar_planilha():
     _separar_linhas_multicargo(ws, header)
 
     dados = ws.get_all_records()
-    registros_existentes = {
-        _chave_fila(r.get("registro"), r.get("cargo"), r.get("uf"))
-        for r in dados
-    }
     primeiro_cargo_por_registro = {}
     for r in dados:
         reg_norm = re.sub(r"[^A-Z0-9]", "", str(r.get("registro", "")).upper())
@@ -1451,7 +1402,6 @@ def atualizar_planilha():
 
     pdfs_salvos = 0
     links_preenchidos = 0
-    linhas_novas = []
     pendentes_finais = []
     celulas_para_atualizar = []
 
@@ -1459,7 +1409,6 @@ def atualizar_planilha():
     # (timeout, Gemini travar), o que já foi baixado e escrito fica salvo, em vez
     # de perder tudo e ter que refazer download/Gemini na próxima rodada.
     LOTE_CELULAS = 60      # ~20 linhas (cada linha escreve link/status/nivel)
-    LOTE_LINHAS_NOVAS = 30
 
     def _gravar_celulas_pendentes(contexto=""):
         if not celulas_para_atualizar:
@@ -1469,19 +1418,12 @@ def atualizar_planilha():
         ws.update_cells(celulas_para_atualizar, value_input_option="USER_ENTERED")
         celulas_para_atualizar.clear()
 
-    def _gravar_linhas_novas(contexto=""):
-        if not linhas_novas:
-            return
-        detalhe = f" ({contexto})" if contexto else ""
-        print(f"Anexando {len(linhas_novas)} linha(s) nova(s) à fila{detalhe}...")
-        ws.append_rows(linhas_novas, value_input_option="USER_ENTERED")
-        linhas_novas.clear()
-
-    # 1. PROCESSAR LINHAS PENDENTES (SEM LINK)
-    print(f"\n--- Fase 1: Processando Pendentes ({len(dados)} linhas analisadas) ---")
+    # PROCESSAR LINHAS SEM LINK: busca e salva o PDF de cada pesquisa que já está
+    # na fila (adicionada pelo pesquisas.py). Não adiciona linha nenhuma.
+    print(f"\n--- Buscando PDFs das pesquisas na fila ({len(dados)} linhas analisadas) ---")
     for i, linha in enumerate(dados, start=2):  # +2: sheets começa em 1 e tem cabeçalho
         if len(celulas_para_atualizar) >= LOTE_CELULAS:
-            _gravar_celulas_pendentes("lote parcial Fase 1")
+            _gravar_celulas_pendentes("lote parcial")
         registro = str(linha.get("registro", "")).strip()
         link_atual = str(linha.get("link", "")).strip()
         if not registro:
@@ -1553,90 +1495,22 @@ def atualizar_planilha():
             celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "erro_tecnico"))
             pendentes_finais.append(f"{registro} - Erro técnico ao baixar/salvar PDF: {str(e)}")
 
-    _gravar_celulas_pendentes("fim da Fase 1")
-
-    # 2. VARREDURA POR PESQUISAS NOVAS
-    print("\n--- Fase 2: Varredura de Mídia por Pesquisas Novas ---")
-    pesquisas_novas = agente_buscar_pesquisas_dia(gemini_client)
-    print(f"O Gemini identificou {len(pesquisas_novas)} citação(ões) de pesquisa hoje.")
-
-    for p in pesquisas_novas:
-        if len(linhas_novas) >= LOTE_LINHAS_NOVAS:
-            _gravar_linhas_novas("lote parcial Fase 2")
-        if not isinstance(p, dict):
-            continue
-        registro = str(p.get("registro") or "").strip()
-        cargos = _cargos_monitorados(p.get("cargo", ""))
-        if not registro or not cargos:
-            continue
-
-        for idx_cargo, cargo in enumerate(cargos):
-            chave = _chave_fila(registro, cargo, p.get("uf", ""))
-            if chave in registros_existentes:
-                continue
-
-            print(f"Nova descoberta! {registro} / {cargo} - {p.get('instituto')} - {p.get('uf')}")
-            link_drive_final = ""
-            origem = p.get("origem_texto", "")
-            situacao = ""
-            pode_usar_link = len(cargos) == 1 or idx_cargo == 0
-
-            if not pode_usar_link:
-                origem = "separado de descoberta multicargo; buscar fonte específica"
-            elif _fonte_video(p.get("link", "")):
-                situacao = "nao"
-                origem = f"fonte é vídeo, aguardando relatório/matéria. Fonte: {p.get('link')}"
-                pendentes_finais.append(f"{registro} / {cargo} (NOVO) - {origem}")
-            elif p.get("tipo") == "paywall":
-                situacao = "paywall"
-                origem = f"Paywall detectado. Fonte: {p.get('link')}"
-                pendentes_finais.append(f"{registro} / {cargo} (NOVO) - {origem}")
-            elif p.get("link"):
-                try:
-                    pdf_bytes, situacao = baixar_pdf_ou_gerar_headless(
-                        p.get("link"), registro, p.get("uf", ""), p.get("instituto", ""), gemini_client)
-                    if not pdf_bytes or pdf_bytes[:4] != b"%PDF":
-                        situacao = "bloqueado"
-                    if situacao in SITUACOES_PENDENTES:
-                        origem = f"verificar fonte{_nota_conferencia(situacao)}. Fonte: {p.get('link')}"
-                        pendentes_finais.append(f"{registro} / {cargo} (NOVO) - {origem}")
-                    else:
-                        pasta_id = resolver_pasta_drive(creds, cargo, p.get("uf", ""))
-                        nome_pdf = normalizar_nome_arquivo(registro, str(p.get("data_divulgacao", "")), cargo)
-                        link_drive_final = fazer_upload_drive(creds, pasta_id, nome_pdf, pdf_bytes)
-                        origem = (origem + _nota_conferencia(situacao)).strip()
-                        pdfs_salvos += 1
-                except Exception as e:
-                    situacao = "erro_tecnico"
-                    origem = f"Erro no PDF: {str(e)}. Fonte: {p.get('link')}"
-                    pendentes_finais.append(f"{registro} / {cargo} (NOVO) - {origem}")
-
-            valores = {
-                "registro": registro,
-                "cargo": cargo,
-                "uf": p.get("uf", ""),
-                "instituto": p.get("instituto", ""),
-                "data_divulgacao": p.get("data_divulgacao", ""),
-                "link": link_drive_final,
-                COL_ORIGEM_LINK: origem,
-                COL_NIVEL_CONFERENCIA: situacao,
-            }
-            linhas_novas.append([valores.get(c, "") for c in header])
-            registros_existentes.add(chave)
-
     _gravar_celulas_pendentes("fim da execução")
-    _gravar_linhas_novas("fim da execução")
 
-    # Aplica/estende o checkbox 'conferido' até a última linha com pesquisa. Roda
-    # depois de todos os appends, então cresce junto com a fila (sem teto fixo e
-    # sem checkbox vazio sobrando embaixo).
+    # A fila de relatorios é populada só pelo pesquisas.py (a partir do PesqEle do
+    # TSE, fonte oficial). O atualiza_relatorios NÃO adiciona linhas: só preenche o
+    # link das que já existem. Antes havia uma "Fase 2" que buscava pesquisas novas
+    # na web e anexava linhas, mas isso duplicava (UF em sigla vs por extenso) e
+    # trazia lixo sem registro; foi removida de propósito.
+
+    # Aplica/estende o checkbox 'conferido' até a última linha com pesquisa (sem
+    # teto fixo e sem checkbox vazio sobrando embaixo).
     _ativar_checkbox(ws, COL_CONFERIDO, header, ate_linha=_ultima_linha_com_registro(ws))
 
     hoje_fmt = datetime.now(BRT).strftime("%d/%m/%Y")
     print(f"\n--- Relatório de Automação – {hoje_fmt} ---")
     print(f"* PDFs salvos no Drive: {pdfs_salvos}")
     print(f"* Links preenchidos em linhas existentes: {links_preenchidos}")
-    print(f"* Linhas novas adicionadas: {len(linhas_novas)}")
     if pendentes_finais:
         print("* Registros que seguem pendentes:")
         for pend in pendentes_finais:
