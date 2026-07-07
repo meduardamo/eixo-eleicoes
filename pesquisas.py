@@ -83,9 +83,11 @@ POLLING_RESULTADOS_COLS = [
 ]
 
 
-def _ativar_checkbox(ws, coluna, header, ate_linha=2000):
-    """Transforma a coluna em checkbox real do Sheets (TRUE/FALSE), da linha 2 até ate_linha."""
-    if coluna not in header:
+def _ativar_checkbox(ws, coluna, header, ate_linha):
+    """Transforma a coluna em checkbox real do Sheets (TRUE/FALSE), da linha 2 até
+    ate_linha (última linha COM pesquisa). Sem linha de dados, não faz nada, pra não
+    espalhar checkbox vazio nas linhas de baixo."""
+    if coluna not in header or ate_linha < 2:
         return
     col_i = header.index(coluna) + 1
     intervalo = f"{rowcol_to_a1(2, col_i)}:{rowcol_to_a1(ate_linha, col_i)}"
@@ -100,8 +102,7 @@ def _normalizar_cabecalho(ws, cabecalho):
     valores = ws.get_all_values()
     if not valores:
         ws.update(range_name="A1", values=[cabecalho])
-        if "conferido" in cabecalho:
-            _ativar_checkbox(ws, "conferido", cabecalho)
+        # sem dados ainda: o checkbox nasce junto com as pesquisas (no atualiza_relatorios)
         return cabecalho[:]
 
     atual = valores[0]
@@ -128,8 +129,9 @@ def _normalizar_cabecalho(ws, cabecalho):
     if ws.col_count < len(alvo):
         ws.add_cols(len(alvo) - ws.col_count)
     ws.update(range_name="A1", values=novos, value_input_option="RAW")
+    # coluna conferido recém-criada: aplica o checkbox só nas linhas que já têm pesquisa
     if "conferido" in alvo and "conferido" not in idx:
-        _ativar_checkbox(ws, "conferido", alvo)
+        _ativar_checkbox(ws, "conferido", alvo, ate_linha=len(valores))
     return alvo
 
 
