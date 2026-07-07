@@ -75,11 +75,14 @@ PDF_LINK_HINTS = (
     "relatorio", "relatório", "resultado", "pesquisa"
 )
 IMAGE_LINK_HINTS = ("image", "img", "foto", "photo", "thumb", "media", "wp-content/uploads")
+# Fontes de vídeo/rede social não trazem o relatório em texto ou PDF; descartar
+# como fonte (o Gemini às vezes devolve um vídeo do YouTube sobre a pesquisa).
+FONTES_VIDEO = ("youtube.com", "youtu.be", "tiktok.com", "vimeo.com", "dailymotion.com")
 MAX_PDF_CANDIDATOS = 80
 MAX_IMAGENS_OCR = int(os.getenv("MAX_IMAGENS_OCR", "40"))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(12 * 1024 * 1024)))
 CHROME_VIRTUAL_TIME_MS = int(os.getenv("CHROME_VIRTUAL_TIME_MS", "12000"))
-SITUACOES_PENDENTES = {"nao", "provavel", "paywall", "bloqueado", "erro_chrome"}
+SITUACOES_PENDENTES = {"nao", "provavel", "teaser", "paywall", "bloqueado", "erro_chrome"}
 PAYWALL_MARKERS = (
     "assine para continuar", "assine para ler", "conteúdo exclusivo para assinantes",
     "conteudo exclusivo para assinantes", "exclusivo para assinantes",
@@ -127,9 +130,11 @@ def _garantir_coluna(ws, header, nome):
     return novo
 
 
-def _ativar_checkbox(ws, coluna, header, ate_linha=2000):
-    """Transforma a coluna em checkbox real do Sheets (TRUE/FALSE), da linha 2 até ate_linha."""
-    if coluna not in header:
+def _ativar_checkbox(ws, coluna, header, ate_linha):
+    """Transforma a coluna em checkbox real do Sheets (TRUE/FALSE), da linha 2 até
+    ate_linha (última linha COM pesquisa). Sem linha de dados, não faz nada, pra não
+    espalhar checkbox vazio nas linhas de baixo."""
+    if coluna not in header or ate_linha < 2:
         return
     col_i = header.index(coluna) + 1
     intervalo = f"{rowcol_to_a1(2, col_i)}:{rowcol_to_a1(ate_linha, col_i)}"
@@ -139,12 +144,23 @@ def _ativar_checkbox(ws, coluna, header, ate_linha=2000):
         print(f"[AVISO] não deu pra criar o checkbox de '{coluna}': {e}")
 
 
+def _ultima_linha_com_registro(ws):
+    """Índice (1-based) da última linha que tem registro preenchido. Serve pra
+    limitar o checkbox ao range de dados real, sem sobrar checkbox vazio embaixo."""
+    col_a = ws.col_values(1)
+    ultima = 1
+    for idx, val in enumerate(col_a, start=1):
+        if idx > 1 and str(val).strip():
+            ultima = idx
+    return ultima
+
+
 def _normalizar_cabecalho_relatorios(ws):
     """Garante a ordem canônica da fila sem perder dados de colunas antigas."""
     valores = ws.get_all_values()
     if not valores:
         ws.update(range_name="A1", values=[CABECALHO_RELATORIOS])
-        _ativar_checkbox(ws, COL_CONFERIDO, CABECALHO_RELATORIOS)
+        # sem dados ainda: o checkbox nasce junto com as pesquisas, no fim do run
         return CABECALHO_RELATORIOS[:]
 
     atual = valores[0]
@@ -171,8 +187,9 @@ def _normalizar_cabecalho_relatorios(ws):
     if ws.col_count < len(alvo):
         ws.add_cols(len(alvo) - ws.col_count)
     ws.update(range_name="A1", values=novos, value_input_option="RAW")
+    # coluna conferido recém-criada: aplica o checkbox só nas linhas que já têm pesquisa
     if COL_CONFERIDO in alvo and COL_CONFERIDO not in idx:
-        _ativar_checkbox(ws, COL_CONFERIDO, alvo)
+        _ativar_checkbox(ws, COL_CONFERIDO, alvo, ate_linha=len(valores))
     return alvo
 
 
@@ -281,9 +298,11 @@ def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, d
     ESTRATÉGIA DE BUSCA E REGRAS CRÍTICAS:
     1. FONTES: Priorize o site oficial do instituto (ex: paranapesquisas.com.br, realtimebigdata.com.br, eleicoes26.institutoverita.com.br). Se não houver, busque cobertura jornalística aberta (Poder360, G1, CNN, Gazeta do Povo, Metrópoles, blogs locais).
     2. PROIBIDO TSE: NÃO retorne links do sistema PesqEle do TSE ou PDFs que sejam apenas o "Recibo de Registro/Questionário". O alvo é o relatório com os RESULTADOS (gráficos, intenção de voto).
+    2b. PROIBIDO VÍDEO: NÃO retorne links de YouTube, TikTok, Vimeo ou qualquer vídeo. Precisamos de PDF, matéria de site ou imagem do relatório, algo com texto/números; vídeo não serve.
     3. FALSO PAYWALL: Se a primeira fonte encontrada for paga (Estadão, Folha, O Globo), ESCARAFUNCHE a internet buscando fontes abertas secundárias sobre a mesma pesquisa. Retorne o paywall apenas como último recurso.
     4. ALUCINAÇÃO DE DATA: Só aceite matérias ou relatórios que citem dados de 2026. Ignore notícias velhas de 2022 ou 2024.
     5. CARGO CERTO: A fonte precisa trazer números do cargo pedido ({cargo}). Se o mesmo registro tiver matérias separadas para Governador e Senador, retorne a matéria do cargo pedido. Não aceite uma matéria apenas de Governador para uma linha de Senador, nem o contrário.
+    6. IGNORE TEASERS: Descarte matérias que dizem "vai ser divulgada", "será marcada pela divulgação", "está prevista para", "ainda vai sair" ou "foi registrada". Mesmo que citem o registro {registro}, elas não valem se não trouxerem os números da pesquisa. Só aceite fonte com resultado JÁ publicado.
 
     Retorne APENAS um JSON válido (sem tags markdown de bloco de código):
     {{
@@ -314,6 +333,7 @@ def agente_buscar_pesquisas_dia(gemini_client):
     REGRAS DE OURO:
     1. IGNORE TEASERS: Descarte matérias que dizem "vai ser divulgada", "foi registrada" ou "está em campo". Colete apenas resultados JÁ publicados com números de intenção de voto ou rejeição.
     2. ALUCINAÇÃO DE ANO: Filtre rigorosamente pesquisas passadas (2022/2024). Queremos apenas 2026.
+    2b. PROIBIDO VÍDEO: NÃO retorne links de YouTube, TikTok, Vimeo ou qualquer vídeo. Só PDF, matéria de site ou imagem do relatório; vídeo não tem os números em texto e não serve.
     3. REGISTRO DUPLO: Se uma pesquisa estadual testou Governador e Presidente, ela geralmente tem um registro Estadual (UF-00000/2026) e um Nacional (BR-00000/2026). Se a matéria citar ambos, crie DOIS itens separados na lista JSON abaixo.
     4. CARGOS MONITORADOS: Retorne apenas pesquisas para Presidente, Governador ou Senador. Ignore Deputado Federal, Deputado Estadual e outros cargos.
 
@@ -364,6 +384,13 @@ def _texto_pdf(pdf_bytes):
 
 def _url_tem_extensao(url, exts):
     return urlparse(str(url or "")).path.lower().endswith(exts)
+
+
+def _fonte_video(url):
+    """True se o link é de plataforma de vídeo (YouTube, TikTok etc.): não tem
+    relatório em texto/PDF pra conferir, não adianta baixar."""
+    host = urlparse(str(url or "")).netloc.lower()
+    return any(host == d or host.endswith("." + d) for d in FONTES_VIDEO)
 
 
 def _headers_com_referer(referer=""):
@@ -479,7 +506,39 @@ def _texto_imagens_da_pagina(gemini_client, urls, registro, uf, instituto, refer
     return "\n".join(partes)
 
 
+def _norm_espacos(s):
+    """Minúsculo e sem acento, mas preserva espaço (pra casar frase com \\s+)."""
+    s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"\s+", " ", s)
+
+
+TEASER_RE = re.compile(
+    r"ser[ao]o?\s+divulgad"                       # será divulgada / serão divulgadas
+    r"|ser[ao]\s+marcad\w*\s+pela\s+divulga"       # será marcada pela divulgação
+    r"|va[oi]\s+divulgar"                          # vai/vão divulgar
+    r"|ainda\s+vai\s+sair|vai\s+sair\s+ainda"      # ainda vai sair
+    r"|est[a]o?\s+previst\w*\s+para"               # está/estão previstas para
+    r"|deve[m]?\s+divulgar"                        # deve(m) divulgar
+    r"|ainda\s+nao\s+saiu"                         # ainda não saiu
+    r"|aguard\w*\s+(o\s+)?resultado"               # aguarde o resultado
+    r"|ser[ao]o?\s+revelad"                        # será/serão revelados
+)
+
+
+def _eh_teaser(texto):
+    """Matéria que só anuncia pesquisa futura ('será marcada pela divulgação',
+    'ainda vai sair', 'está prevista para'), sem trazer os números de fato. O
+    registro pode até aparecer numa lista de pesquisas previstas pra semana,
+    mas o conteúdo não é o resultado."""
+    if not TEASER_RE.search(_norm_espacos(texto)):
+        return False
+    qtd_percentuais = len(re.findall(r"\d{1,3}[.,]?\d*\s?%", texto or ""))
+    return qtd_percentuais < 3
+
+
 def _confere_texto(texto, registro, uf, instituto):
+    if _eh_teaser(texto):
+        return "teaser"
     tn = _norm(texto)
     if _norm(registro) and _norm(registro) in tn:            # registro é a prova forte
         return "ok"
@@ -497,6 +556,7 @@ def _confere_texto(texto, registro, uf, instituto):
 
 def confere_pesquisa(pdf_bytes, registro, uf, instituto):
     """'ok' se achou o registro; 'provavel' se bate UF+instituto+2026;
+    'teaser' se a matéria só anuncia divulgação futura sem números;
     'nao' se claramente não é; 'imagem' se não dá pra conferir."""
     return _confere_texto(_texto_pdf(pdf_bytes), registro, uf, instituto)
 
@@ -517,6 +577,8 @@ def _nota_conferencia(situacao):
         return " (imagem, não conferido)"
     if situacao == "provavel":
         return " (conferência fraca: sem registro TSE)"
+    if situacao == "teaser":
+        return " (matéria só anuncia divulgação futura, sem números ainda)"
     if situacao == "paywall":
         return " (paywall/conteúdo não entregue)"
     if situacao == "erro_chrome":
@@ -535,6 +597,8 @@ def _mensagem_pendente(registro, situacao):
         return f"{registro} - conteúdo bloqueado/incompleto; deixado pendente"
     if situacao == "provavel":
         return f"{registro} - registro TSE não apareceu no texto (só bateu UF+instituto+2026); deixado pendente"
+    if situacao == "teaser":
+        return f"{registro} - matéria encontrada só anuncia que a pesquisa vai sair, sem números ainda; deixado pendente"
     return f"{registro} - conteúdo não confere com a pesquisa, deixado pendente"
 
 
@@ -1123,7 +1187,7 @@ def baixar_pdf_ou_gerar_headless(url, registro="", uf="", instituto="", gemini_c
     o maior (mais completo). Se nada servir, renderiza a notícia com Chrome,
     limpa a página e imprime um PDF de leitura. Imagens internas ajudam na
     conferência por OCR/visão. Retorna (pdf_bytes, situacao), onde situacao é
-    'ok'/'provavel'/'imagem'/'nao'/'paywall'/'bloqueado'/'erro_chrome'.
+    'ok'/'provavel'/'teaser'/'imagem'/'nao'/'paywall'/'bloqueado'/'erro_chrome'.
     """
     htmls = []
     pdfs_selenium = []
@@ -1391,6 +1455,12 @@ def atualizar_planilha():
     pendentes_finais = []
     celulas_para_atualizar = []
 
+    # Grava em lotes ao longo da rodada, não só no fim: se o run cair no meio
+    # (timeout, Gemini travar), o que já foi baixado e escrito fica salvo, em vez
+    # de perder tudo e ter que refazer download/Gemini na próxima rodada.
+    LOTE_CELULAS = 60      # ~20 linhas (cada linha escreve link/status/nivel)
+    LOTE_LINHAS_NOVAS = 30
+
     def _gravar_celulas_pendentes(contexto=""):
         if not celulas_para_atualizar:
             return
@@ -1399,9 +1469,19 @@ def atualizar_planilha():
         ws.update_cells(celulas_para_atualizar, value_input_option="USER_ENTERED")
         celulas_para_atualizar.clear()
 
+    def _gravar_linhas_novas(contexto=""):
+        if not linhas_novas:
+            return
+        detalhe = f" ({contexto})" if contexto else ""
+        print(f"Anexando {len(linhas_novas)} linha(s) nova(s) à fila{detalhe}...")
+        ws.append_rows(linhas_novas, value_input_option="USER_ENTERED")
+        linhas_novas.clear()
+
     # 1. PROCESSAR LINHAS PENDENTES (SEM LINK)
     print(f"\n--- Fase 1: Processando Pendentes ({len(dados)} linhas analisadas) ---")
     for i, linha in enumerate(dados, start=2):  # +2: sheets começa em 1 e tem cabeçalho
+        if len(celulas_para_atualizar) >= LOTE_CELULAS:
+            _gravar_celulas_pendentes("lote parcial Fase 1")
         registro = str(linha.get("registro", "")).strip()
         link_atual = str(linha.get("link", "")).strip()
         if not registro:
@@ -1409,13 +1489,17 @@ def atualizar_planilha():
         if _cargo_norm(linha.get("cargo", "")) not in CARGOS_MONITORADOS:
             continue
         if link_atual:
-            nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")), linha.get("cargo", ""))
-            if renomear_arquivo_drive_por_link(creds, link_atual, nome_pdf):
-                print(f"  [OK] Arquivo renomeado no Drive: {nome_pdf}")
+            # Só na primeira vez que a linha aparece já com link (origem_link ainda
+            # vazio): normaliza o nome no Drive e carimba. Depois de carimbada, pula
+            # nas próximas rodadas, senão seria 1 GET no Drive por linha toda rodada
+            # só pra reconferir um nome que já está certo.
             if not str(linha.get(COL_ORIGEM_LINK, "")).strip():
+                nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")), linha.get("cargo", ""))
+                if renomear_arquivo_drive_por_link(creds, link_atual, nome_pdf):
+                    print(f"  [OK] Arquivo renomeado no Drive: {nome_pdf}")
                 celulas_para_atualizar.append(gspread.Cell(i, col_status, "link já existente na fila"))
-            if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
-                celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "link_existente"))
+                if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
+                    celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "link_existente"))
             continue
 
         print(f"Buscando: {registro} / {linha.get('cargo', '')}...")
@@ -1433,6 +1517,12 @@ def atualizar_planilha():
         link_fonte = resultado.get("link")
         if not link_fonte:
             pendentes_finais.append(f"{registro} - Nenhum relatório ou matéria encontrada na web hoje.")
+            continue
+
+        if _fonte_video(link_fonte):
+            pendentes_finais.append(f"{registro} - Fonte é vídeo ({link_fonte}); sem relatório legível, deixado pendente.")
+            celulas_para_atualizar.append(gspread.Cell(i, col_status, "fonte é vídeo, aguardando relatório/matéria"))
+            celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "nao"))
             continue
 
         try:
@@ -1471,6 +1561,8 @@ def atualizar_planilha():
     print(f"O Gemini identificou {len(pesquisas_novas)} citação(ões) de pesquisa hoje.")
 
     for p in pesquisas_novas:
+        if len(linhas_novas) >= LOTE_LINHAS_NOVAS:
+            _gravar_linhas_novas("lote parcial Fase 2")
         if not isinstance(p, dict):
             continue
         registro = str(p.get("registro") or "").strip()
@@ -1491,6 +1583,10 @@ def atualizar_planilha():
 
             if not pode_usar_link:
                 origem = "separado de descoberta multicargo; buscar fonte específica"
+            elif _fonte_video(p.get("link", "")):
+                situacao = "nao"
+                origem = f"fonte é vídeo, aguardando relatório/matéria. Fonte: {p.get('link')}"
+                pendentes_finais.append(f"{registro} / {cargo} (NOVO) - {origem}")
             elif p.get("tipo") == "paywall":
                 situacao = "paywall"
                 origem = f"Paywall detectado. Fonte: {p.get('link')}"
@@ -1529,8 +1625,12 @@ def atualizar_planilha():
             registros_existentes.add(chave)
 
     _gravar_celulas_pendentes("fim da execução")
-    if linhas_novas:
-        ws.append_rows(linhas_novas, value_input_option="USER_ENTERED")
+    _gravar_linhas_novas("fim da execução")
+
+    # Aplica/estende o checkbox 'conferido' até a última linha com pesquisa. Roda
+    # depois de todos os appends, então cresce junto com a fila (sem teto fixo e
+    # sem checkbox vazio sobrando embaixo).
+    _ativar_checkbox(ws, COL_CONFERIDO, header, ate_linha=_ultima_linha_com_registro(ws))
 
     hoje_fmt = datetime.now(BRT).strftime("%d/%m/%Y")
     print(f"\n--- Relatório de Automação – {hoje_fmt} ---")
