@@ -1192,7 +1192,13 @@ def atualizar_planilha():
     for i, linha in enumerate(dados, start=2):  # +2: sheets começa em 1 e tem cabeçalho
         registro = str(linha.get("registro", "")).strip()
         link_atual = str(linha.get("link", "")).strip()
-        if not registro or link_atual:
+        if not registro:
+            continue
+        if link_atual:
+            if not str(linha.get(COL_ORIGEM_LINK, "")).strip():
+                celulas_para_atualizar.append(gspread.Cell(i, col_status, "link já existente na fila"))
+            if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
+                celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "link_existente"))
             continue
 
         print(f"Buscando: {registro}...")
