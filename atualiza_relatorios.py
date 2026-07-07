@@ -152,6 +152,22 @@ def _normalizar_cabecalho_relatorios(ws):
     return alvo
 
 
+def _extrair_json_objeto(texto):
+    bruto = (texto or "").strip()
+    bruto = re.sub(r"^```json\s*", "", bruto, flags=re.I)
+    bruto = re.sub(r"^```\s*", "", bruto)
+    bruto = re.sub(r"\s*```$", "", bruto)
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", bruto):
+        try:
+            obj, _ = decoder.raw_decode(bruto[match.start():])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            continue
+    raise ValueError("JSON não encontrado na resposta do Gemini")
+
+
 def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, data):
     prompt = f"""
     Você é um pesquisador sênior de dados eleitorais da Eixo. Localize a publicação do relatório completo de resultados da seguinte pesquisa eleitoral de 2026:
@@ -170,11 +186,12 @@ def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, d
       "origem_texto": "Descrição breve (ex: 'Relatório no site do instituto' ou 'Matéria G1')"
     }}
     """
-    config = types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1, tools=[types.Tool(google_search=types.GoogleSearch())])
-    res = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=config)
     try:
-        return json.loads((getattr(res, "text", "") or "").strip().replace("```json", "").replace("```", ""))
-    except Exception:
+        config = types.GenerateContentConfig(temperature=0.1, tools=[types.Tool(google_search=types.GoogleSearch())])
+        res = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=config)
+        return _extrair_json_objeto(getattr(res, "text", "") or "")
+    except Exception as e:
+        print(f"  [AVISO] Gemini/search falhou para {registro}: {str(e)[:200]}")
         return {"tipo": "nao_encontrado"}
 
 
@@ -209,11 +226,12 @@ def agente_buscar_pesquisas_dia(gemini_client):
       ]
     }}
     """
-    config = types.GenerateContentConfig(response_mime_type="application/json", temperature=0.15, tools=[types.Tool(google_search=types.GoogleSearch())])
-    res = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=config)
     try:
-        return json.loads((getattr(res, "text", "") or "").strip().replace("```json", "").replace("```", "")).get("pesquisas", [])
-    except Exception:
+        config = types.GenerateContentConfig(temperature=0.15, tools=[types.Tool(google_search=types.GoogleSearch())])
+        res = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=config)
+        return _extrair_json_objeto(getattr(res, "text", "") or "").get("pesquisas", [])
+    except Exception as e:
+        print(f"  [AVISO] Varredura Gemini/search falhou: {str(e)[:200]}")
         return []
 
 
