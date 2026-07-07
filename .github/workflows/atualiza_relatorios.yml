@@ -3,7 +3,8 @@ name: atualiza-relatorios
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 23 * * *'   # 18:00 BRT (ajuste como quiser)
+    # GitHub Actions usa UTC; Recife = UTC-3.
+    - cron: '0 21 * * *'   # 18:00 Recife, antes da rodada das 20:00
 
 jobs:
   run:
@@ -32,6 +33,11 @@ jobs:
         run: |
           echo "CHROME_BIN=${{ steps.setup-chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
           "${{ steps.setup-chrome.outputs.chrome-path }}" --version
+
+      - name: Remover chromedriver incompatível do runner
+        run: |
+          sudo rm -f /usr/bin/chromedriver
+          which chromedriver || true
 
       - name: Instalar dependências
         run: |
