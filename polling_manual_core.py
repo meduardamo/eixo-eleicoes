@@ -263,9 +263,12 @@ def instituto_canonico(nome):
 def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "",
                                  escopo: dict | None = None,
                                  pdf_bytes: bytes | None = None) -> dict:
-    """Extrai via Gemini. Com texto_fonte usa só texto (barato). Se texto_fonte vier
-    vazio e pdf_bytes for passado, manda o PDF inteiro pro Gemini (visão), o que
-    cobre relatório escaneado/sem camada de texto."""
+    """Extrai via Gemini.
+
+    Quando houver texto_fonte e pdf_bytes, envia ambos: o texto ajuda no foco e
+    o PDF visual cobre tabelas/gráficos/imagens que a extração textual não pegou.
+    Se texto_fonte vier vazio, o PDF sozinho cobre relatório escaneado.
+    """
     escopo = escopo or {}
     restricoes = []
     for chave, rotulo in (("cargo", "cargo"), ("uf", "uf"), ("turno", "turno"), ("instituto", "instituto")):
@@ -336,7 +339,19 @@ FORMATO:
 }}
 """.strip()
 
-    if texto_fonte:
+    if texto_fonte and pdf_bytes:
+        from google.genai import types
+        contents = [
+            prompt + (
+                "\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA:\n"
+                f"{texto_fonte}\n\n"
+                "PDF ANEXO: confira visualmente as páginas, inclusive tabelas, gráficos "
+                "e imagens. Se algum número aparecer só no anexo visual, extraia do anexo. "
+                "Se houver conflito entre texto extraído e visual do PDF, prefira o PDF."
+            ),
+            types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+        ]
+    elif texto_fonte:
         contents = prompt + f"\n\nTEXTO FONTE:\n{texto_fonte}"
     elif pdf_bytes:
         from google.genai import types
