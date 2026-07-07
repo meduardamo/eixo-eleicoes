@@ -2,7 +2,9 @@ name: alerta-pesquisas
 
 on:
   schedule:
-    - cron: '0 07 * * *'   # 08:00 BRT (UTC-3)
+    # GitHub usa UTC; Recife = UTC-3. Minuto fora do :00 porque o :00 é quando o
+    # GitHub Actions mais enfileira e atrasa a rodada agendada.
+    - cron: '17 7 * * *'   # 04:17 BRT
   workflow_dispatch:
 
 jobs:
