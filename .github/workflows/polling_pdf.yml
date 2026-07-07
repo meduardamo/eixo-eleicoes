@@ -3,10 +3,12 @@ name: polling-pdf-extrair-topline
 on:
   workflow_dispatch:
   schedule:
-    # GitHub Actions usa UTC; Recife = UTC-3.
-    - cron: '0 14 * * *'   # 11:00 Recife
-    - cron: '0 19 * * *'   # 16:00 Recife
-    - cron: '0 23 * * *'   # 20:00 Recife
+    # GitHub Actions usa UTC; Recife = UTC-3. 3 rodadas: pega o que foi marcado como
+    # conferido a qualquer hora do dia. Minuto fora do :00 pra reduzir o atraso de
+    # enfileiramento do GitHub.
+    - cron: '17 14 * * *'   # 11:17 Recife
+    - cron: '17 19 * * *'   # 16:17 Recife
+    - cron: '17 23 * * *'   # 20:17 Recife
 
 jobs:
   run:
