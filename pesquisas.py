@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 import gspread
@@ -57,6 +58,13 @@ CABECALHOS = {
                            "scenario_label", "candidato", "partido", "candidato_partido",
                            "tipo", "percentual", "poll_id", "scenario_id", "fonte_url",
                            "horario_raspagem", "origem"],
+}
+
+CARGOS_MONITORADOS = ("presidente", "governador", "senador")
+CARGO_ROTULO = {
+    "presidente": "Presidente",
+    "governador": "Governador",
+    "senador": "Senador",
 }
 
 
@@ -115,7 +123,8 @@ def _aba(sh, nome):
     if not ws.row_values(1):
         ws.update(range_name="A1", values=[header])
     elif nome == "relatorios":
-        _normalizar_cabecalho(ws, header)
+        header = _normalizar_cabecalho(ws, header)
+        _separar_linhas_multicargo(ws, header)
     return ws
 
 
@@ -138,6 +147,94 @@ def _data_iso(valor):
     if m:
         return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
     return s[:10]
+
+
+def _sem_acento(valor):
+    return unicodedata.normalize("NFKD", str(valor or "")).encode("ascii", "ignore").decode()
+
+
+def _cargo_norm(valor):
+    s = _sem_acento(valor).strip().lower()
+    for cargo in CARGOS_MONITORADOS:
+        if cargo in s:
+            return cargo
+    return s
+
+
+def _cargos_monitorados(valor):
+    s = _sem_acento(valor).lower()
+    cargos = []
+    for cargo in CARGOS_MONITORADOS:
+        if cargo in s and cargo not in cargos:
+            cargos.append(cargo)
+    return [CARGO_ROTULO[c] for c in cargos]
+
+
+def _chave_fila(registro, cargo, uf):
+    return (
+        re.sub(r"[^A-Z0-9]", "", str(registro or "").upper()),
+        _cargo_norm(cargo),
+        _sem_acento(uf).strip().upper(),
+    )
+
+
+def _limpar_status_extracao(row):
+    for coluna in (
+        "link", "nivel_conferencia",
+        "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
+        "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
+    ):
+        row[coluna] = ""
+    row["origem_link"] = "separado de linha multicargo; buscar fonte específica"
+    return row
+
+
+def _separar_linhas_multicargo(ws, header):
+    """Migra a fila para uma linha por registro+cargo+UF.
+
+    Quando uma linha antiga tinha "Governador, Senador", a original fica com o
+    primeiro cargo monitorado e as demais viram novas linhas sem link. Isso evita
+    que uma matéria parcial de governador cubra senador por engano.
+    """
+    if "cargo" not in header or "registro" not in header:
+        return
+
+    registros = ws.get_all_records()
+    existentes = {
+        _chave_fila(r.get("registro"), r.get("cargo"), r.get("uf"))
+        for r in registros
+        if str(r.get("registro", "")).strip()
+    }
+    col_cargo = header.index("cargo") + 1
+    updates, novas = [], []
+
+    for row_i, r in enumerate(registros, start=2):
+        cargos = _cargos_monitorados(r.get("cargo"))
+        if not cargos:
+            continue
+
+        primeiro = cargos[0]
+        if str(r.get("cargo", "")).strip() != primeiro:
+            updates.append(gspread.Cell(row_i, col_cargo, primeiro))
+        if len(cargos) <= 1:
+            continue
+        existentes.add(_chave_fila(r.get("registro"), primeiro, r.get("uf")))
+
+        for cargo in cargos[1:]:
+            chave = _chave_fila(r.get("registro"), cargo, r.get("uf"))
+            if chave in existentes:
+                continue
+            novo = {c: r.get(c, "") for c in header}
+            novo["cargo"] = cargo
+            _limpar_status_extracao(novo)
+            novas.append([novo.get(c, "") for c in header])
+            existentes.add(chave)
+
+    if updates:
+        ws.update_cells(updates, value_input_option="RAW")
+    if novas:
+        ws.append_rows(novas, value_input_option="RAW")
+        print(f"{len(novas)} linha(s) multicargo separada(s) na fila de relatórios.", flush=True)
 
 
 def _garantir_coluna(ws, header, nome):
@@ -268,27 +365,34 @@ def _enviar(subject, html_body):
 
 
 def _preencher_fila(pesquisas):
-    """Cria na aba 'relatorios' uma linha por pesquisa de hoje (link fica manual)."""
+    """Cria na aba 'relatorios' uma linha por registro+cargo monitorado."""
     if not RELATORIOS_ID:
         print("SPREADSHEET_ID_RELATORIOS não definido; pulando preenchimento da fila.")
         return
     fila = _aba(_sheets().open_by_key(RELATORIOS_ID), "relatorios")
     header = fila.row_values(1)
-    existentes = {str(r.get("registro", "")).strip() for r in fila.get_all_records()}
+    existentes = {
+        _chave_fila(r.get("registro"), r.get("cargo"), r.get("uf"))
+        for r in fila.get_all_records()
+    }
     novas = []
     for p in pesquisas:
         reg = str(p.get("numero_identificacao", "")).strip()
-        if not reg or reg in existentes:
+        if not reg:
             continue
-        valores = {
-            "registro": reg,
-            "cargo": p.get("cargos", ""),
-            "uf": p.get("abrangencia", ""),
-            "instituto": p.get("empresa_contratada", ""),
-            "data_divulgacao": str(p.get("data_divulgacao", ""))[:10],
-        }
-        novas.append([valores.get(c, "") for c in header])
-        existentes.add(reg)
+        for cargo in _cargos_monitorados(p.get("cargos", "")):
+            chave = _chave_fila(reg, cargo, p.get("abrangencia", ""))
+            if chave in existentes:
+                continue
+            valores = {
+                "registro": reg,
+                "cargo": cargo,
+                "uf": p.get("abrangencia", ""),
+                "instituto": p.get("empresa_contratada", ""),
+                "data_divulgacao": str(p.get("data_divulgacao", ""))[:10],
+            }
+            novas.append([valores.get(c, "") for c in header])
+            existentes.add(chave)
     if novas:
         fila.append_rows(novas, value_input_option="RAW")
     print(f"{len(novas)} linha(s) adicionada(s) à fila de relatórios.")
@@ -318,8 +422,9 @@ PROMPT = (
     "Você é um analista de dados de pesquisas eleitorais da Eixo. Você recebe o PDF do "
     "relatório completo de uma pesquisa e extrai os cruzamentos por segmento.\n\n"
     "O relatório PODE conter mais de um cargo (presidente, governador, senador) no mesmo "
-    "documento, mesmo que só um esteja no título. Extraia os cenários de TODOS os cargos "
-    "que aparecerem, cada linha com o cargo correto.\n\n"
+    "documento, mesmo que só um esteja no título. Quando houver FOCO DE CARGO abaixo, "
+    "extraia APENAS esse cargo. Sem FOCO DE CARGO, extraia todos os cargos que aparecerem, "
+    "cada linha com o cargo correto.\n\n"
     "Extraia TRÊS listas, em JSON:\n\n"
     "1) voto_segmento: para CADA cenário de voto estimulado e CADA candidato, o percentual "
     "de voto quebrado por segmento demográfico. "
@@ -482,16 +587,22 @@ def cmd_extrair():
     updates, ok_regs, err_regs = [], [], []
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
 
-    def _bloco_canonico(uf):
-        """Listas canônicas dos TRÊS cargos da UF, pro prompt. Não se prende ao cargo
-        da fila: o relatório pode trazer cargos além do registrado. Presidente é
-        nacional; governador/senador vêm da UF (vazio quando não houver, ex: BRASIL)."""
+    print(f"Extrair segmentos: {len(linhas)} linha(s) na fila.", flush=True)
+
+    def _bloco_canonico(uf, cargo_fila):
+        """Lista canônica do cargo da linha; a fila agora é registro+cargo."""
         partes = []
-        for cargo in ("presidente", "governador", "senador"):
+        cargos = _cargos_monitorados(cargo_fila) or [cargo_fila]
+        partes.append(f"FOCO DE CARGO: extraia APENAS {', '.join(cargos)}.")
+        for cargo in cargos:
             cands, _ = _referencia(cargo, uf)
             if cands:
                 partes.append(f"CANDIDATOS CANÔNICOS ({cargo} {sigla_uf(uf)}):\n" + "\n".join(cands))
         return "\n\n".join(partes)
+
+    def _item_casa_cargo(item, cargo_fila):
+        cargo_item = _cargo_norm(item.get("cargo", ""))
+        return not cargo_item or cargo_item == _cargo_norm(cargo_fila)
 
     for i, r in enumerate(linhas, start=2):   # linha 1 = cabeçalho
         link = str(r.get("link", "")).strip()
@@ -501,8 +612,10 @@ def cmd_extrair():
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
             continue
         try:
+            print(f"linha {i} ({r.get('registro')} / {r.get('cargo')}): baixando PDF para segmentos...", flush=True)
             pdf = _baixar_pdf(link)
-            dados = extrair_do_pdf(pdf, extra=_bloco_canonico(r.get("uf")))
+            print(f"linha {i} ({r.get('registro')} / {r.get('cargo')}): PDF baixado ({len(pdf)} bytes), enviando ao Gemini...", flush=True)
+            dados = extrair_do_pdf(pdf, extra=_bloco_canonico(r.get("uf"), r.get("cargo")))
         except Exception as e:
             msg = str(e)
             updates.extend([gspread.Cell(i, col_err, msg[:300]),
@@ -515,7 +628,17 @@ def cmd_extrair():
         uf = sigla_uf(r.get("uf", ""))
         inst = instituto_canonico(r.get("instituto", ""))
         data_div = _data_iso(r.get("data_divulgacao", ""))
-        for v in dados.get("voto_segmento", []):
+        voto_filtrado = [v for v in dados.get("voto_segmento", []) if _item_casa_cargo(v, cargo_fila)]
+        rej_filtrada = [v for v in dados.get("rejeicao", []) if _item_casa_cargo(v, cargo_fila)]
+        aprov_filtrada = dados.get("aprovacao", []) if _cargo_norm(cargo_fila) in ("presidente", "governador") else []
+        if not (voto_filtrado or rej_filtrada or aprov_filtrada):
+            msg = f"nenhum dado encontrado para o cargo da linha ({cargo_fila})"
+            updates.extend([gspread.Cell(i, col_err, msg),
+                            gspread.Cell(i, col_ten, tentativas + 1)])
+            err_regs.append(f"{registro} {cargo_fila} [{msg}]")
+            print(f"linha {i} ({registro} / {cargo_fila}): {msg}", flush=True)
+            continue
+        for v in voto_filtrado:
             # cargo/turno da disputa daquele cenário (o Gemini identifica); se faltar,
             # cai no texto da fila, pra linha nunca ficar sem referência
             voto_novos.append([registro, v.get("cargo") or cargo_fila, v.get("turno", "t1"),
@@ -523,11 +646,11 @@ def cmd_extrair():
                                v.get("cenario", ""), v.get("candidato", ""),
                                v.get("tipo_segmento", ""), v.get("segmento", ""),
                                v.get("valor", "")])
-        for v in dados.get("rejeicao", []):
+        for v in rej_filtrada:
             rej_novos.append([registro, v.get("cargo") or cargo_fila, uf, inst, data_div,
                               v.get("candidato", ""), v.get("tipo_segmento", ""),
                               v.get("segmento", ""), v.get("valor", "")])
-        for v in dados.get("aprovacao", []):
+        for v in aprov_filtrada:
             aprov_novos.append([registro, cargo_fila, uf, inst, data_div,
                                 v.get("alvo", ""), v.get("resposta", ""),
                                 v.get("tipo_segmento", ""), v.get("segmento", ""),
@@ -535,10 +658,10 @@ def cmd_extrair():
         marcar.append(i)
         updates.append(gspread.Cell(i, col_err, ""))   # limpa erro de rodada anterior
         ok_regs.append(registro)
-        print(f"linha {i} ({registro}): "
-              f"{len(dados.get('voto_segmento', []))} voto, "
-              f"{len(dados.get('rejeicao', []))} rejeição, "
-              f"{len(dados.get('aprovacao', []))} aprovação")
+        print(f"linha {i} ({registro} / {cargo_fila}): "
+              f"{len(voto_filtrado)} voto, "
+              f"{len(rej_filtrada)} rejeição, "
+              f"{len(aprov_filtrada)} aprovação", flush=True)
 
     def _apenas_novas(ws, aba_nome, rows, chaves):
         """Descarta linhas que já existem na aba (protege contra reprocessamento
@@ -595,19 +718,19 @@ CARGOS_POLLING = {"presidente", "governador", "senador"}
 
 
 def _cargos_da_linha(valor):
-    cargos = []
-    for c in str(valor or "").split(","):
-        c = c.strip().lower()
-        if c in CARGOS_POLLING and c not in cargos:
-            cargos.append(c)
-    return cargos
+    return [_cargo_norm(c) for c in _cargos_monitorados(valor)]
 
 
 def _cargos_presentes(texto, cargo_fila):
-    """Cargos a extrair: os da fila MAIS os detectados no texto do PDF. Uma pesquisa
-    registrada só como presidente pode trazer cenários de governador/senador também.
-    Sem texto (PDF escaneado, vai por visão), tenta os três."""
-    cargos = set(_cargos_da_linha(cargo_fila))
+    """Cargos a extrair.
+
+    Com a fila separada por registro+cargo, respeita o cargo da linha. Só detecta
+    pelo texto quando a célula de cargo estiver vazia.
+    """
+    cargos_linha = _cargos_da_linha(cargo_fila)
+    if cargos_linha:
+        return cargos_linha
+    cargos = set()
     low = (texto or "").lower()
     if not low:
         return ["presidente", "governador", "senador"]
@@ -642,6 +765,7 @@ def cmd_topline():
     updates = []          # células a marcar (batch no fim, evita cota do Sheets)
     ok_regs, err_regs = [], []
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
+    print(f"Topline: {len(linhas)} linha(s) na fila.", flush=True)
 
     def _falha(row_i, registro, tentativas, msg):
         updates.extend([gspread.Cell(row_i, col_erro, msg[:300]),
@@ -658,6 +782,7 @@ def cmd_topline():
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
             continue
         try:
+            print(f"linha {i} ({registro_fila} / {r.get('cargo')}): baixando PDF para topline...", flush=True)
             pdf = _baixar_pdf(link)
             texto = extrair_texto_pdf_bytes(pdf)
         except Exception as e:
@@ -668,7 +793,9 @@ def cmd_topline():
             texto = ""
         cargos = _cargos_presentes(texto, r.get("cargo"))
         if not cargos:
+            _falha(i, registro_fila, tentativas, "cargo da linha vazio ou não monitorado")
             continue
+        print(f"linha {i} ({registro_fila} / {r.get('cargo')}): texto={len(texto)} caracteres; cargos={', '.join(cargos)}", flush=True)
 
         n_cen, avisos, houve_erro = 0, [], False
 
@@ -688,6 +815,7 @@ def cmd_topline():
                     escopo = {"cargo": cargo, "turno": turno}
                     if cargo != "presidente":   # governador/senador são estaduais; presidente
                         escopo["uf"] = r.get("uf", "")   # pode ser nacional (BR), deixa o Gemini decidir
+                    print(f"linha {i} ({registro_fila} / {r.get('cargo')}): extraindo topline {cargo}/{turno}...", flush=True)
                     payload = extrair_dados_polling_gemini(
                         texto, url_original=link, escopo=escopo,
                         pdf_bytes=pdf)
@@ -737,9 +865,11 @@ def cmd_topline():
                 todos_p.append(df_p)
                 todos_r.append(df_r)
                 n_cen += len(df_p)
+                print(f"linha {i} ({registro_fila} / {r.get('cargo')}) [{cargo}/{turno}]: {len(df_p)} cenário(s)", flush=True)
 
-        if n_cen == 0 and houve_erro:
-            _falha(i, registro_fila, tentativas, "todas as extrações falharam")
+        if n_cen == 0:
+            msg = "todas as extrações falharam" if houve_erro else f"nenhum cenário de topline encontrado para {r.get('cargo')}"
+            _falha(i, registro_fila, tentativas, msg)
             continue
         updates.extend([gspread.Cell(i, col_flag, "sim"),
                         gspread.Cell(i, col_data, agora),
