@@ -20,13 +20,14 @@ from datetime import datetime, timedelta, timezone
 import gspread
 import requests
 from google.oauth2.service_account import Credentials
+from gspread.utils import ValidationConditionType, rowcol_to_a1
 
 BRT = timezone(timedelta(hours=-3))
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 CABECALHO_RELATORIOS = [
     "registro", "cargo", "uf", "instituto", "data_divulgacao", "link",
-    "origem_link", "nivel_conferencia",
+    "origem_link", "nivel_conferencia", "conferido",
     "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
     "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
 ]
@@ -82,11 +83,25 @@ POLLING_RESULTADOS_COLS = [
 ]
 
 
+def _ativar_checkbox(ws, coluna, header, ate_linha=2000):
+    """Transforma a coluna em checkbox real do Sheets (TRUE/FALSE), da linha 2 até ate_linha."""
+    if coluna not in header:
+        return
+    col_i = header.index(coluna) + 1
+    intervalo = f"{rowcol_to_a1(2, col_i)}:{rowcol_to_a1(ate_linha, col_i)}"
+    try:
+        ws.add_validation(intervalo, ValidationConditionType.boolean, [])
+    except Exception as e:
+        print(f"[AVISO] não deu pra criar o checkbox de '{coluna}': {e}")
+
+
 def _normalizar_cabecalho(ws, cabecalho):
     """Garante a ordem canônica sem perder dados de colunas já existentes."""
     valores = ws.get_all_values()
     if not valores:
         ws.update(range_name="A1", values=[cabecalho])
+        if "conferido" in cabecalho:
+            _ativar_checkbox(ws, "conferido", cabecalho)
         return cabecalho[:]
 
     atual = valores[0]
@@ -113,6 +128,8 @@ def _normalizar_cabecalho(ws, cabecalho):
     if ws.col_count < len(alvo):
         ws.add_cols(len(alvo) - ws.col_count)
     ws.update(range_name="A1", values=novos, value_input_option="RAW")
+    if "conferido" in alvo and "conferido" not in idx:
+        _ativar_checkbox(ws, "conferido", alvo)
     return alvo
 
 
@@ -196,7 +213,7 @@ def _chave_fila(registro, cargo, uf):
 
 def _limpar_status_extracao(row):
     for coluna in (
-        "link", "nivel_conferencia",
+        "link", "nivel_conferencia", "conferido",
         "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
         "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
     ):
@@ -622,7 +639,7 @@ def cmd_extrair():
 
     for i, r in enumerate(linhas, start=2):   # linha 1 = cabeçalho
         link = str(r.get("link", "")).strip()
-        if not link or _verdadeiro(r.get("segmentos_extraido")):
+        if not link or not _verdadeiro(r.get("conferido")) or _verdadeiro(r.get("segmentos_extraido")):
             continue
         tentativas = _int0(r.get("segmentos_tentativas"))
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
@@ -792,7 +809,7 @@ def cmd_topline():
     for i, r in enumerate(linhas, start=2):
         link = str(r.get("link", "")).strip()
         registro_fila = str(r.get("registro", "")).strip()
-        if not link or _verdadeiro(r.get(FLAG_TOPLINE)):
+        if not link or not _verdadeiro(r.get("conferido")) or _verdadeiro(r.get(FLAG_TOPLINE)):
             continue
         tentativas = _int0(r.get("topline_tentativas"))
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
