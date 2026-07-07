@@ -18,6 +18,7 @@ from google.oauth2.service_account import Credentials
 from google.auth.transport.requests import Request
 from google import genai
 from google.genai import types
+from gspread.utils import ValidationConditionType, rowcol_to_a1
 
 BRT = timezone(timedelta(hours=-3))
 
@@ -46,9 +47,10 @@ PASTA_GOV_SEN = '1MmeVz63PG9imU_oDqk7thw5gHha0xAWa'
 # colunas da fila compartilhada com pesquisas.py
 COL_ORIGEM_LINK = "origem_link"
 COL_NIVEL_CONFERENCIA = "nivel_conferencia"
+COL_CONFERIDO = "conferido"
 CABECALHO_RELATORIOS = [
     "registro", "cargo", "uf", "instituto", "data_divulgacao", "link",
-    COL_ORIGEM_LINK, COL_NIVEL_CONFERENCIA,
+    COL_ORIGEM_LINK, COL_NIVEL_CONFERENCIA, COL_CONFERIDO,
     "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
     "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
 ]
@@ -77,7 +79,7 @@ MAX_PDF_CANDIDATOS = 80
 MAX_IMAGENS_OCR = int(os.getenv("MAX_IMAGENS_OCR", "40"))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(12 * 1024 * 1024)))
 CHROME_VIRTUAL_TIME_MS = int(os.getenv("CHROME_VIRTUAL_TIME_MS", "12000"))
-SITUACOES_PENDENTES = {"nao", "paywall", "bloqueado", "erro_chrome"}
+SITUACOES_PENDENTES = {"nao", "provavel", "paywall", "bloqueado", "erro_chrome"}
 PAYWALL_MARKERS = (
     "assine para continuar", "assine para ler", "conteúdo exclusivo para assinantes",
     "conteudo exclusivo para assinantes", "exclusivo para assinantes",
@@ -125,11 +127,24 @@ def _garantir_coluna(ws, header, nome):
     return novo
 
 
+def _ativar_checkbox(ws, coluna, header, ate_linha=2000):
+    """Transforma a coluna em checkbox real do Sheets (TRUE/FALSE), da linha 2 até ate_linha."""
+    if coluna not in header:
+        return
+    col_i = header.index(coluna) + 1
+    intervalo = f"{rowcol_to_a1(2, col_i)}:{rowcol_to_a1(ate_linha, col_i)}"
+    try:
+        ws.add_validation(intervalo, ValidationConditionType.boolean, [])
+    except Exception as e:
+        print(f"[AVISO] não deu pra criar o checkbox de '{coluna}': {e}")
+
+
 def _normalizar_cabecalho_relatorios(ws):
     """Garante a ordem canônica da fila sem perder dados de colunas antigas."""
     valores = ws.get_all_values()
     if not valores:
         ws.update(range_name="A1", values=[CABECALHO_RELATORIOS])
+        _ativar_checkbox(ws, COL_CONFERIDO, CABECALHO_RELATORIOS)
         return CABECALHO_RELATORIOS[:]
 
     atual = valores[0]
@@ -156,6 +171,8 @@ def _normalizar_cabecalho_relatorios(ws):
     if ws.col_count < len(alvo):
         ws.add_cols(len(alvo) - ws.col_count)
     ws.update(range_name="A1", values=novos, value_input_option="RAW")
+    if COL_CONFERIDO in alvo and COL_CONFERIDO not in idx:
+        _ativar_checkbox(ws, COL_CONFERIDO, alvo)
     return alvo
 
 
@@ -190,7 +207,7 @@ def _chave_fila(registro, cargo, uf):
 
 def _limpar_status_extracao(row):
     for coluna in (
-        "link", COL_NIVEL_CONFERENCIA,
+        "link", COL_NIVEL_CONFERENCIA, COL_CONFERIDO,
         "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
         "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
     ):
@@ -516,6 +533,8 @@ def _mensagem_pendente(registro, situacao):
         return f"{registro} - Chrome não disponível no runner; instalar Chrome ou definir CHROME_BIN"
     if situacao == "bloqueado":
         return f"{registro} - conteúdo bloqueado/incompleto; deixado pendente"
+    if situacao == "provavel":
+        return f"{registro} - registro TSE não apareceu no texto (só bateu UF+instituto+2026); deixado pendente"
     return f"{registro} - conteúdo não confere com a pesquisa, deixado pendente"
 
 
@@ -1149,15 +1168,20 @@ def baixar_pdf_ou_gerar_headless(url, registro="", uf="", instituto="", gemini_c
     if html_total:
         # PDFs podem vir sem .pdf no link, por botão JS ou blob. Aceita só bytes PDF.
         cands, imgs = _extrair_links_documentos(html_total, url)
-        melhor, melhor_sit, melhor_tam = None, None, -1
+        # Prioridade por confiança primeiro (registro > OCR/leitura > UF+instituto+ano),
+        # tamanho só desempata dentro do mesmo nível. Sem isso um PDF "provavel" maior
+        # podia vencer um PDF "ok" menor, escondendo o match certo.
+        prioridade = {"ok": 3, "imagem": 2, "provavel": 1}
+        melhor, melhor_sit, melhor_rank = None, None, (-1, -1)
         for b in pdfs_selenium:
             if not b or b[:4] != b"%PDF":
                 continue
             sit = confere_pesquisa(b, registro, uf, instituto)
             if registro and sit == "nao":
                 continue
-            if len(b) > melhor_tam:
-                melhor, melhor_sit, melhor_tam = b, sit, len(b)
+            rank = (prioridade.get(sit, 0), len(b))
+            if rank > melhor_rank:
+                melhor, melhor_sit, melhor_rank = b, sit, rank
         for lp in cands:
             b = _baixar_pdf_candidato(lp, referer=url)
             if not b:
@@ -1165,8 +1189,9 @@ def baixar_pdf_ou_gerar_headless(url, registro="", uf="", instituto="", gemini_c
             sit = confere_pesquisa(b, registro, uf, instituto)
             if registro and sit == "nao":
                 continue  # esse PDF não é desta pesquisa
-            if len(b) > melhor_tam:
-                melhor, melhor_sit, melhor_tam = b, sit, len(b)
+            rank = (prioridade.get(sit, 0), len(b))
+            if rank > melhor_rank:
+                melhor, melhor_sit, melhor_rank = b, sit, rank
         if melhor is not None:
             return melhor, melhor_sit
 
