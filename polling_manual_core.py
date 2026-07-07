@@ -83,13 +83,15 @@ def slug_candidato_disputa(nome: str) -> str:
 
 
 def normalizar_disputa_t2(valor: str, itens: list | None = None) -> str:
-    valor = normalizar_texto_simples(valor)
-    if valor:
-        bruto = valor.lower()
-        if bruto.startswith("t2_"):
-            return "t2_" + _slug(bruto[3:])
-        return "t2_" + _slug(bruto)
-
+    """Gera a chave de disputa do t2 (ex.: 't2_bolsonaro-lula'), sempre com os dois
+    nomes em ordem alfabética. Isso é essencial: sem ordem canônica, 'Lula x Bolsonaro'
+    e 'Bolsonaro x Lula' (mesmo confronto, ordem diferente na fonte ou no texto que o
+    Gemini devolveu) virariam duas disputas distintas, e a série quebraria no gráfico
+    (scraper_polling.py agrupa média móvel e dedup por disputa). Prioriza os candidatos
+    estruturados de 'itens' (passam por slug_candidato_disputa, mais estável que confiar
+    no texto livre do Gemini) e só cai pro campo 'disputa' bruto se não der pra montar
+    dos itens.
+    """
     nomes = []
     for item in itens or []:
         candidato = normalizar_texto_simples(item.get("candidato"))
@@ -100,7 +102,20 @@ def normalizar_disputa_t2(valor: str, itens: list | None = None) -> str:
             nomes.append(slug)
         if len(nomes) == 2:
             break
-    return f"t2_{nomes[0]}-{nomes[1]}" if len(nomes) == 2 else ""
+    if len(nomes) == 2:
+        a, b = sorted(nomes)
+        return f"t2_{a}-{b}"
+
+    valor = normalizar_texto_simples(valor)
+    if not valor:
+        return ""
+    bruto = valor.lower()
+    slug = _slug(bruto[3:] if bruto.startswith("t2_") else bruto)
+    partes = slug.split("-")
+    if len(partes) == 2:
+        a, b = sorted(partes)
+        return f"t2_{a}-{b}"
+    return f"t2_{slug}"
 
 
 def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_block_hash, disputa=""):
@@ -351,6 +366,23 @@ def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "",
                  "cargos ou turnos que apareçam no material.\nSe não houver bloco que case, "
                  "retorne cenarios=[].\n\n")
 
+    # uf_referencia: só contexto, NÃO é restrição (diferente de "uf" acima), e NÃO é
+    # confiável sozinha. Institutos costumam registrar uma amostra estadual sob um
+    # protocolo com prefixo BR-, e a fila herda essa classificação (por prefixo do
+    # registro, não pela amostra real) do PesqEle/TSE. Por isso o documento sempre
+    # manda mais que essa referência.
+    uf_ref = normalizar_texto_simples(escopo.get("uf_referencia"))
+    if uf_ref:
+        bloco += (f"CONTEXTO (não é filtro, e pode estar ERRADO): a fila classifica esta pesquisa "
+                   f"com abrangência '{uf_ref}'. Essa classificação vem do prefixo do registro TSE "
+                   "(BR- não garante amostra nacional; institutos frequentemente registram pesquisa "
+                   "de UM estado sob protocolo BR-), então NÃO confie nela sozinha. Para decidir a UF "
+                   "de cada cenário de presidente, leia o que o PRÓPRIO documento diz sobre o universo "
+                   "pesquisado/amostra (ex.: 'entrevistas realizadas em [estado]', 'universo: eleitores "
+                   "de [estado]'). Se o documento disser que a amostra é de um estado específico, use a "
+                   "UF desse estado nesse cenário, mesmo que a referência acima diga BRASIL. Só use BR "
+                   "quando o próprio documento indicar amostra nacional.\n\n")
+
     cands, institutos = _referencia(escopo.get("cargo"), escopo.get("uf"))
     bloco_ref = ""
     if cands:
@@ -369,17 +401,28 @@ Extraia os dados estruturados para inserção em planilha.
 - Responda somente com JSON válido.
 - Não invente dados ausentes. Use string vazia ou null.
 - Datas devem sair em YYYY-MM-DD quando possível.
+- data_campo: se o relatório trouxer um PERÍODO de campo (ex.: '11 a 24 de junho de 2026'),
+  use o ÚLTIMO dia do período (2026-06-24), não o primeiro nem a data de divulgação. Só use
+  a data de divulgação se não houver período de campo declarado. Essa é a mesma convenção
+  usada no resto do sistema (extrair_ultima_data); usar outra data quebra a posição do ponto
+  na série temporal da média móvel.
 - cargo deve ser governador, senador ou presidente.
 - turno deve ser t1 ou t2.
-- uf deve estar em caixa alta. Para presidente nacional use BR.
+- uf deve estar em caixa alta. Para presidente nacional use BR. Para presidente medido só
+  entre os eleitores de um estado específico (não uma amostra nacional), use a UF desse
+  estado, não BR. Decida pelo que o documento diz sobre o universo/amostra pesquisado,
+  NUNCA só pelo prefixo do registro TSE (um registro BR- pode ser amostra de um único
+  estado; veja CONTEXTO acima quando houver).
 - percentual deve ser numérico, sem %. Preserve os números EXATAMENTE como no material;
   não arredonde, não recalcule, não normalize para somar 100.
 - t1 = cenários de primeiro turno (vários candidatos testados); t2 = simulações de segundo
   turno (confrontos diretos, tipicamente entre 2 candidatos).
 - Para t2, cada confronto direto deve ser um cenário separado e deve preencher 'disputa'
-  no formato t2_candidato1-candidato2, em minúsculas, sem acento, usando nomes curtos
-  (ex.: t2_flavio-lula, t2_lula-zema, t2_bolsonaro-lula). Este campo é obrigatório
-  para comparar os gráficos de segundo turno.
+  no formato t2_candidato1-candidato2, em minúsculas, sem acento, usando nomes curtos,
+  SEMPRE em ordem alfabética dos dois nomes (não pela ordem que aparecem no relatório)
+  (ex.: t2_flavio-lula, t2_lula-zema, t2_bolsonaro-lula). Isso é obrigatório: o mesmo
+  confronto relatado como "Lula x Bolsonaro" ou "Bolsonaro x Lula" tem que gerar a
+  MESMA disputa, senão o gráfico de segundo turno quebra em duas séries.
 - tipo deve ser candidato ou nao_valido.
 - PADRONIZAÇÃO DE NOMES: se o candidato corresponder a um da lista canônica acima, use o nome
   curto e a sigla EXATAMENTE como lá (campo 'candidato' = a parte antes do parêntese; 'partido' =
@@ -397,7 +440,14 @@ Extraia os dados estruturados para inserção em planilha.
   nem avaliação/aprovação de governo. Cada cenário estimulado vira um item de "cenarios".
 - votos_por_entrevistado: use 2 quando o relatório indicar que o entrevistado podia citar/votar
   em até 2 nomes naquele cenário (comum para senador em eleição com 2 vagas; procure notas como
-  'cada entrevistado poderia citar até 2 candidatos'). Caso contrário, use 1.
+  'cada entrevistado poderia citar até 2 candidatos'), E os percentuais daquele cenário somarem
+  perto de 200% (cada nome citado conta separado, sem dividir por tabela de 1º/2º voto). Caso
+  contrário, use 1.
+- SENADOR COM 1º/2º VOTO SEPARADOS: se o relatório trouxer três tabelas separadas para senador de
+  2 vagas ("1º voto", "2º voto" e "média do 1º e 2º voto", cada uma somando ~100% sozinha),
+  extraia SOMENTE a tabela de média como UM cenário (votos_por_entrevistado=1, já que soma ~100%).
+  NÃO crie cenários separados para a tabela de só 1º voto nem só 2º voto isoladas, são
+  detalhamento do cálculo, não o resultado estimulado principal.
 
 FORMATO:
 {{
