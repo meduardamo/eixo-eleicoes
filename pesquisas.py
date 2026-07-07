@@ -309,7 +309,7 @@ def _marcar_origem(ws, label):
 PESQELE_ID = os.getenv("SPREADSHEET_ID", "")
 PESQELE_ABA = os.getenv("PESQELE_ABA", "Consolidado")
 PASTA_URL = os.getenv("PASTA_RELATORIOS_URL",
-                      "https://drive.google.com/drive/folders/1DD3qewc6nhhdFw8x85i7qtuNRXghd9C6")
+                      "https://drive.google.com/drive/folders/0AH-94UFLKIFPUk9PVA")
 GRUPOS = ["Presidente (Nacional)", "Presidente (por UF)", "Governador / Senador"]
 
 
