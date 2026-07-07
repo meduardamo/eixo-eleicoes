@@ -9,9 +9,10 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     env:
+      PYTHONUNBUFFERED: "1"
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
       SPREADSHEET_ID_RELATORIOS: ${{ secrets.SPREADSHEET_ID_RELATORIOS }}
@@ -44,5 +45,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Diagnóstico da rodada
+        run: |
+          date
+          python --version
+          echo "Workflow: atualiza-relatorios"
+
       - name: Executar busca e upload
-        run: python atualiza_relatorios.py
+        run: python -u atualiza_relatorios.py
