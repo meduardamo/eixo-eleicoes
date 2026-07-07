@@ -4,6 +4,7 @@ Pesquisas eleitorais: alerta diário + extração de voto por segmento e rejeiç
 Uso:
   python pesquisas.py alerta    # email com as pesquisas que divulgam hoje (PesqEle)
   python pesquisas.py extrair   # extrai voto por segmento e rejeição dos relatórios
+  python pesquisas.py rebuild_bi # reconstrói resultados_bi nas planilhas PollingData
 
 Secrets: GOOGLE_CREDENTIALS_JSON, GEMINI_API_KEY, BREVO_API_KEY, EMAIL,
 DESTINATARIOS, SPREADSHEET_ID (PesqEle), SPREADSHEET_ID_RELATORIOS.
@@ -46,14 +47,14 @@ CABECALHOS = {
                  "candidato", "tipo_segmento", "segmento", "valor"],
     "aprovacao": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
                   "alvo", "resposta", "tipo_segmento", "segmento", "valor"],
-    "topline_pesquisas": ["registro_tse", "ano", "cargo", "uf", "turno",
+    "topline_pesquisas": ["registro_tse", "ano", "cargo", "uf", "turno", "disputa",
                           "instituto", "classificacao_instituto", "data_campo",
                           "scenario_label", "descricao", "votos_por_entrevistado",
                           "modo", "amostra", "margem_erro",
                           "confianca", "metodologia", "poll_id", "scenario_id", "fonte_url",
                           "fonte_url_original", "conferida", "horario_raspagem",
                           "validacao", "origem"],
-    "topline_resultados": ["registro_tse", "ano", "cargo", "uf", "turno",
+    "topline_resultados": ["registro_tse", "ano", "cargo", "uf", "turno", "disputa",
                            "instituto", "classificacao_instituto", "data_campo",
                            "scenario_label", "candidato", "partido", "candidato_partido",
                            "tipo", "percentual", "poll_id", "scenario_id", "fonte_url",
@@ -66,6 +67,19 @@ CARGO_ROTULO = {
     "governador": "Governador",
     "senador": "Senador",
 }
+POLLING_PESQUISAS_COLS = [
+    "scenario_id", "poll_id", "ano", "uf", "cargo", "turno", "disputa",
+    "instituto", "classificacao_instituto", "registro_tse", "data_campo",
+    "modo", "amostra", "margem_erro", "confianca", "scenario_label",
+    "fonte_url", "fonte_url_original", "horario_raspagem", "conferida",
+    "metodologia",
+]
+POLLING_RESULTADOS_COLS = [
+    "scenario_id", "poll_id", "ano", "uf", "cargo", "turno", "disputa",
+    "data_campo", "instituto", "classificacao_instituto", "registro_tse",
+    "scenario_label", "candidato", "partido", "candidato_partido", "tipo",
+    "percentual", "fonte_url", "horario_raspagem",
+]
 
 
 def _normalizar_cabecalho(ws, cabecalho):
@@ -125,6 +139,8 @@ def _aba(sh, nome):
     elif nome == "relatorios":
         header = _normalizar_cabecalho(ws, header)
         _separar_linhas_multicargo(ws, header)
+    elif nome in ("topline_pesquisas", "topline_resultados"):
+        _normalizar_cabecalho(ws, header)
     return ws
 
 
@@ -948,30 +964,23 @@ def cmd_publicar():
     pendentes = df_p[~feito]
     if pendentes.empty:
         print("Tudo já publicado.")
+        cmd_rebuild_bi()
         return
 
-    def _preparar(df):
+    def _preparar(df, colunas_destino):
         # tira colunas de controle do staging: o salvar_tudo forçaria metodologia por
         # último e jogaria colunas novas antes dela (origem entra depois, => _marcar_origem).
-        df = df.drop(columns=["publicado", "origem", "validacao"], errors="ignore").copy()
+        df = df.drop(columns=[
+            "publicado", "origem", "validacao", "descricao", "votos_por_entrevistado"
+        ], errors="ignore").copy()
         if "instituto" in df.columns:
             df["classificacao_instituto"] = df["instituto"].apply(classificar_instituto)
         if "percentual" in df.columns:
             df["percentual"] = pd.to_numeric(df["percentual"], errors="coerce")
-        return df
-
-    def _registros_no_polling(sheet_id):
-        """registros que já existem na planilha de turno (do PollingData ou de rodada
-        anterior). Evita republicar e duplicar."""
-        try:
-            aba = gc.open_by_key(sheet_id).worksheet("resultados")
-        except Exception:
-            return set()
-        cab = aba.row_values(1)
-        if "registro_tse" not in cab:
-            return set()
-        col = aba.col_values(cab.index("registro_tse") + 1)[1:]
-        return {v.strip() for v in col if v.strip()}
+        for coluna in colunas_destino:
+            if coluna not in df.columns:
+                df[coluna] = ""
+        return df.reindex(columns=colunas_destino)
 
     publicados = []
     for turno, sheet_id in (("t1", T1_ID), ("t2", T2_ID)):
@@ -980,19 +989,21 @@ def cmd_publicar():
         pt_all = pendentes[pendentes["turno"].astype(str).str.lower() == turno]
         if pt_all.empty:
             continue
-        publicados += list(pt_all.index)   # tratados nesta rodada (enviados ou pulados)
-
-        existentes = _registros_no_polling(sheet_id)
-        ja = pt_all["registro_tse"].astype(str).str.strip().isin(existentes)
-        if ja.any():
-            print(f"{turno}: {int(ja.sum())} cenário(s) já na planilha (registro existente), pulando")
-        pt = pt_all[~ja]
+        if "validacao" in pt_all.columns:
+            bloqueio = pt_all["validacao"].astype(str).str.strip().ne("")
+            if bloqueio.any():
+                print(f"{turno}: {int(bloqueio.sum())} cenário(s) com validação pendente; não publicando")
+            pt = pt_all[~bloqueio]
+        else:
+            pt = pt_all
         if pt.empty:
             continue
 
         ids = set(pt["scenario_id"].astype(str))
         rt = df_r[df_r["scenario_id"].astype(str).isin(ids)]
-        salvar_tudo(gc, sheet_id, _preparar(pt), _preparar(rt))
+        salvar_tudo(gc, sheet_id, _preparar(pt, POLLING_PESQUISAS_COLS),
+                    _preparar(rt, POLLING_RESULTADOS_COLS))
+        publicados += list(pt.index)
         print(f"{turno}: {len(pt)} cenário(s), {len(rt)} resultado(s) -> planilha de {turno}")
 
     # origem como última coluna (após metodologia) e marca nossas linhas, sempre
@@ -1010,6 +1021,19 @@ def cmd_publicar():
         ws_p.update_cells([gspread.Cell(i + 2, col_pub, "sim") for i in publicados],
                           value_input_option="RAW")
     print(f"\n{len(publicados)} cenário(s) publicado(s).")
+
+
+def cmd_rebuild_bi():
+    if not (T1_ID or T2_ID):
+        raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
+    from scraper_polling import gs_client_from_env, reconstruir_resultados_bi
+
+    gc = gs_client_from_env()
+    for turno, sheet_id in (("t1", T1_ID), ("t2", T2_ID)):
+        if not sheet_id:
+            continue
+        print(f"{turno}: reconstruindo resultados_bi...")
+        reconstruir_resultados_bi(gc, sheet_id)
 
 
 def cmd_canonico():
@@ -1068,7 +1092,9 @@ if __name__ == "__main__":
         cmd_topline()
     elif cmd == "publicar":
         cmd_publicar()
+    elif cmd == "rebuild_bi":
+        cmd_rebuild_bi()
     elif cmd == "canonico":
         cmd_canonico()
     else:
-        print("uso: python pesquisas.py [alerta|extrair|topline|publicar|canonico]")
+        print("uso: python pesquisas.py [alerta|extrair|topline|publicar|rebuild_bi|canonico]")
