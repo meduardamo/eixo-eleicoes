@@ -34,6 +34,75 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
 
 
+DISPUTA_CANDIDATO_ALIASES = {
+    "luiz inacio lula da silva": "lula",
+    "lula": "lula",
+    "jair messias bolsonaro": "bolsonaro",
+    "jair bolsonaro": "bolsonaro",
+    "bolsonaro": "bolsonaro",
+    "flavio bolsonaro": "flavio",
+    "flavio": "flavio",
+    "michelle bolsonaro": "michelle",
+    "michelle": "michelle",
+    "geraldo alckmin": "alckmin",
+    "alckmin": "alckmin",
+    "fernando haddad": "haddad",
+    "haddad": "haddad",
+    "ronaldo caiado": "caiado",
+    "caiado": "caiado",
+    "romeu zema": "zema",
+    "zema": "zema",
+    "joaquim barbosa": "joaquim",
+    "joaquim": "joaquim",
+    "tarcisio de freitas": "tarcisio",
+    "tarcisio": "tarcisio",
+    "ratinho junior": "ratinho",
+    "ratinho jr": "ratinho",
+    "ratinho": "ratinho",
+}
+
+
+def _norm_ascii(s: str) -> str:
+    s = unicodedata.normalize("NFKD", normalizar_texto_simples(s))
+    s = "".join(ch for ch in s if not unicodedata.combining(ch)).lower()
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", s)).strip()
+
+
+def slug_candidato_disputa(nome: str) -> str:
+    chave = _norm_ascii(nome)
+    if not chave:
+        return ""
+    if chave in DISPUTA_CANDIDATO_ALIASES:
+        return DISPUTA_CANDIDATO_ALIASES[chave]
+    partes = [p for p in chave.split() if p not in {"de", "da", "do", "dos", "das", "e"}]
+    if not partes:
+        return _slug(chave)
+    if partes[0] in {"lula", "ciro", "datena", "tabata", "marina", "simone", "michelle", "flavio"}:
+        return partes[0]
+    return partes[-1] if len(partes) > 1 else partes[0]
+
+
+def normalizar_disputa_t2(valor: str, itens: list | None = None) -> str:
+    valor = normalizar_texto_simples(valor)
+    if valor:
+        bruto = valor.lower()
+        if bruto.startswith("t2_"):
+            return "t2_" + _slug(bruto[3:])
+        return "t2_" + _slug(bruto)
+
+    nomes = []
+    for item in itens or []:
+        candidato = normalizar_texto_simples(item.get("candidato"))
+        if not candidato or classificar_tipo_resultado(candidato, item.get("tipo", "")) == "nao_valido":
+            continue
+        slug = slug_candidato_disputa(candidato)
+        if slug and slug not in nomes:
+            nomes.append(slug)
+        if len(nomes) == 2:
+            break
+    return f"t2_{nomes[0]}-{nomes[1]}" if len(nomes) == 2 else ""
+
+
 def gerar_poll_id(uf, instituto, id_pesquisa, data_campo, cargo, turno, raw_block_hash, disputa=""):
     uf = str(uf).upper()
     data_campo = normalizar_texto_simples(data_campo)
@@ -307,6 +376,10 @@ Extraia os dados estruturados para inserção em planilha.
   não arredonde, não recalcule, não normalize para somar 100.
 - t1 = cenários de primeiro turno (vários candidatos testados); t2 = simulações de segundo
   turno (confrontos diretos, tipicamente entre 2 candidatos).
+- Para t2, cada confronto direto deve ser um cenário separado e deve preencher 'disputa'
+  no formato t2_candidato1-candidato2, em minúsculas, sem acento, usando nomes curtos
+  (ex.: t2_flavio-lula, t2_lula-zema, t2_bolsonaro-lula). Este campo é obrigatório
+  para comparar os gráficos de segundo turno.
 - tipo deve ser candidato ou nao_valido.
 - PADRONIZAÇÃO DE NOMES: se o candidato corresponder a um da lista canônica acima, use o nome
   curto e a sigla EXATAMENTE como lá (campo 'candidato' = a parte antes do parêntese; 'partido' =
@@ -333,7 +406,7 @@ FORMATO:
   "modo": "", "metodologia": "", "fonte_url_original": "{url_original}",
   "observacoes": "", "pendencias": [],
   "cenarios": [
-    {{ "scenario_label": "", "descricao": "", "votos_por_entrevistado": 1,
+    {{ "scenario_label": "", "descricao": "", "disputa": "", "votos_por_entrevistado": 1,
        "itens": [ {{ "candidato": "", "partido": "", "percentual": null, "tipo": "candidato" }} ] }}
   ]
 }}
@@ -384,6 +457,7 @@ def normalizar_payload_polling(payload: dict) -> dict:
         votos = normalizar_inteiro_simples(cenario.get("votos_por_entrevistado")) or 1
         cenarios_norm.append({"scenario_label": label or str(idx),
                               "descricao": normalizar_texto_simples(cenario.get("descricao") or cenario.get("titulo")),
+                              "disputa": normalizar_texto_simples(cenario.get("disputa")),
                               "votos_por_entrevistado": max(1, min(votos, 3)),
                               "itens": itens_norm})
     return {
@@ -441,17 +515,20 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
         f"manual|{uf}|{cargo}|{turno}|{instituto}|{registro_tse}|{data_campo}".encode("utf-8", errors="ignore")
     ).hexdigest()[:10]
 
-    poll_id = gerar_poll_id(uf, instituto, registro_base, data_campo, cargo, turno, block_hash)
-    fonte_url_final = normalizar_texto_simples(fonte_url) or f"pdf://relatorio/{poll_id}"
     fonte_url_original_final = normalizar_texto_simples(fonte_url_original) or normalizar_texto_simples(
         payload.get("fonte_url_original"))
     classificacao = ""   # preenchida no roteamento (parte 2), a partir do scraper_polling
 
     pesquisas_rows, resultados_rows = [], []
     for idx, cenario in enumerate(payload.get("cenarios") or [], start=1):
-        # scenario_label numérico (1, 2, ...), igual PollingData. O texto do relatório
-        # (ex: "Estimulada Presidente") vai pra 'descricao'.
-        scenario_label = str(idx)
+        disputa = ""
+        if turno == "t2":
+            disputa = normalizar_disputa_t2(cenario.get("disputa"), cenario.get("itens"))
+        poll_id = gerar_poll_id(uf, instituto, registro_base, data_campo, cargo, turno, block_hash, disputa=disputa)
+        fonte_url_final = normalizar_texto_simples(fonte_url) or f"pdf://relatorio/{poll_id}"
+        # No t2, a disputa já diferencia cada confronto; o PollingData usa NA como
+        # cenário. No t1, mantém cenários numéricos para média entre cenários.
+        scenario_label = "NA" if turno == "t2" and disputa else str(idx)
         descricao = normalizar_texto_simples(cenario.get("scenario_label")) or \
             normalizar_texto_simples(cenario.get("descricao"))
         scenario_id = gerar_scenario_id(poll_id, scenario_label)
@@ -459,7 +536,7 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
         pesquisas_rows.append({
             "origem": ORIGEM,
             "scenario_id": scenario_id, "poll_id": poll_id, "ano": ano_calc, "uf": uf,
-            "cargo": cargo, "turno": turno, "instituto": instituto,
+            "cargo": cargo, "turno": turno, "disputa": disputa, "instituto": instituto,
             "classificacao_instituto": classificacao, "registro_tse": registro_tse,
             "data_campo": data_campo, "modo": modo_payload, "amostra": amostra,
             "margem_erro": margem_erro, "confianca": confianca,
@@ -474,7 +551,7 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
             resultados_rows.append({
                 "origem": ORIGEM,
                 "scenario_id": scenario_id, "poll_id": poll_id, "ano": ano_calc, "uf": uf,
-                "cargo": cargo, "turno": turno, "data_campo": data_campo, "instituto": instituto,
+                "cargo": cargo, "turno": turno, "disputa": disputa, "data_campo": data_campo, "instituto": instituto,
                 "classificacao_instituto": classificacao, "registro_tse": registro_tse,
                 "scenario_label": scenario_label, "candidato": candidato, "partido": partido,
                 "candidato_partido": candidato_partido, "tipo": tipo, "percentual": percentual,
