@@ -42,6 +42,7 @@ DATA_START_ROW = 4
 
 DAYS_BACK = int(os.getenv("DAYS_BACK", "4"))
 DEBUG_DIR = os.getenv("PESQELE_DEBUG_DIR", "pesqele-debug")
+FORM_TIMEOUT = int(os.getenv("PESQELE_FORM_TIMEOUT", "12"))
 
 COLS_BASE = [
     "numero_identificacao",
@@ -78,8 +79,10 @@ def salvar_diagnostico_pagina(driver: webdriver.Chrome, contexto: str) -> str:
     png_path = base.with_suffix(".png")
 
     try:
-        html_path.write_text(driver.page_source or "", encoding="utf-8", errors="ignore")
+        html = driver.page_source or ""
+        html_path.write_text(html, encoding="utf-8", errors="ignore")
     except Exception as e:
+        html = ""
         print(f"Não foi possível salvar HTML de diagnóstico: {e}")
 
     try:
@@ -88,6 +91,15 @@ def salvar_diagnostico_pagina(driver: webdriver.Chrome, contexto: str) -> str:
         print(f"Não foi possível salvar screenshot de diagnóstico: {e}")
 
     print(f"Diagnóstico PesqEle salvo em: {base}.html / {base}.png")
+    print(f"URL atual: {driver.current_url}")
+    print(f"Título atual: {driver.title}")
+    print(f"Tamanho do HTML recebido: {len(html)} caracteres")
+    texto = re.sub(r"<[^>]+>", " ", html)
+    texto = re.sub(r"\s+", " ", texto).strip()
+    if texto:
+        print(f"Trecho da página recebida: {texto[:700]}")
+    else:
+        print("Trecho da página recebida: <vazio>")
     return str(base)
 
 
@@ -109,7 +121,7 @@ def validar_pagina_pesqele(driver: webdriver.Chrome, contexto: str = "carregamen
     clicar num seletor que não existe e morria com TimeoutException sem contexto.
     """
     try:
-        WebDriverWait(driver, 20).until(
+        WebDriverWait(driver, FORM_TIMEOUT).until(
             EC.presence_of_element_located((By.ID, ID_ELEICAO_LABEL))
         )
         return
@@ -126,11 +138,11 @@ def validar_pagina_pesqele(driver: webdriver.Chrome, contexto: str = "carregamen
             raise PesqElePageError(
                 "PesqEle bloqueou ou rejeitou o acesso do GitHub Actions; "
                 f"o formulário não carregou. Veja o artifact de diagnóstico ({base})."
-            ) from exc
+            ) from None
         raise PesqElePageError(
             f"Formulário do PesqEle não carregou; seletor {ID_ELEICAO_LABEL} ausente. "
             f"URL atual: {driver.current_url}. Veja o artifact de diagnóstico ({base})."
-        ) from exc
+        ) from None
 
 
 def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = False) -> webdriver.Chrome:
