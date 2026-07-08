@@ -23,6 +23,7 @@ from datetime import datetime
 # intocado. As 3 funções abaixo são cópias pequenas do que era usado de lá.
 
 GEMINI_MODEL = "gemini-2.5-flash"
+MIN_TEXT_FOR_TEXT_ONLY_CHARS = int(os.getenv("MIN_TEXT_FOR_TEXT_ONLY_CHARS", "200"))
 TIPOS_RESULTADO = ["candidato", "nao_valido"]
 
 # Marca a procedência: estes dados vêm dos PDFs dos relatórios, NÃO do PollingData.
@@ -163,6 +164,42 @@ def normalizar_percentual_simples(valor):
         return float(s)
     except Exception:
         return None
+
+
+def normalizar_percentual_resultado(valor):
+    """Normaliza percentual de candidato/nao_valido.
+
+    O Gemini às vezes apaga a vírgula decimal quando lê tabela brasileira:
+    26,1 vira 261; 64,01 vira 6401. Só corrigimos inteiros acima de 100.
+    Decimais acima de 100 seguem inválidos para a validação pegar mistura de
+    bases (ex.: Porcentagem válida + inválidos).
+    """
+    if valor is None:
+        return None
+    texto = str(valor).strip()
+    if not texto:
+        return None
+    limpo = texto.replace("%", "").replace(" ", "").replace(",", ".")
+    try:
+        numero = float(limpo)
+    except Exception:
+        return None
+    if numero > 100:
+        inteiro_sem_decimal = re.fullmatch(r"\d+", texto.replace("%", "").replace(" ", "")) is not None
+        if not inteiro_sem_decimal:
+            return None
+        digitos = re.sub(r"\D", "", texto)
+        if not digitos:
+            return None
+        if int(digitos) == 1000:
+            numero = 100.0
+        elif len(digitos) >= 4:
+            numero = float(digitos) / 100
+        else:
+            numero = float(digitos) / 10
+    if numero < 0 or numero > 100:
+        return None
+    return round(numero, 2)
 
 
 def normalizar_inteiro_simples(valor):
@@ -349,9 +386,9 @@ def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "",
                                  pdf_bytes: bytes | None = None) -> dict:
     """Extrai via Gemini.
 
-    Quando houver texto_fonte e pdf_bytes, envia ambos: o texto ajuda no foco e
-    o PDF visual cobre tabelas/gráficos/imagens que a extração textual não pegou.
-    Se texto_fonte vier vazio, o PDF sozinho cobre relatório escaneado.
+    Quando o texto extraído já é suficiente, envia só texto para evitar payload
+    pesado de PDF/notícia. O PDF visual fica restrito a material escaneado ou com
+    texto insuficiente.
     """
     escopo = escopo or {}
     restricoes = []
@@ -414,7 +451,14 @@ Extraia os dados estruturados para inserção em planilha.
   NUNCA só pelo prefixo do registro TSE (um registro BR- pode ser amostra de um único
   estado; veja CONTEXTO acima quando houver).
 - percentual deve ser numérico, sem %. Preserve os números EXATAMENTE como no material;
-  não arredonde, não recalcule, não normalize para somar 100.
+  não arredonde, não recalcule, não normalize para somar 100. Converta vírgula decimal
+  para ponto: 26,1% -> 26.1; 50,3% -> 50.3; 64,01% -> 64.01. NUNCA remova a vírgula
+  transformando 26,1 em 261 ou 50,3 em 503.
+- Quando uma tabela trouxer as colunas "Porcentual" e "Porcentagem válida", escolha UMA
+  base só. Como o JSON consolida branco/nulo/NS/NR em "Não válido", use a coluna
+  "Porcentual" para candidatos E inválidos. Não misture "Porcentagem válida" dos
+  candidatos com "Porcentual" dos inválidos. Só use "Porcentagem válida" se não houver
+  nenhum item "Não válido" no cenário.
 - t1 = cenários de primeiro turno (vários candidatos testados); t2 = simulações de segundo
   turno (confrontos diretos, tipicamente entre 2 candidatos).
 - Para t2, cada confronto direto deve ser um cenário separado e deve preencher 'disputa'
@@ -438,6 +482,10 @@ Extraia os dados estruturados para inserção em planilha.
 - Extraia SOMENTE cenários de voto ESTIMULADO (aqueles em que os nomes dos candidatos são
   apresentados ao entrevistado). NÃO inclua voto ESPONTÂNEO (sem lista de nomes), nem rejeição,
   nem avaliação/aprovação de governo. Cada cenário estimulado vira um item de "cenarios".
+- Se o relatório trouxer uma pergunta filtro como "O candidato que você votaria é um desses
+  nomes ou outro candidato?" e também uma pergunta formal como "Se a eleição fosse hoje...",
+  extraia a pergunta formal de intenção de voto. A pergunta filtro só entra se for a única
+  medição estimulada daquele cargo/turno.
 - votos_por_entrevistado: use 2 quando o relatório indicar que o entrevistado podia citar/votar
   em até 2 nomes naquele cenário (comum para senador em eleição com 2 vagas; procure notas como
   'cada entrevistado poderia citar até 2 candidatos'), E os percentuais daquele cenário somarem
@@ -462,20 +510,20 @@ FORMATO:
 }}
 """.strip()
 
-    if texto_fonte and pdf_bytes:
+    texto_fonte = (texto_fonte or "").strip()
+    texto_suficiente = len(texto_fonte) >= MIN_TEXT_FOR_TEXT_ONLY_CHARS
+    if texto_suficiente:
+        contents = prompt + f"\n\nTEXTO FONTE:\n{texto_fonte}"
+    elif texto_fonte and pdf_bytes:
         from google.genai import types
         contents = [
             prompt + (
-                "\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA:\n"
+                "\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA (parcial/insuficiente):\n"
                 f"{texto_fonte}\n\n"
-                "PDF ANEXO: confira visualmente as páginas, inclusive tabelas, gráficos "
-                "e imagens. Se algum número aparecer só no anexo visual, extraia do anexo. "
-                "Se houver conflito entre texto extraído e visual do PDF, prefira o PDF."
+                "PDF ANEXO: use o visual porque o texto extraído não parece suficiente."
             ),
             types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
         ]
-    elif texto_fonte:
-        contents = prompt + f"\n\nTEXTO FONTE:\n{texto_fonte}"
     elif pdf_bytes:
         from google.genai import types
         contents = [prompt + "\n\nO material é o PDF anexo (leia as páginas, inclusive tabelas e gráficos).",
@@ -498,7 +546,7 @@ def normalizar_payload_polling(payload: dict) -> dict:
             candidato = normalizar_texto_simples(
                 item.get("candidato") or item.get("nome") or item.get("opcao") or item.get("candidato_partido"))
             partido = normalizar_texto_simples(item.get("partido"))
-            percentual = normalizar_percentual_simples(item.get("percentual"))
+            percentual = normalizar_percentual_resultado(item.get("percentual"))
             tipo = classificar_tipo_resultado(candidato, item.get("tipo", ""))
             if not candidato and percentual is None:
                 continue
@@ -612,7 +660,7 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
         for item in cenario.get("itens") or []:
             candidato = normalizar_texto_simples(item.get("candidato"))
             partido = normalizar_texto_simples(item.get("partido"))
-            percentual = normalizar_percentual_simples(item.get("percentual"))
+            percentual = normalizar_percentual_resultado(item.get("percentual"))
             if percentual is None:
                 continue
             if classificar_tipo_resultado(candidato, item.get("tipo", "")) == "nao_valido":
