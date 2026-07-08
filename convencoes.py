@@ -85,6 +85,10 @@ def _sheets():
     return gspread.authorize(creds)
 
 
+def _service_account_email():
+    return str(_creds_info().get("client_email", "")).strip()
+
+
 def _gemini():
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
@@ -150,13 +154,39 @@ def _garantir_colunas(ws):
     return novo_header
 
 
+def _normalizar_spreadsheet_id(valor):
+    s = str(valor or "").strip()
+    match = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", s)
+    if match:
+        return match.group(1)
+    match = re.search(r"\b([A-Za-z0-9_-]{30,})\b", s)
+    if match:
+        return match.group(1)
+    return s
+
+
 def _abrir_aba():
-    sheet_id = os.getenv("SPREADSHEET_ID_CONVENCOES", "")
+    sheet_id = _normalizar_spreadsheet_id(os.getenv("SPREADSHEET_ID_CONVENCOES", ""))
     if not sheet_id:
         raise RuntimeError("Defina SPREADSHEET_ID_CONVENCOES.")
     aba_nome = os.getenv("CONVENCOES_ABA", ABA_PADRAO)
-    sh = _sheets().open_by_key(sheet_id)
-    return sh.worksheet(aba_nome)
+    try:
+        sh = _sheets().open_by_key(sheet_id)
+    except gspread.exceptions.SpreadsheetNotFound as exc:
+        email = _service_account_email() or "<client_email do GOOGLE_CREDENTIALS_JSON>"
+        raise RuntimeError(
+            "Planilha de convenções não encontrada pela service account. "
+            "Confira se SPREADSHEET_ID_CONVENCOES tem o ID correto "
+            f"({sheet_id}) e compartilhe a planilha com {email}."
+        ) from exc
+    try:
+        return sh.worksheet(aba_nome)
+    except gspread.exceptions.WorksheetNotFound as exc:
+        abas = ", ".join(ws.title for ws in sh.worksheets())
+        raise RuntimeError(
+            f"Aba '{aba_nome}' não encontrada na planilha de convenções. "
+            f"Abas disponíveis: {abas}"
+        ) from exc
 
 
 def _data_busca():
