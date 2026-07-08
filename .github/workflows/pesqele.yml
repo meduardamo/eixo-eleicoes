@@ -21,6 +21,7 @@ jobs:
       ADD_HOURS: "3"
       TZ: "America/Recife"
       DAYS_BACK: ${{ github.event.inputs.days_back || '5' }}
+      PESQELE_DEBUG_DIR: pesqele-debug
 
     steps:
       - name: Checkout
@@ -37,9 +38,18 @@ jobs:
           pip install -r requirements.txt
 
       - name: Set up Chrome
+        id: setup-chrome
         uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: '136'
+
+      - name: Export Chrome
+        run: |
+          echo "CHROME_BIN=${{ steps.setup-chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
+          "${{ steps.setup-chrome.outputs.chrome-path }}" --version
+
+      - name: Remover chromedriver incompatível do runner
+        run: |
+          sudo rm -f /usr/bin/chromedriver
+          which chromedriver || true
 
       - name: Write Google credentials
         env:
@@ -61,3 +71,11 @@ jobs:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: |
           python scraper_pesqele.py
+
+      - name: Upload diagnóstico PesqEle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pesqele-debug
+          path: pesqele-debug/
+          if-no-files-found: ignore
