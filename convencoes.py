@@ -47,7 +47,6 @@ CABECALHO_AUDITORIA = [
     "Fonte convenção",
     "Título fonte",
     "Status busca",
-    "Nível de confiança",
     "Data da busca",
     "Evidência",
 ]
@@ -58,7 +57,6 @@ ALIASES = {
     "Fonte convenção": ["Fonte convencao", "Link fonte", "Fonte"],
     "Título fonte": ["Titulo fonte", "Título", "Titulo"],
     "Status busca": ["Status da busca", "Status"],
-    "Nível de confiança": ["Nivel de confianca", "Confiança", "Confianca"],
     "Data da busca": ["Última busca", "Ultima busca", "Data busca"],
 }
 
@@ -205,6 +203,44 @@ def _limpar_data(valor):
     return s
 
 
+def _normalizar_status(valor):
+    s = _sem_acento(valor).strip().lower()
+    if s == "provavel":
+        return "provável"
+    if s in ("confirmado", "pendente", "conflito", "erro"):
+        return s
+    return "pendente"
+
+
+def _texto_sem_dado_especifico(valor):
+    s = str(valor or "").strip()
+    if not s:
+        return False
+    if len(s) > 90:
+        return True
+    return bool(re.search(
+        r"nao foi encontrad|nao ha|sem informacao|calendario|justica eleitoral|"
+        r"ocorrerao entre|20 de julho|5 de agosto|no entanto",
+        _sem_acento(s).lower(),
+    ))
+
+
+def _sanitizar_campos_principais(status, data_conv, local, escopo):
+    if status not in ("confirmado", "provável"):
+        return "", "", ""
+
+    if _texto_sem_dado_especifico(local):
+        local = ""
+    if _texto_sem_dado_especifico(escopo):
+        escopo = ""
+
+    # Sem data ou local especifico, a busca ainda nao encontrou o dado que importa.
+    if not data_conv and not local:
+        return "", "", ""
+
+    return data_conv, local, escopo
+
+
 def _prompt_busca(row):
     estado = row.get("Estado", "")
     candidato = row.get("Pré-candidato", "")
@@ -226,10 +262,13 @@ REGRAS:
 2. Aceite fonte jornalística confiável quando não houver fonte oficial.
 3. Não confunda filiação, lançamento de pré-candidatura, encontro partidário, reunião interna ou pesquisa eleitoral com convenção partidária.
 4. A data deve ser da convenção partidária que deve oficializar candidatura/chapas para a eleição de 2026.
-5. Se a fonte trouxer apenas previsão, retorne status="provável". Se confirmar data e/ou local, status="confirmado". Se não encontrar fonte suficiente, status="pendente".
-6. Escopo deve resumir o tipo do evento, por exemplo: "convenção estadual", "convenção nacional", "convenção municipal", "federação/coligação", "lançamento de pré-candidatura" ou "sem informação".
-7. Se houver conflito entre fontes, não escolha no chute: status="conflito" e explique em evidencia.
-8. Use data no formato DD/MM/AAAA quando o ano estiver claro. Se só houver dia e mês, assuma 2026 apenas quando o contexto for claramente Eleições 2026.
+5. Só preencha data_convencao, local e escopo quando houver informação específica sobre a convenção desse pré-candidato/partido/UF.
+6. Calendário geral da Justiça Eleitoral, janela legal de convenções ou texto dizendo que nada específico foi encontrado NÃO conta como resultado.
+7. Se não encontrar data/local/escopo específico, retorne status="pendente" e deixe data_convencao="", local="", escopo="", fonte_url="", fonte_titulo="" e evidencia="".
+8. Se a fonte trouxer apenas previsão específica para esse pré-candidato/partido/UF, retorne status="provável". Se confirmar data e/ou local, status="confirmado".
+9. Escopo deve ser curto, por exemplo: "convenção estadual", "convenção nacional", "federação/coligação" ou "lançamento de pré-candidatura".
+10. Se houver conflito entre fontes, não escolha no chute: status="conflito" e explique em evidencia.
+11. Use data no formato DD/MM/AAAA quando o ano estiver claro. Se só houver dia e mês, assuma 2026 apenas quando o contexto for claramente Eleições 2026.
 
 Retorne APENAS JSON válido:
 {{
@@ -237,7 +276,6 @@ Retorne APENAS JSON válido:
   "local": "",
   "escopo": "",
   "status": "confirmado|provável|pendente|conflito",
-  "nivel_confianca": "alta|média|baixa",
   "fonte_url": "",
   "fonte_titulo": "",
   "evidencia": "frase curta explicando o que foi encontrado"
@@ -314,15 +352,18 @@ def atualizar(max_linhas=80, force=False, dry_run=False):
             ])
             continue
 
-        status = str(dados.get("status") or "pendente").strip().lower()
+        status = _normalizar_status(dados.get("status") or "pendente")
+        data_conv = _limpar_data(dados.get("data_convencao", ""))
+        local = str(dados.get("local") or "").strip()
+        escopo = str(dados.get("escopo") or "").strip()
+        data_conv, local, escopo = _sanitizar_campos_principais(status, data_conv, local, escopo)
+        if status in ("confirmado", "provável") and not (data_conv or local):
+            status = "pendente"
+
         if status in ("confirmado", "provável"):
             ok += 1
         else:
             pendentes += 1
-
-        data_conv = _limpar_data(dados.get("data_convencao", ""))
-        local = str(dados.get("local") or "").strip()
-        escopo = str(dados.get("escopo") or "").strip()
 
         def _set_if_needed(col, valor):
             if valor == "":
@@ -330,17 +371,35 @@ def atualizar(max_linhas=80, force=False, dry_run=False):
             if force or not str(row.get(col, "")).strip():
                 updates.append(gspread.Cell(row_i, idx[col], valor))
 
-        _set_if_needed("Data convenção", data_conv)
-        _set_if_needed("Local", local)
-        _set_if_needed("Escopo", escopo)
-        updates.extend([
-            gspread.Cell(row_i, idx["Fonte convenção"], str(dados.get("fonte_url") or "").strip()),
-            gspread.Cell(row_i, idx["Título fonte"], str(dados.get("fonte_titulo") or "").strip()),
-            gspread.Cell(row_i, idx["Status busca"], status),
-            gspread.Cell(row_i, idx["Nível de confiança"], str(dados.get("nivel_confianca") or "").strip()),
-            gspread.Cell(row_i, idx["Data da busca"], _data_busca()),
-            gspread.Cell(row_i, idx["Evidência"], str(dados.get("evidencia") or "").strip()[:500]),
-        ])
+        if status in ("confirmado", "provável"):
+            _set_if_needed("Data convenção", data_conv)
+            _set_if_needed("Local", local)
+            _set_if_needed("Escopo", escopo)
+            updates.extend([
+                gspread.Cell(row_i, idx["Fonte convenção"], str(dados.get("fonte_url") or "").strip()),
+                gspread.Cell(row_i, idx["Título fonte"], str(dados.get("fonte_titulo") or "").strip()),
+                gspread.Cell(row_i, idx["Status busca"], status),
+                gspread.Cell(row_i, idx["Data da busca"], _data_busca()),
+                gspread.Cell(row_i, idx["Evidência"], str(dados.get("evidencia") or "").strip()[:500]),
+            ])
+        elif status == "conflito":
+            updates.extend([
+                gspread.Cell(row_i, idx["Fonte convenção"], str(dados.get("fonte_url") or "").strip()),
+                gspread.Cell(row_i, idx["Título fonte"], str(dados.get("fonte_titulo") or "").strip()),
+                gspread.Cell(row_i, idx["Status busca"], status),
+                gspread.Cell(row_i, idx["Data da busca"], _data_busca()),
+                gspread.Cell(row_i, idx["Evidência"], str(dados.get("evidencia") or "").strip()[:500]),
+            ])
+        else:
+            updates.extend([
+                gspread.Cell(row_i, idx["Fonte convenção"], ""),
+                gspread.Cell(row_i, idx["Título fonte"], ""),
+                gspread.Cell(row_i, idx["Status busca"], "pendente"),
+                gspread.Cell(row_i, idx["Data da busca"], ""),
+                gspread.Cell(row_i, idx["Evidência"], ""),
+            ])
+            if _texto_sem_dado_especifico(row.get("Escopo", "")):
+                updates.append(gspread.Cell(row_i, idx["Escopo"], ""))
 
         print(f"  [{status}] data={data_conv or '-'} local={local or '-'}")
         if len(updates) >= 120 and not dry_run:
