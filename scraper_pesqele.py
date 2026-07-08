@@ -135,6 +135,7 @@ def validar_pagina_pesqele(driver: webdriver.Chrome, contexto: str = "carregamen
 
 def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = False) -> webdriver.Chrome:
     opts = webdriver.ChromeOptions()
+    opts.page_load_strategy = os.getenv("PESQELE_PAGE_LOAD_STRATEGY", "eager")
     chrome_bin = os.getenv("CHROME_BIN", "").strip()
     if chrome_bin:
         opts.binary_location = chrome_bin
@@ -144,6 +145,9 @@ def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = 
     opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-extensions")
     opts.add_argument("--disable-setuid-sandbox")
+    opts.add_argument("--disable-background-networking")
+    opts.add_argument("--disable-features=Translate,OptimizationHints,MediaRouter")
+    opts.add_argument("--dns-prefetch-disable")
     opts.add_argument("--lang=pt-BR")
     opts.add_argument("--window-size=1920,1080")
     opts.add_argument("--disable-blink-features=AutomationControlled")
@@ -160,7 +164,7 @@ def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = 
         opts.add_argument(f"--user-data-dir={os.path.abspath(profile_dir)}")
 
     driver = webdriver.Chrome(options=opts)
-    driver.set_page_load_timeout(120)
+    driver.set_page_load_timeout(int(os.getenv("PESQELE_PAGELOAD_TIMEOUT", "45")))
     return driver
 
 
@@ -171,17 +175,44 @@ def get_with_retry(driver: webdriver.Chrome, url: str, tries: int = 3) -> None:
         try:
             driver.get(url)
             return
-        except TimeoutException:
+        except TimeoutException as exc:
+            try:
+                driver.execute_script("window.stop();")
+            except Exception:
+                pass
+
+            # Em CI, o Chrome pode estourar timeout esperando recursos/renderização
+            # mesmo com HTML parcial já disponível. Nesses casos, seguimos para a
+            # validação do formulário; ela decide se é página válida, bloqueio ou
+            # erro real e salva artifact de diagnóstico.
+            try:
+                if driver.current_url or (driver.page_source or "").strip():
+                    print("driver.get estourou timeout, mas há página parcial; seguindo para validação...")
+                    return
+            except Exception:
+                pass
+
             if i == tries - 1:
-                raise
+                base = salvar_diagnostico_pagina(driver, "driver-get-timeout")
+                raise PesqElePageError(
+                    "Chrome não conseguiu carregar o PesqEle dentro do timeout "
+                    f"({driver.timeouts.page_load}s). Veja o artifact de diagnóstico ({base})."
+                ) from exc
             print(f"driver.get falhou (tentativa {i + 1}); repetindo...")
             time.sleep(3)
 
 
 def wait_dom_ready(driver: webdriver.Chrome, timeout: int = 30) -> None:
-    WebDriverWait(driver, timeout).until(
-        lambda d: d.execute_script("return document.readyState") in ("interactive", "complete")
-    )
+    try:
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.execute_script("return document.readyState") in ("interactive", "complete")
+        )
+    except TimeoutException:
+        try:
+            driver.execute_script("window.stop();")
+        except Exception:
+            pass
+        print("document.readyState não completou; seguindo para validação do formulário...")
 
 
 def safe_click(driver: webdriver.Chrome, wait: WebDriverWait, by: By, value: str, timeout: int = 30):
