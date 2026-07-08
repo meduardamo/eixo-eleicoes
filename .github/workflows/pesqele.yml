@@ -22,6 +22,8 @@ jobs:
       TZ: "America/Recife"
       DAYS_BACK: ${{ github.event.inputs.days_back || '5' }}
       PESQELE_DEBUG_DIR: pesqele-debug
+      PESQELE_PAGELOAD_TIMEOUT: "45"
+      PESQELE_PAGE_LOAD_STRATEGY: "eager"
 
     steps:
       - name: Checkout
