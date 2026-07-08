@@ -7,7 +7,7 @@ on:
     # da tarde (pega os PDFs que saíram de manhã, prontos pra conferência) e uma no
     # fim da tarde (pega os que os institutos publicaram mais tarde). Minuto fora do
     # :00 pra reduzir o atraso de enfileiramento do GitHub.
-    - cron: '17 16 * * *'   # 13:17 Recife
+    - cron: '13 16 * * *'   # 13:17 Recife
     - cron: '17 21 * * *'   # 18:17 Recife
 
 jobs:
