@@ -24,6 +24,7 @@ jobs:
       PESQELE_DEBUG_DIR: pesqele-debug
       PESQELE_PAGELOAD_TIMEOUT: "45"
       PESQELE_PAGE_LOAD_STRATEGY: "eager"
+      PESQELE_FORM_TIMEOUT: "12"
 
     steps:
       - name: Checkout
