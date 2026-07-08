@@ -25,20 +25,51 @@ from gspread.utils import ValidationConditionType, rowcol_to_a1
 BRT = timezone(timedelta(hours=-3))
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CABECALHO_RELATORIOS = [
-    "registro", "cargo", "uf", "instituto", "data_divulgacao", "link",
-    "origem_link", "nivel_conferencia", "conferido",
-    "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
-    "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
+RELATORIOS_COLUNAS = [
+    ("registro", "Registro TSE"),
+    ("cargo", "Cargo"),
+    ("uf", "UF"),
+    ("instituto", "Instituto"),
+    ("data_divulgacao", "Data de divulgação"),
+    ("link", "Link do relatório"),
+    ("origem_link", "Origem do link"),
+    ("nivel_conferencia", "Nível de conferência"),
+    ("conferido", "Conferido?"),
+    ("segmentos_extraido", "Segmentos extraídos?"),
+    ("segmentos_data_extracao", "Data da extração de segmentos"),
+    ("segmentos_erro", "Erro na extração de segmentos"),
+    ("segmentos_tentativas", "Tentativas de segmentos"),
+    ("topline_extraido", "Topline extraída?"),
+    ("topline_data_extracao", "Data da extração de topline"),
+    ("topline_erro", "Erro na extração de topline"),
+    ("topline_tentativas", "Tentativas de topline"),
 ]
-
+REL_COL = dict(RELATORIOS_COLUNAS)
+CABECALHO_RELATORIOS = [rotulo for _, rotulo in RELATORIOS_COLUNAS]
 ALIASES_RELATORIOS = {
-    "origem_link": ["origem_busca"],
-    "segmentos_extraido": ["extraido"],
-    "segmentos_data_extracao": ["data_extracao"],
-    "segmentos_erro": ["extracao_erro"],
-    "segmentos_tentativas": ["extracao_tentativas"],
+    "Registro TSE": ["registro", "registro_tse"],
+    "Cargo": ["cargo"],
+    "UF": ["uf"],
+    "Instituto": ["instituto"],
+    "Data de divulgação": ["data_divulgacao", "data_divulgacao_pesqele"],
+    "Link do relatório": ["link"],
+    "Origem do link": ["origem_link", "origem_busca"],
+    "Nível de conferência": ["nivel_conferencia"],
+    "Conferido?": ["conferido"],
+    "Segmentos extraídos?": ["segmentos_extraido", "extraido"],
+    "Data da extração de segmentos": ["segmentos_data_extracao", "data_extracao"],
+    "Erro na extração de segmentos": ["segmentos_erro", "extracao_erro"],
+    "Tentativas de segmentos": ["segmentos_tentativas", "extracao_tentativas"],
+    "Topline extraída?": ["topline_extraido"],
+    "Data da extração de topline": ["topline_data_extracao"],
+    "Erro na extração de topline": ["topline_erro"],
+    "Tentativas de topline": ["topline_tentativas"],
 }
+REL_KEY = {rotulo: chave for chave, rotulo in RELATORIOS_COLUNAS}
+for chave, rotulo in RELATORIOS_COLUNAS:
+    REL_KEY[chave] = chave
+    for alias in ALIASES_RELATORIOS.get(rotulo, []):
+        REL_KEY[alias] = chave
 
 CABECALHOS = {
     "relatorios": CABECALHO_RELATORIOS,
@@ -97,7 +128,16 @@ def _ativar_checkbox(ws, coluna, header, ate_linha):
         print(f"[AVISO] não deu pra criar o checkbox de '{coluna}': {e}")
 
 
-def _normalizar_cabecalho(ws, cabecalho):
+def _ultima_linha_com_registro(ws):
+    col_a = ws.col_values(1)
+    ultima = 1
+    for idx, val in enumerate(col_a, start=1):
+        if idx > 1 and str(val).strip():
+            ultima = idx
+    return ultima
+
+
+def _normalizar_cabecalho(ws, cabecalho, remover_sobras=False):
     """Garante a ordem canônica sem perder dados de colunas já existentes."""
     valores = ws.get_all_values()
     if not valores:
@@ -107,6 +147,7 @@ def _normalizar_cabecalho(ws, cabecalho):
 
     atual = valores[0]
     aliases_antigos = {a for aliases in ALIASES_RELATORIOS.values() for a in aliases}
+    aliases_antigos.update(REL_COL.keys())
     extras = [c for c in atual if c and c not in cabecalho and c not in aliases_antigos]
     alvo = cabecalho + extras
     if atual == alvo:
@@ -130,9 +171,32 @@ def _normalizar_cabecalho(ws, cabecalho):
         ws.add_cols(len(alvo) - ws.col_count)
     ws.update(range_name="A1", values=novos, value_input_option="RAW")
     # coluna conferido recém-criada: aplica o checkbox só nas linhas que já têm pesquisa
-    if "conferido" in alvo and "conferido" not in idx:
-        _ativar_checkbox(ws, "conferido", alvo, ate_linha=len(valores))
+    if _rel_display("conferido") in alvo and _rel_display("conferido") not in idx:
+        _ativar_checkbox(ws, _rel_display("conferido"), alvo, ate_linha=len(valores))
+    if remover_sobras:
+        _remover_colunas_sobrando(ws, len(alvo))
     return alvo
+
+
+def _remover_colunas_sobrando(ws, total_colunas):
+    """Remove colunas antigas/duplicadas que ficaram à direita após migrar cabeçalho."""
+    if ws.col_count <= total_colunas:
+        return
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": total_colunas,
+                        "endIndex": ws.col_count,
+                    }
+                }
+            }]
+        })
+    except Exception as e:
+        print(f"[AVISO] não deu pra remover colunas antigas à direita: {e}")
 
 
 def _creds_info():
@@ -143,6 +207,59 @@ def _creds_info():
 def _sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     return gspread.authorize(Credentials.from_service_account_info(_creds_info(), scopes=scopes))
+
+
+def _rel_display(nome):
+    return REL_COL.get(nome, nome)
+
+
+def _rel_key(nome):
+    return REL_KEY.get(nome, nome)
+
+
+def _rel_record(row):
+    return {_rel_key(k): v for k, v in row.items()}
+
+
+def _rel_records(ws):
+    return [_rel_record(r) for r in ws.get_all_records()]
+
+
+def _rel_row(valores, header):
+    return [valores.get(_rel_key(c), valores.get(c, "")) for c in header]
+
+
+def _garantir_coluna_relatorios(ws, header, nome):
+    display = _rel_display(nome)
+    for candidato in [display, nome] + ALIASES_RELATORIOS.get(display, []):
+        if candidato in header:
+            return header.index(candidato) + 1
+    return _garantir_coluna(ws, header, display)
+
+
+def _resetar_validacoes_relatorios(ws, header, ate_linha):
+    """Remove checkboxes/validações acidentais e recria só a de Conferido?."""
+    if ate_linha < 2:
+        return
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "repeatCell": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": 1,
+                        "endRowIndex": ate_linha,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": len(header),
+                    },
+                    "cell": {"dataValidation": None},
+                    "fields": "dataValidation",
+                }
+            }]
+        })
+    except Exception as e:
+        print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
+    _ativar_checkbox(ws, _rel_display("conferido"), header, ate_linha)
 
 
 def _aba(sh, nome):
@@ -156,8 +273,9 @@ def _aba(sh, nome):
     if not ws.row_values(1):
         ws.update(range_name="A1", values=[header])
     elif nome == "relatorios":
-        header = _normalizar_cabecalho(ws, header)
+        header = _normalizar_cabecalho(ws, header, remover_sobras=True)
         _separar_linhas_multicargo(ws, header)
+        _resetar_validacoes_relatorios(ws, header, _ultima_linha_com_registro(ws))
     elif nome in ("topline_pesquisas", "topline_resultados"):
         _normalizar_cabecalho(ws, header)
     return ws
@@ -219,7 +337,9 @@ def _limpar_status_extracao(row):
         "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
         "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
     ):
+        row[_rel_display(coluna)] = ""
         row[coluna] = ""
+    row[_rel_display("origem_link")] = "separado de linha multicargo; buscar fonte específica"
     row["origem_link"] = "separado de linha multicargo; buscar fonte específica"
     return row
 
@@ -231,16 +351,16 @@ def _separar_linhas_multicargo(ws, header):
     primeiro cargo monitorado e as demais viram novas linhas sem link. Isso evita
     que uma matéria parcial de governador cubra senador por engano.
     """
-    if "cargo" not in header or "registro" not in header:
+    if _rel_display("cargo") not in header or _rel_display("registro") not in header:
         return
 
-    registros = ws.get_all_records()
+    registros = _rel_records(ws)
     existentes = {
         _chave_fila(r.get("registro"), r.get("cargo"), r.get("uf"))
         for r in registros
         if str(r.get("registro", "")).strip()
     }
-    col_cargo = header.index("cargo") + 1
+    col_cargo = header.index(_rel_display("cargo")) + 1
     updates, novas = [], []
 
     for row_i, r in enumerate(registros, start=2):
@@ -259,8 +379,8 @@ def _separar_linhas_multicargo(ws, header):
             chave = _chave_fila(r.get("registro"), cargo, r.get("uf"))
             if chave in existentes:
                 continue
-            novo = {c: r.get(c, "") for c in header}
-            novo["cargo"] = cargo
+            novo = {c: r.get(_rel_key(c), "") for c in header}
+            novo[_rel_display("cargo")] = cargo
             _limpar_status_extracao(novo)
             novas.append([novo.get(c, "") for c in header])
             existentes.add(chave)
@@ -408,7 +528,7 @@ def _preencher_fila(pesquisas):
     header = fila.row_values(1)
     existentes = {
         _chave_fila(r.get("registro"), r.get("cargo"), r.get("uf"))
-        for r in fila.get_all_records()
+        for r in _rel_records(fila)
     }
     novas = []
     for p in pesquisas:
@@ -426,7 +546,7 @@ def _preencher_fila(pesquisas):
                 "instituto": p.get("empresa_contratada", ""),
                 "data_divulgacao": str(p.get("data_divulgacao", ""))[:10],
             }
-            novas.append([valores.get(c, "") for c in header])
+            novas.append(_rel_row(valores, header))
             existentes.add(chave)
     if novas:
         fila.append_rows(novas, value_input_option="RAW")
@@ -476,6 +596,9 @@ PROMPT = (
     'Cada item: {"alvo": "...", "resposta": "...", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
     "Regras:\n"
     "1) Preserve os números EXATAMENTE como no relatório. Não arredonde nem recalcule.\n"
+    "1b) Percentuais com vírgula decimal devem virar número decimal com ponto: 26,1% -> 26.1; "
+    "50,3% -> 50.3; 64,01% -> 64.01. NUNCA remova a vírgula transformando 26,1 em 261 "
+    "ou 50,3 em 503. Todo 'valor' individual deve ficar entre 0 e 100.\n"
     "2) Não invente. Se um cruzamento não existir no relatório, omita.\n"
     "3) Use os rótulos de segmento como aparecem (ex: Masculino, Feminino, 16 a 24 anos, "
     "25 a 34 anos, Fundamental, Médio, Superior, Até 2 SM, Mais de 5 a 10 SM).\n"
@@ -492,6 +615,13 @@ PROMPT = (
     "7b) Em voto_segmento, consolide as respostas inválidas (branco, nulo, não sabe, não "
     "respondeu, indeciso, nenhum) em um único candidato='Não válido' por cenário e segmento, "
     "somando os valores. Em rejeicao, mantenha as categorias de resposta como no relatório.\n"
+    "7c) Quando uma tabela tiver colunas 'Porcentual' e 'Porcentagem válida', escolha UMA "
+    "base só. Se você incluir 'Não válido' no cenário, use a coluna 'Porcentual' para "
+    "candidatos e inválidos. Não misture 'Porcentagem válida' dos candidatos com "
+    "branco/nulo/NS/NR da coluna 'Porcentual'.\n"
+    "7d) Para senador, '1º voto', '2º voto' e 'média do 1º e 2º votos' continuam sendo "
+    "turno='t1'. Use turno='t2' somente para confronto direto de segundo turno entre "
+    "dois nomes, não para segundo voto de senador.\n"
     "8) Em aprovacao, PADRONIZE o 'alvo' assim: se for avaliação do presidente/governo "
     "federal, use SEMPRE 'Presidente <Nome>' (ex: 'Presidente Lula'), mesmo que o relatório "
     "escreva 'Governo Lula', 'Governo Federal' ou 'gestão do presidente'. Se for governador/"
@@ -532,6 +662,133 @@ def _baixar_pdf(link):
 
 
 PAGINAS_POR_BLOCO = 5
+MIN_TEXT_FOR_TEXT_ONLY_CHARS = int(os.getenv("MIN_TEXT_FOR_TEXT_ONLY_CHARS", "200"))
+
+REGISTRO_TSE_RE = re.compile(
+    r"\b(?:BR|AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)"
+    r"[\s-]*\d{5}/2026\b",
+    flags=re.I,
+)
+
+
+def _norm_registro(valor):
+    return re.sub(r"[^A-Z0-9]", "", str(valor or "").upper())
+
+
+def _registros_tse_texto(texto):
+    return {_norm_registro(m.group(0)) for m in REGISTRO_TSE_RE.finditer(texto or "")}
+
+
+def _texto_pdf_bytes(pdf_bytes, max_paginas=None):
+    """Texto do PDF para validação e fallback. Vazio em PDF só imagem."""
+    try:
+        import fitz  # PyMuPDF
+        partes = []
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            total = doc.page_count if max_paginas is None else min(doc.page_count, max_paginas)
+            for i in range(total):
+                raw = doc.load_page(i).get_text("text") or ""
+                raw = raw.replace("-\n", "").replace("\n", " ")
+                raw = re.sub(r"\s{2,}", " ", raw).strip()
+                if raw:
+                    partes.append(raw)
+        return "\n".join(partes)
+    except Exception:
+        return ""
+
+
+def _validar_registro_pdf(pdf_bytes, registro):
+    """Retorna mensagem de erro se o PDF cita registros TSE e nenhum é o da fila."""
+    registro_norm = _norm_registro(registro)
+    if not registro_norm:
+        return ""
+    texto = _texto_pdf_bytes(pdf_bytes, max_paginas=30)
+    encontrados = _registros_tse_texto(texto)
+    if encontrados and registro_norm not in encontrados:
+        regs = ", ".join(sorted(encontrados))
+        return f"registro da fila não aparece no PDF; registros encontrados: {regs}"
+    return ""
+
+
+def _extrair_json_objeto(texto):
+    bruto = (texto or "").strip()
+    bruto = re.sub(r"^```json\s*", "", bruto, flags=re.I)
+    bruto = re.sub(r"^```\s*", "", bruto)
+    bruto = re.sub(r"\s*```$", "", bruto)
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", bruto):
+        try:
+            obj, _ = decoder.raw_decode(bruto[match.start():])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            continue
+    raise RuntimeError("JSON não encontrado na resposta do Gemini")
+
+
+def _normalizar_percentual_extraido(valor):
+    """Percentual individual do Gemini, tolerando vírgula decimal perdida.
+
+    Exemplos comuns do erro: 26,1 -> 261; 50,3 -> 503; 64,01 -> 6401.
+    Só corrige quando o valor veio como inteiro acima de 100; número decimal
+    acima de 100 continua inválido para não esconder mistura de bases.
+    """
+    if valor is None:
+        return None
+    texto = str(valor).strip()
+    if not texto:
+        return None
+    limpo = texto.replace("%", "").replace(" ", "").replace(",", ".")
+    try:
+        numero = float(limpo)
+    except Exception:
+        return None
+
+    if numero > 100:
+        inteiro_sem_decimal = re.fullmatch(r"\d+", texto.replace("%", "").replace(" ", "")) is not None
+        if not inteiro_sem_decimal:
+            return None
+        digitos = re.sub(r"\D", "", texto)
+        if not digitos:
+            return None
+        if int(digitos) == 1000:
+            numero = 100.0
+        elif len(digitos) >= 4:
+            numero = float(digitos) / 100
+        else:
+            numero = float(digitos) / 10
+
+    if numero < 0 or numero > 100:
+        return None
+    return round(numero, 2)
+
+
+def _normalizar_percentuais_lista(itens, contexto):
+    erros = []
+    for idx, item in enumerate(itens, start=1):
+        valor = _normalizar_percentual_extraido(item.get("valor"))
+        if valor is None:
+            bruto = item.get("valor", "")
+            alvo = item.get("candidato") or item.get("alvo") or item.get("resposta") or "item"
+            erros.append(f"{contexto} #{idx} {alvo}: valor inválido ({bruto})")
+            continue
+        item["valor"] = valor
+    return erros
+
+
+def _turno_segmento(item):
+    turno = str(item.get("turno", "t1") or "t1").strip().lower()
+    cargo = _cargo_norm(item.get("cargo", ""))
+    cenario = _sem_acento(item.get("cenario", "")).lower()
+    if cargo == "senador" and turno == "t2":
+        fala_de_voto_senado = any(t in cenario for t in (
+            "1o voto", "1 voto", "primeiro voto", "2o voto", "2 voto",
+            "segundo voto", "media do 1", "media do primeiro", "media do 2",
+        ))
+        confronto = re.search(r"\b(x|versus|contra)\b", cenario) is not None
+        if fala_de_voto_senado and not confronto:
+            return "t1"
+    return "t2" if turno == "t2" else "t1"
 
 
 def _blocos_pdf(pdf_bytes, tamanho=PAGINAS_POR_BLOCO):
@@ -550,7 +807,7 @@ def _blocos_pdf(pdf_bytes, tamanho=PAGINAS_POR_BLOCO):
         yield buf.getvalue()
 
 
-def _gemini_json(pdf_bytes, extra=""):
+def _gemini_json(pdf_bytes, extra="", texto_bloco=""):
     from google import genai
     from google.genai import types
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -561,11 +818,18 @@ def _gemini_json(pdf_bytes, extra=""):
         thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
     prompt = PROMPT + (f"\n\n{extra}" if extra else "")
-    resp = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=[prompt, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")],
-        config=config,
-    )
+    texto_bloco = (texto_bloco or "").strip()
+    texto_suficiente = len(texto_bloco) >= MIN_TEXT_FOR_TEXT_ONLY_CHARS
+    if texto_suficiente:
+        contents = prompt + "\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA:\n" + texto_bloco
+    elif texto_bloco:
+        contents = [
+            prompt + "\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA (parcial/insuficiente):\n" + texto_bloco,
+            types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+        ]
+    else:
+        contents = [prompt, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")]
+    resp = client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
     raw = (getattr(resp, "text", "") or "").strip()
     if not raw:
         fr = "?"
@@ -573,8 +837,7 @@ def _gemini_json(pdf_bytes, extra=""):
         if cands:
             fr = getattr(cands[0], "finish_reason", "?")
         raise RuntimeError(f"resposta vazia ou truncada do Gemini (finish_reason={fr})")
-    raw = raw.replace("```json", "").replace("```", "").strip()
-    return json.loads(raw)
+    return _extrair_json_objeto(raw)
 
 
 def _dedup(itens, chaves):
@@ -592,7 +855,8 @@ def extrair_do_pdf(pdf_bytes, extra=""):
     precisão) e junta os resultados, removendo duplicatas entre blocos."""
     voto, rej, aprov = [], [], []
     for bloco in _blocos_pdf(pdf_bytes):
-        dados = _gemini_json(bloco, extra)
+        texto_bloco = _texto_pdf_bytes(bloco)
+        dados = _gemini_json(bloco, extra, texto_bloco=texto_bloco)
         voto += dados.get("voto_segmento", [])
         rej += dados.get("rejeicao", [])
         aprov += dados.get("aprovacao", [])
@@ -614,13 +878,13 @@ def cmd_extrair():
     ws_aprov = _aba(sh, "aprovacao")
 
     header = fila.row_values(1)
-    col_err = _garantir_coluna(fila, header, "segmentos_erro")
-    col_ten = _garantir_coluna(fila, header, "segmentos_tentativas")
+    col_err = _garantir_coluna_relatorios(fila, header, "segmentos_erro")
+    col_ten = _garantir_coluna_relatorios(fila, header, "segmentos_tentativas")
 
-    ci_ext = _garantir_coluna(fila, header, "segmentos_extraido")
-    ci_data = _garantir_coluna(fila, header, "segmentos_data_extracao")
+    ci_ext = _garantir_coluna_relatorios(fila, header, "segmentos_extraido")
+    ci_data = _garantir_coluna_relatorios(fila, header, "segmentos_data_extracao")
 
-    linhas = fila.get_all_records()
+    linhas = _rel_records(fila)
     ok_regs, err_regs = [], []
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
 
@@ -688,6 +952,9 @@ def cmd_extrair():
         try:
             print(f"linha {i} ({r.get('registro')} / {r.get('cargo')}): baixando PDF para segmentos...", flush=True)
             pdf = _baixar_pdf(link)
+            erro_registro = _validar_registro_pdf(pdf, r.get("registro", ""))
+            if erro_registro:
+                raise RuntimeError(erro_registro)
             print(f"linha {i} ({r.get('registro')} / {r.get('cargo')}): PDF baixado ({len(pdf)} bytes), enviando ao Gemini...", flush=True)
             dados = extrair_do_pdf(pdf, extra=_bloco_canonico(r.get("uf"), r.get("cargo")))
         except Exception as e:
@@ -708,6 +975,20 @@ def cmd_extrair():
         voto_filtrado = [v for v in dados.get("voto_segmento", []) if _item_casa_cargo(v, cargo_fila)]
         rej_filtrada = [v for v in dados.get("rejeicao", []) if _item_casa_cargo(v, cargo_fila)]
         aprov_filtrada = dados.get("aprovacao", []) if _cargo_norm(cargo_fila) in ("presidente", "governador") else []
+        erros_valor = []
+        erros_valor += _normalizar_percentuais_lista(voto_filtrado, "voto_segmento")
+        erros_valor += _normalizar_percentuais_lista(rej_filtrada, "rejeicao")
+        erros_valor += _normalizar_percentuais_lista(aprov_filtrada, "aprovacao")
+        if erros_valor:
+            msg = "; ".join(erros_valor[:4])
+            updates.extend([gspread.Cell(i, col_err, msg[:300]),
+                            gspread.Cell(i, col_ten, tentativas + 1)])
+            err_regs.append(f"{registro} {cargo_fila} [{msg[:80]}]")
+            print(f"linha {i} ({registro} / {cargo_fila}): valores inválidos: {msg}", flush=True)
+            _contador["n"] += 1
+            if _contador["n"] >= LOTE:
+                _flush("parcial")
+            continue
         if not (voto_filtrado or rej_filtrada or aprov_filtrada):
             msg = f"nenhum dado encontrado para o cargo da linha ({cargo_fila})"
             updates.extend([gspread.Cell(i, col_err, msg),
@@ -721,14 +1002,15 @@ def cmd_extrair():
         for v in voto_filtrado:
             # cargo/turno da disputa daquele cenário (o Gemini identifica); se faltar,
             # cai no texto da fila, pra linha nunca ficar sem referência
+            turno = _turno_segmento(v)
             chave = (str(registro).strip(), str(v.get("cargo") or cargo_fila).strip(),
-                     str(v.get("turno", "t1")).strip(), str(v.get("cenario", "")).strip(),
+                     turno, str(v.get("cenario", "")).strip(),
                      str(v.get("candidato", "")).strip(), str(v.get("tipo_segmento", "")).strip(),
                      str(v.get("segmento", "")).strip())
             if chave in voto_keys:
                 continue
             voto_keys.add(chave)
-            voto_buf.append([registro, v.get("cargo") or cargo_fila, v.get("turno", "t1"),
+            voto_buf.append([registro, v.get("cargo") or cargo_fila, turno,
                              uf, inst, data_div,
                              v.get("cenario", ""), v.get("candidato", ""),
                              v.get("tipo_segmento", ""), v.get("segmento", ""),
@@ -822,12 +1104,12 @@ def cmd_topline():
     fila = _aba(sh, "relatorios")
 
     header = fila.row_values(1)
-    col_flag = _garantir_coluna(fila, header, FLAG_TOPLINE)
-    col_data = _garantir_coluna(fila, header, "topline_data_extracao")
-    col_erro = _garantir_coluna(fila, header, "topline_erro")
-    col_tent = _garantir_coluna(fila, header, "topline_tentativas")
+    col_flag = _garantir_coluna_relatorios(fila, header, FLAG_TOPLINE)
+    col_data = _garantir_coluna_relatorios(fila, header, "topline_data_extracao")
+    col_erro = _garantir_coluna_relatorios(fila, header, "topline_erro")
+    col_tent = _garantir_coluna_relatorios(fila, header, "topline_tentativas")
 
-    linhas = fila.get_all_records()
+    linhas = _rel_records(fila)
     todos_p, todos_r = [], []
     updates = []
     ok_regs, err_regs = [], []
@@ -892,6 +1174,12 @@ def cmd_topline():
         except Exception as e:
             _falha(i, registro_fila, tentativas, f"baixar/ler PDF: {e}")
             continue
+        registros_pdf = _registros_tse_texto(texto)
+        if registros_pdf and _norm_registro(registro_fila) not in registros_pdf:
+            regs = ", ".join(sorted(registros_pdf))
+            _falha(i, registro_fila, tentativas,
+                   f"registro da fila não aparece no PDF; registros encontrados: {regs}")
+            continue
         if len(texto) < 200:   # scan/sem camada de texto: manda o PDF pro Gemini (visão)
             print(f"linha {i} ({registro_fila}): PDF sem texto útil, usando visão")
             texto = ""
@@ -902,6 +1190,7 @@ def cmd_topline():
         print(f"linha {i} ({registro_fila} / {r.get('cargo')}): texto={len(texto)} caracteres; cargos={', '.join(cargos)}", flush=True)
 
         n_cen, avisos, houve_erro = 0, [], False
+        linha_p, linha_r = [], []
 
         def _aviso(msg):
             if msg not in avisos:
@@ -930,7 +1219,8 @@ def cmd_topline():
                     # fila NÃO estiver entre os do PDF (compara sem hífen/pontuação;
                     # relatórios grafam BA04848 e podem trazer mais de um registro)
                     reg_pdf = str(payload.get("registro_tse", "")).strip()
-                    if reg_pdf and registro_fila and _norm_reg(registro_fila) not in _norm_reg(reg_pdf):
+                    if (not registros_pdf and reg_pdf and registro_fila and
+                            _norm_reg(registro_fila) not in _norm_reg(reg_pdf)):
                         _aviso(f"registro no PDF ({reg_pdf}) difere da fila")
                     payload["registro_tse"] = registro_fila or reg_pdf
                     # sem data de campo no PDF: usa a data de divulgação da fila
@@ -948,16 +1238,17 @@ def cmd_topline():
                 if df_r.empty:
                     continue
                 # sanidade: percentual fora de 0-100 e soma do cenário fora da faixa.
-                # A faixa depende de quantos nomes o entrevistado podia citar NAQUELE
-                # cenário (o relatório declara; ex: senador com 2 vagas -> soma ~200).
+                # Cenário simples deve somar ~100; senador com voto duplo declarado
+                # pode somar ~200. Isso pega mistura de "Porcentagem válida" com
+                # "Porcentual" dos inválidos, como 50.3+49.7+23.9.
                 if (df_r["percentual"] < 0).any() or (df_r["percentual"] > 100).any():
                     _aviso(f"{cargo}/{turno}: percentual fora de 0-100")
                 votos_map = dict(zip(df_p["scenario_id"], df_p["votos_por_entrevistado"]))
                 for sid, grupo in df_r.groupby("scenario_id"):
                     soma = grupo["percentual"].sum()
                     votos = int(votos_map.get(sid) or 1)
-                    teto = 215 if votos >= 2 else 115
-                    if 85 <= soma <= teto:
+                    minimo, teto = (185, 215) if votos >= 2 else (97, 103)
+                    if minimo <= soma <= teto:
                         continue
                     lbl = grupo["scenario_label"].iloc[0]
                     if cargo == "senador" and votos == 1 and 115 < soma <= 215:
@@ -968,8 +1259,8 @@ def cmd_topline():
                     else:
                         _aviso(f"{cargo}/{turno} cenário {lbl}: soma {soma:.1f}")
                 df_p["validacao"] = "; ".join(avisos[-3:]) if avisos else ""
-                todos_p.append(df_p)
-                todos_r.append(df_r)
+                linha_p.append(df_p)
+                linha_r.append(df_r)
                 n_cen += len(df_p)
                 print(f"linha {i} ({registro_fila} / {r.get('cargo')}) [{cargo}/{turno}]: {len(df_p)} cenário(s)", flush=True)
 
@@ -977,9 +1268,15 @@ def cmd_topline():
             msg = "todas as extrações falharam" if houve_erro else f"nenhum cenário de topline encontrado para {r.get('cargo')}"
             _falha(i, registro_fila, tentativas, msg)
             continue
+        if avisos:
+            msg = "; ".join(avisos[:3])
+            _falha(i, registro_fila, tentativas, msg)
+            continue
+        todos_p.extend(linha_p)
+        todos_r.extend(linha_r)
         updates.extend([gspread.Cell(i, col_flag, "sim"),
                         gspread.Cell(i, col_data, agora),
-                        gspread.Cell(i, col_erro, "; ".join(avisos[:3]))])
+                        gspread.Cell(i, col_erro, "")])
         ok_regs.append(registro_fila)
         aviso_txt = f" | avisos: {'; '.join(avisos[:2])}" if avisos else ""
         print(f"linha {i} ({registro_fila}): {n_cen} cenário(s) de topline{aviso_txt}")
