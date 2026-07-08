@@ -1,0 +1,341 @@
+"""
+Busca datas e locais de convencoes partidarias para pre-candidatos.
+
+Uso:
+  python convencoes.py
+  python convencoes.py --max-linhas 50
+  python convencoes.py --force
+
+Secrets/env:
+  GOOGLE_CREDENTIALS_JSON
+  GEMINI_API_KEY
+  SPREADSHEET_ID_CONVENCOES
+
+O script le a aba "Convencoes partidarias" por padrao e preenche apenas campos
+vazios, mantendo qualquer informacao manual ja digitada. Use --force apenas para
+reconsultar e sobrescrever campos existentes.
+"""
+
+import argparse
+import json
+import os
+import re
+import unicodedata
+from datetime import datetime, timedelta, timezone
+
+import gspread
+from google import genai
+from google.genai import types
+from google.oauth2.service_account import Credentials
+
+
+BRT = timezone(timedelta(hours=-3))
+GEMINI_MODEL = os.getenv("GEMINI_MODEL_CONVENCOES", "gemini-2.5-flash")
+ABA_PADRAO = "Convenções partidárias"
+
+CABECALHO_BASE = [
+    "Estado",
+    "Pré-candidato",
+    "Cargo",
+    "Partido",
+    "Data convenção",
+    "Local",
+    "Escopo",
+]
+
+CABECALHO_AUDITORIA = [
+    "Fonte convenção",
+    "Título fonte",
+    "Status busca",
+    "Nível de confiança",
+    "Data da busca",
+    "Evidência",
+]
+
+ALIASES = {
+    "Pré-candidato": ["Pre-candidato", "Pré candidato", "Pre candidato", "Candidato"],
+    "Data convenção": ["Data convencao", "Data da convenção", "Data da convencao"],
+    "Fonte convenção": ["Fonte convencao", "Link fonte", "Fonte"],
+    "Título fonte": ["Titulo fonte", "Título", "Titulo"],
+    "Status busca": ["Status da busca", "Status"],
+    "Nível de confiança": ["Nivel de confianca", "Confiança", "Confianca"],
+    "Data da busca": ["Última busca", "Ultima busca", "Data busca"],
+}
+
+
+def _sem_acento(valor):
+    return unicodedata.normalize("NFKD", str(valor or "")).encode("ascii", "ignore").decode()
+
+
+def _norm_header(valor):
+    s = _sem_acento(valor).strip().lower()
+    return re.sub(r"[^a-z0-9]+", "", s)
+
+
+def _creds_info():
+    raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+    if not raw:
+        raise RuntimeError("GOOGLE_CREDENTIALS_JSON não encontrado.")
+    return json.loads(raw)
+
+
+def _sheets():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds = Credentials.from_service_account_info(_creds_info(), scopes=scopes)
+    return gspread.authorize(creds)
+
+
+def _gemini():
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY não encontrada.")
+    return genai.Client(api_key=api_key)
+
+
+def _extrair_json_objeto(texto):
+    bruto = (texto or "").strip()
+    bruto = re.sub(r"^```json\s*", "", bruto, flags=re.I)
+    bruto = re.sub(r"^```\s*", "", bruto)
+    bruto = re.sub(r"\s*```$", "", bruto)
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", bruto):
+        try:
+            obj, _ = decoder.raw_decode(bruto[match.start():])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            continue
+    raise RuntimeError("JSON não encontrado na resposta do Gemini")
+
+
+def _mapear_header(header):
+    alvo = CABECALHO_BASE + CABECALHO_AUDITORIA
+    mapa_norm = {}
+    for nome in alvo:
+        mapa_norm[_norm_header(nome)] = nome
+        for alias in ALIASES.get(nome, []):
+            mapa_norm[_norm_header(alias)] = nome
+    return {nome: mapa_norm.get(_norm_header(nome), nome) for nome in header}
+
+
+def _garantir_colunas(ws):
+    header = ws.row_values(1)
+    if not header:
+        header = CABECALHO_BASE + CABECALHO_AUDITORIA
+        ws.update(range_name="A1", values=[header])
+        return header
+
+    canonical_by_norm = {}
+    for nome in CABECALHO_BASE + CABECALHO_AUDITORIA:
+        canonical_by_norm[_norm_header(nome)] = nome
+        for alias in ALIASES.get(nome, []):
+            canonical_by_norm[_norm_header(alias)] = nome
+
+    novo_header = []
+    mudou = False
+    for col in header:
+        canonical = canonical_by_norm.get(_norm_header(col), col)
+        novo_header.append(canonical)
+        mudou = mudou or canonical != col
+
+    for col in CABECALHO_BASE + CABECALHO_AUDITORIA:
+        if col not in novo_header:
+            novo_header.append(col)
+            mudou = True
+
+    if mudou:
+        if ws.col_count < len(novo_header):
+            ws.add_cols(len(novo_header) - ws.col_count)
+        ws.update(range_name="A1", values=[novo_header], value_input_option="RAW")
+    return novo_header
+
+
+def _abrir_aba():
+    sheet_id = os.getenv("SPREADSHEET_ID_CONVENCOES", "")
+    if not sheet_id:
+        raise RuntimeError("Defina SPREADSHEET_ID_CONVENCOES.")
+    aba_nome = os.getenv("CONVENCOES_ABA", ABA_PADRAO)
+    sh = _sheets().open_by_key(sheet_id)
+    return sh.worksheet(aba_nome)
+
+
+def _data_busca():
+    return datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
+
+
+def _limpar_data(valor):
+    s = str(valor or "").strip()
+    if not s:
+        return ""
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%d/%m/%Y")
+        except ValueError:
+            pass
+    return s
+
+
+def _prompt_busca(row):
+    estado = row.get("Estado", "")
+    candidato = row.get("Pré-candidato", "")
+    cargo = row.get("Cargo", "")
+    partido = row.get("Partido", "")
+
+    return f"""
+Você é um pesquisador eleitoral. Busque na web informações sobre a convenção partidária de 2026 relacionada ao seguinte pré-candidato:
+
+Estado/UF: {estado}
+Pré-candidato: {candidato}
+Cargo: {cargo}
+Partido: {partido}
+
+O objetivo é preencher uma planilha interna com data, local e escopo da convenção.
+
+REGRAS:
+1. Priorize fontes oficiais: site/Instagram do partido, federação, diretório estadual, pré-candidato, assessoria ou agenda oficial.
+2. Aceite fonte jornalística confiável quando não houver fonte oficial.
+3. Não confunda filiação, lançamento de pré-candidatura, encontro partidário, reunião interna ou pesquisa eleitoral com convenção partidária.
+4. A data deve ser da convenção partidária que deve oficializar candidatura/chapas para a eleição de 2026.
+5. Se a fonte trouxer apenas previsão, retorne status="provável". Se confirmar data e/ou local, status="confirmado". Se não encontrar fonte suficiente, status="pendente".
+6. Escopo deve resumir o tipo do evento, por exemplo: "convenção estadual", "convenção nacional", "convenção municipal", "federação/coligação", "lançamento de pré-candidatura" ou "sem informação".
+7. Se houver conflito entre fontes, não escolha no chute: status="conflito" e explique em evidencia.
+8. Use data no formato DD/MM/AAAA quando o ano estiver claro. Se só houver dia e mês, assuma 2026 apenas quando o contexto for claramente Eleições 2026.
+
+Retorne APENAS JSON válido:
+{{
+  "data_convencao": "",
+  "local": "",
+  "escopo": "",
+  "status": "confirmado|provável|pendente|conflito",
+  "nivel_confianca": "alta|média|baixa",
+  "fonte_url": "",
+  "fonte_titulo": "",
+  "evidencia": "frase curta explicando o que foi encontrado"
+}}
+""".strip()
+
+
+def buscar_convencao(client, row):
+    config = types.GenerateContentConfig(
+        temperature=0.1,
+        tools=[types.Tool(google_search=types.GoogleSearch())],
+    )
+    resp = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=_prompt_busca(row),
+        config=config,
+    )
+    return _extrair_json_objeto(getattr(resp, "text", "") or "")
+
+
+def _records(ws, header):
+    mapa = _mapear_header(header)
+    registros = []
+    valores = ws.get_all_values()[1:]
+    for idx, row in enumerate(valores, start=2):
+        item = {}
+        for col_idx, nome in enumerate(header):
+            chave = mapa.get(nome, nome)
+            item[chave] = row[col_idx] if col_idx < len(row) else ""
+        registros.append((idx, item))
+    return registros
+
+
+def _deve_processar(row, force=False):
+    if force:
+        return True
+    if not str(row.get("Pré-candidato", "")).strip():
+        return False
+    if not str(row.get("Data convenção", "")).strip():
+        return True
+    if not str(row.get("Local", "")).strip():
+        return True
+    if not str(row.get("Escopo", "")).strip():
+        return True
+    return False
+
+
+def atualizar(max_linhas=80, force=False, dry_run=False):
+    ws = _abrir_aba()
+    header = _garantir_colunas(ws)
+    idx = {nome: pos + 1 for pos, nome in enumerate(header)}
+    client = _gemini()
+    registros = [(row_i, row) for row_i, row in _records(ws, header) if _deve_processar(row, force=force)]
+    registros = registros[:max_linhas]
+    print(f"Convenções: {len(registros)} linha(s) para buscar.")
+
+    updates = []
+    ok, pendentes, erros = 0, 0, 0
+    for row_i, row in registros:
+        candidato = row.get("Pré-candidato", "")
+        estado = row.get("Estado", "")
+        partido = row.get("Partido", "")
+        print(f"linha {row_i}: {estado} / {candidato} ({partido})...")
+        try:
+            dados = buscar_convencao(client, row)
+        except Exception as e:
+            erros += 1
+            msg = f"erro técnico: {str(e)[:180]}"
+            print(f"  [erro] {msg}")
+            updates.extend([
+                gspread.Cell(row_i, idx["Status busca"], "erro"),
+                gspread.Cell(row_i, idx["Data da busca"], _data_busca()),
+                gspread.Cell(row_i, idx["Evidência"], msg),
+            ])
+            continue
+
+        status = str(dados.get("status") or "pendente").strip().lower()
+        if status in ("confirmado", "provável"):
+            ok += 1
+        else:
+            pendentes += 1
+
+        data_conv = _limpar_data(dados.get("data_convencao", ""))
+        local = str(dados.get("local") or "").strip()
+        escopo = str(dados.get("escopo") or "").strip()
+
+        def _set_if_needed(col, valor):
+            if valor == "":
+                return
+            if force or not str(row.get(col, "")).strip():
+                updates.append(gspread.Cell(row_i, idx[col], valor))
+
+        _set_if_needed("Data convenção", data_conv)
+        _set_if_needed("Local", local)
+        _set_if_needed("Escopo", escopo)
+        updates.extend([
+            gspread.Cell(row_i, idx["Fonte convenção"], str(dados.get("fonte_url") or "").strip()),
+            gspread.Cell(row_i, idx["Título fonte"], str(dados.get("fonte_titulo") or "").strip()),
+            gspread.Cell(row_i, idx["Status busca"], status),
+            gspread.Cell(row_i, idx["Nível de confiança"], str(dados.get("nivel_confianca") or "").strip()),
+            gspread.Cell(row_i, idx["Data da busca"], _data_busca()),
+            gspread.Cell(row_i, idx["Evidência"], str(dados.get("evidencia") or "").strip()[:500]),
+        ])
+
+        print(f"  [{status}] data={data_conv or '-'} local={local or '-'}")
+        if len(updates) >= 120 and not dry_run:
+            ws.update_cells(updates, value_input_option="USER_ENTERED")
+            updates.clear()
+
+    if updates and not dry_run:
+        ws.update_cells(updates, value_input_option="USER_ENTERED")
+
+    print("\nResumo:")
+    print(f"* encontrados/prováveis: {ok}")
+    print(f"* pendentes/conflitos: {pendentes}")
+    print(f"* erros técnicos: {erros}")
+    if dry_run:
+        print("* dry-run: nada foi gravado.")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--max-linhas", type=int, default=int(os.getenv("CONVENCOES_MAX_LINHAS", "80")))
+    parser.add_argument("--force", action="store_true", default=os.getenv("CONVENCOES_FORCE", "").lower() == "true")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    atualizar(max_linhas=args.max_linhas, force=args.force, dry_run=args.dry_run)
+
+
+if __name__ == "__main__":
+    main()
