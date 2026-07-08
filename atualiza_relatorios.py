@@ -48,19 +48,51 @@ PASTA_GOV_SEN = '1MmeVz63PG9imU_oDqk7thw5gHha0xAWa'
 COL_ORIGEM_LINK = "origem_link"
 COL_NIVEL_CONFERENCIA = "nivel_conferencia"
 COL_CONFERIDO = "conferido"
-CABECALHO_RELATORIOS = [
-    "registro", "cargo", "uf", "instituto", "data_divulgacao", "link",
-    COL_ORIGEM_LINK, COL_NIVEL_CONFERENCIA, COL_CONFERIDO,
-    "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
-    "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
+RELATORIOS_COLUNAS = [
+    ("registro", "Registro TSE"),
+    ("cargo", "Cargo"),
+    ("uf", "UF"),
+    ("instituto", "Instituto"),
+    ("data_divulgacao", "Data de divulgação"),
+    ("link", "Link do relatório"),
+    (COL_ORIGEM_LINK, "Origem do link"),
+    (COL_NIVEL_CONFERENCIA, "Nível de conferência"),
+    (COL_CONFERIDO, "Conferido?"),
+    ("segmentos_extraido", "Segmentos extraídos?"),
+    ("segmentos_data_extracao", "Data da extração de segmentos"),
+    ("segmentos_erro", "Erro na extração de segmentos"),
+    ("segmentos_tentativas", "Tentativas de segmentos"),
+    ("topline_extraido", "Topline extraída?"),
+    ("topline_data_extracao", "Data da extração de topline"),
+    ("topline_erro", "Erro na extração de topline"),
+    ("topline_tentativas", "Tentativas de topline"),
 ]
+REL_COL = dict(RELATORIOS_COLUNAS)
+CABECALHO_RELATORIOS = [rotulo for _, rotulo in RELATORIOS_COLUNAS]
 ALIASES_RELATORIOS = {
-    COL_ORIGEM_LINK: ["origem_busca"],
-    "segmentos_extraido": ["extraido"],
-    "segmentos_data_extracao": ["data_extracao"],
-    "segmentos_erro": ["extracao_erro"],
-    "segmentos_tentativas": ["extracao_tentativas"],
+    "Registro TSE": ["registro", "registro_tse"],
+    "Cargo": ["cargo"],
+    "UF": ["uf"],
+    "Instituto": ["instituto"],
+    "Data de divulgação": ["data_divulgacao", "data_divulgacao_pesqele"],
+    "Link do relatório": ["link"],
+    "Origem do link": [COL_ORIGEM_LINK, "origem_busca"],
+    "Nível de conferência": [COL_NIVEL_CONFERENCIA],
+    "Conferido?": [COL_CONFERIDO],
+    "Segmentos extraídos?": ["segmentos_extraido", "extraido"],
+    "Data da extração de segmentos": ["segmentos_data_extracao", "data_extracao"],
+    "Erro na extração de segmentos": ["segmentos_erro", "extracao_erro"],
+    "Tentativas de segmentos": ["segmentos_tentativas", "extracao_tentativas"],
+    "Topline extraída?": ["topline_extraido"],
+    "Data da extração de topline": ["topline_data_extracao"],
+    "Erro na extração de topline": ["topline_erro"],
+    "Tentativas de topline": ["topline_tentativas"],
 }
+REL_KEY = {rotulo: chave for chave, rotulo in RELATORIOS_COLUNAS}
+for chave, rotulo in RELATORIOS_COLUNAS:
+    REL_KEY[chave] = chave
+    for alias in ALIASES_RELATORIOS.get(rotulo, []):
+        REL_KEY[alias] = chave
 CARGOS_MONITORADOS = ("presidente", "governador", "senador")
 CARGO_ROTULO = {
     "presidente": "Presidente",
@@ -118,6 +150,55 @@ def obter_cliente_gemini():
     return genai.Client(api_key=api_key)
 
 
+def _rel_display(nome):
+    return REL_COL.get(nome, nome)
+
+
+def _rel_key(nome):
+    return REL_KEY.get(nome, nome)
+
+
+def _rel_record(row):
+    return {_rel_key(k): v for k, v in row.items()}
+
+
+def _rel_records(ws):
+    return [_rel_record(r) for r in ws.get_all_records()]
+
+
+def _garantir_coluna_relatorios(ws, header, nome):
+    display = _rel_display(nome)
+    for candidato in [display, nome] + ALIASES_RELATORIOS.get(display, []):
+        if candidato in header:
+            return header.index(candidato) + 1
+    return _garantir_coluna(ws, header, display)
+
+
+def _resetar_validacoes_relatorios(ws, header, ate_linha):
+    """Remove checkboxes/validações acidentais e recria só a de Conferido?."""
+    if ate_linha < 2:
+        return
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "repeatCell": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": 1,
+                        "endRowIndex": ate_linha,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": len(header),
+                    },
+                    "cell": {"dataValidation": None},
+                    "fields": "dataValidation",
+                }
+            }]
+        })
+    except Exception as e:
+        print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
+    _ativar_checkbox(ws, _rel_display(COL_CONFERIDO), header, ate_linha)
+
+
 def _garantir_coluna(ws, header, nome):
     """Índice (1-based) da coluna 'nome'; cria no fim se não existir (sem estourar a grade)."""
     if nome in header:
@@ -165,6 +246,7 @@ def _normalizar_cabecalho_relatorios(ws):
 
     atual = valores[0]
     aliases_antigos = {a for aliases in ALIASES_RELATORIOS.values() for a in aliases}
+    aliases_antigos.update(REL_COL.keys())
     extras = [c for c in atual if c and c not in CABECALHO_RELATORIOS and c not in aliases_antigos]
     alvo = CABECALHO_RELATORIOS + extras
     if atual == alvo:
@@ -188,9 +270,31 @@ def _normalizar_cabecalho_relatorios(ws):
         ws.add_cols(len(alvo) - ws.col_count)
     ws.update(range_name="A1", values=novos, value_input_option="RAW")
     # coluna conferido recém-criada: aplica o checkbox só nas linhas que já têm pesquisa
-    if COL_CONFERIDO in alvo and COL_CONFERIDO not in idx:
-        _ativar_checkbox(ws, COL_CONFERIDO, alvo, ate_linha=len(valores))
+    if _rel_display(COL_CONFERIDO) in alvo and _rel_display(COL_CONFERIDO) not in idx:
+        _ativar_checkbox(ws, _rel_display(COL_CONFERIDO), alvo, ate_linha=len(valores))
+    _remover_colunas_sobrando(ws, len(alvo))
     return alvo
+
+
+def _remover_colunas_sobrando(ws, total_colunas):
+    """Remove colunas antigas/duplicadas que ficaram à direita após migrar cabeçalho."""
+    if ws.col_count <= total_colunas:
+        return
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": total_colunas,
+                        "endIndex": ws.col_count,
+                    }
+                }
+            }]
+        })
+    except Exception as e:
+        print(f"[AVISO] não deu pra remover colunas antigas à direita: {e}")
 
 
 def _sem_acento(valor):
@@ -228,22 +332,24 @@ def _limpar_status_extracao(row):
         "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
         "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
     ):
+        row[_rel_display(coluna)] = ""
         row[coluna] = ""
+    row[_rel_display(COL_ORIGEM_LINK)] = "separado de linha multicargo; buscar fonte específica"
     row[COL_ORIGEM_LINK] = "separado de linha multicargo; buscar fonte específica"
     return row
 
 
 def _separar_linhas_multicargo(ws, header):
-    if "cargo" not in header or "registro" not in header:
+    if _rel_display("cargo") not in header or _rel_display("registro") not in header:
         return
 
-    registros = ws.get_all_records()
+    registros = _rel_records(ws)
     existentes = {
         _chave_fila(r.get("registro"), r.get("cargo"), r.get("uf"))
         for r in registros
         if str(r.get("registro", "")).strip()
     }
-    col_cargo = header.index("cargo") + 1
+    col_cargo = header.index(_rel_display("cargo")) + 1
     updates, novas = [], []
 
     for row_i, r in enumerate(registros, start=2):
@@ -261,8 +367,8 @@ def _separar_linhas_multicargo(ws, header):
             chave = _chave_fila(r.get("registro"), cargo, r.get("uf"))
             if chave in existentes:
                 continue
-            novo = {c: r.get(c, "") for c in header}
-            novo["cargo"] = cargo
+            novo = {c: r.get(_rel_key(c), "") for c in header}
+            novo[_rel_display("cargo")] = cargo
             _limpar_status_extracao(novo)
             novas.append([novo.get(c, "") for c in header])
             existentes.add(chave)
@@ -324,6 +430,21 @@ def _norm(s):
     import unicodedata
     s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().lower()
     return re.sub(r"[^a-z0-9]", "", s)
+
+
+REGISTRO_TSE_RE = re.compile(
+    r"\b(?:BR|AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)"
+    r"[\s-]*\d{5}/2026\b",
+    flags=re.I,
+)
+
+
+def _registros_tse_norm(texto):
+    """Registros TSE citados no texto, normalizados para comparar com a fila."""
+    registros = set()
+    for m in REGISTRO_TSE_RE.finditer(texto or ""):
+        registros.add(_norm(m.group(0)))
+    return registros
 
 
 def _texto_pdf(pdf_bytes):
@@ -495,8 +616,14 @@ def _confere_texto(texto, registro, uf, instituto):
     if _eh_teaser(texto):
         return "teaser"
     tn = _norm(texto)
-    if _norm(registro) and _norm(registro) in tn:            # registro é a prova forte
+    reg_esperado = _norm(registro)
+    registros_citados = _registros_tse_norm(texto)
+    if reg_esperado and reg_esperado in registros_citados:   # registro é a prova forte
         return "ok"
+    if reg_esperado and registros_citados:
+        # Se a fonte cita outro(s) registro(s) TSE e não cita o registro da fila,
+        # ela é perigosa demais para entrar por prova fraca UF+instituto+2026.
+        return "nao"
     if len((texto or "").strip()) < 100:
         return "imagem"
     # prova fraca: UF (por extenso) + algum token do instituto + o ano 2026
@@ -1388,12 +1515,13 @@ def atualizar_planilha():
     ws = sh.worksheet("relatorios")
 
     header = _normalizar_cabecalho_relatorios(ws)
-    col_link = _garantir_coluna(ws, header, "link")
-    col_status = _garantir_coluna(ws, header, COL_ORIGEM_LINK)
-    col_nivel = _garantir_coluna(ws, header, COL_NIVEL_CONFERENCIA)
+    col_link = _garantir_coluna_relatorios(ws, header, "link")
+    col_status = _garantir_coluna_relatorios(ws, header, COL_ORIGEM_LINK)
+    col_nivel = _garantir_coluna_relatorios(ws, header, COL_NIVEL_CONFERENCIA)
     _separar_linhas_multicargo(ws, header)
+    _resetar_validacoes_relatorios(ws, header, _ultima_linha_com_registro(ws))
 
-    dados = ws.get_all_records()
+    dados = _rel_records(ws)
     primeiro_cargo_por_registro = {}
     for r in dados:
         reg_norm = re.sub(r"[^A-Z0-9]", "", str(r.get("registro", "")).upper())
@@ -1505,7 +1633,7 @@ def atualizar_planilha():
 
     # Aplica/estende o checkbox 'conferido' até a última linha com pesquisa (sem
     # teto fixo e sem checkbox vazio sobrando embaixo).
-    _ativar_checkbox(ws, COL_CONFERIDO, header, ate_linha=_ultima_linha_com_registro(ws))
+    _resetar_validacoes_relatorios(ws, header, _ultima_linha_com_registro(ws))
 
     hoje_fmt = datetime.now(BRT).strftime("%d/%m/%Y")
     print(f"\n--- Relatório de Automação – {hoje_fmt} ---")
