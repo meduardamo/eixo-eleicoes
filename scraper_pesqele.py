@@ -2,6 +2,7 @@ import os
 import re
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List, Dict, Optional
 
 import pandas as pd
@@ -40,6 +41,7 @@ HEADER_ROW = 3
 DATA_START_ROW = 4
 
 DAYS_BACK = int(os.getenv("DAYS_BACK", "4"))
+DEBUG_DIR = os.getenv("PESQELE_DEBUG_DIR", "pesqele-debug")
 
 COLS_BASE = [
     "numero_identificacao",
@@ -56,17 +58,102 @@ COLS_BASE = [
 SKIP_SHEETS = {"Dashboard"}
 
 
+class PesqElePageError(RuntimeError):
+    """Erro de carregamento/bloqueio da pagina do PesqEle."""
+
+
+def env_truthy(nome: str, default: str = "") -> bool:
+    return str(os.getenv(nome, default)).strip().lower() in {"1", "true", "sim", "yes", "y"}
+
+
+def salvar_diagnostico_pagina(driver: webdriver.Chrome, contexto: str) -> str:
+    """Salva HTML e screenshot para baixar como artifact no GitHub Actions."""
+    pasta = Path(DEBUG_DIR)
+    pasta.mkdir(parents=True, exist_ok=True)
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", contexto).strip("-") or "erro"
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    base = pasta / f"{ts}-{slug}"
+
+    html_path = base.with_suffix(".html")
+    png_path = base.with_suffix(".png")
+
+    try:
+        html_path.write_text(driver.page_source or "", encoding="utf-8", errors="ignore")
+    except Exception as e:
+        print(f"Não foi possível salvar HTML de diagnóstico: {e}")
+
+    try:
+        driver.save_screenshot(str(png_path))
+    except Exception as e:
+        print(f"Não foi possível salvar screenshot de diagnóstico: {e}")
+
+    print(f"Diagnóstico PesqEle salvo em: {base}.html / {base}.png")
+    return str(base)
+
+
+def _texto_pagina_norm(driver: webdriver.Chrome) -> str:
+    bruto = " ".join([
+        driver.title or "",
+        driver.current_url or "",
+        driver.page_source or "",
+    ])
+    bruto = bruto.lower()
+    bruto = re.sub(r"\s+", " ", bruto)
+    return bruto
+
+
+def validar_pagina_pesqele(driver: webdriver.Chrome, contexto: str = "carregamento") -> None:
+    """Garante que o formulário do PesqEle abriu.
+
+    Quando o TSE entrega "Acesso Rejeitado" ao runner, o Selenium ficava tentando
+    clicar num seletor que não existe e morria com TimeoutException sem contexto.
+    """
+    try:
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.ID, ID_ELEICAO_LABEL))
+        )
+        return
+    except TimeoutException as exc:
+        texto = _texto_pagina_norm(driver)
+        base = salvar_diagnostico_pagina(driver, contexto)
+        if any(m in texto for m in (
+            "acesso rejeitado",
+            "access denied",
+            "requested url was rejected",
+            "forbidden",
+            "cloudflare",
+        )):
+            raise PesqElePageError(
+                "PesqEle bloqueou ou rejeitou o acesso do GitHub Actions; "
+                f"o formulário não carregou. Veja o artifact de diagnóstico ({base})."
+            ) from exc
+        raise PesqElePageError(
+            f"Formulário do PesqEle não carregou; seletor {ID_ELEICAO_LABEL} ausente. "
+            f"URL atual: {driver.current_url}. Veja o artifact de diagnóstico ({base})."
+        ) from exc
+
+
 def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = False) -> webdriver.Chrome:
     opts = webdriver.ChromeOptions()
+    chrome_bin = os.getenv("CHROME_BIN", "").strip()
+    if chrome_bin:
+        opts.binary_location = chrome_bin
+
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-extensions")
     opts.add_argument("--disable-setuid-sandbox")
+    opts.add_argument("--lang=pt-BR")
+    opts.add_argument("--window-size=1920,1080")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_argument(
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
 
-    if headless or os.getenv("CI"):
+    if headless or env_truthy("CI"):
         opts.add_argument("--headless=new")
-        opts.add_argument("--window-size=1920,1080")
         opts.add_argument("--disable-software-rasterizer")
     else:
         opts.add_argument("--start-maximized")
@@ -543,6 +630,7 @@ def run_one_scope(
 ) -> pd.DataFrame:
     for attempt in range(max_retries):
         try:
+            validar_pagina_pesqele(driver, f"{uf_text}-tentativa-{attempt + 1}")
             select_one_menu_by_text(driver, wait, ID_ELEICAO_LABEL, ID_ELEICAO_PANEL, eleicao_text)
             time.sleep(0.5)
 
@@ -563,6 +651,9 @@ def run_one_scope(
                     df[c] = ""
 
             return df[COLS_BASE]
+
+        except PesqElePageError:
+            raise
 
         except StaleElementReferenceException as e:
             if attempt < max_retries - 1:
@@ -599,6 +690,7 @@ def run_to_google_sheets_insert_dedup(
     try:
         get_with_retry(driver, URL_LISTAR)
         wait_dom_ready(driver)
+        validar_pagina_pesqele(driver, "inicio")
 
         if "BRASIL" not in SKIP_SHEETS:
             print(f"Processando BRASIL (últimos {days_back} dias)...")
@@ -630,7 +722,7 @@ def run_to_google_sheets_insert_dedup(
 
 if __name__ == "__main__":
     eleicao = os.getenv("ELEICAO_TEXT", "Eleições Gerais 2026")
-    headless = bool(os.getenv("CI", False))
+    headless = env_truthy("HEADLESS") or env_truthy("CI")
     days_back = int(os.getenv("DAYS_BACK", "2"))
 
     print(f"Iniciando scraper para: {eleicao}")
