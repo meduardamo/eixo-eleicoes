@@ -1,4 +1,4 @@
-name: noticias-eleicoes
+name: 06 - Notícias eleições
 
 on:
   schedule:
