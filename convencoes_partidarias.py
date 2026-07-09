@@ -2,9 +2,9 @@
 Busca datas e locais de convencoes partidarias para pre-candidatos.
 
 Uso:
-  python convencoes.py
-  python convencoes.py --max-linhas 50
-  python convencoes.py --force
+  python convencoes_partidarias.py
+  python convencoes_partidarias.py --max-linhas 50
+  python convencoes_partidarias.py --force
 
 Secrets/env:
   GOOGLE_CREDENTIALS_JSON
