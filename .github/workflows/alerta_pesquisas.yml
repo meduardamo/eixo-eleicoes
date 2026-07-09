@@ -1,4 +1,4 @@
-name: alerta-pesquisas
+name: 02 - Alerta pesquisas
 
 on:
   schedule:
