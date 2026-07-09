@@ -2246,7 +2246,7 @@ def normalizar_institutos_retroativo(aba_pesquisas, aba_resultados):
 
 def reconstruir_resultados_bi(gc, sheet_id: str):
     """Reconstrói resultados_bi a partir do que já está salvo em `resultados`,
-    sem raspar o site de novo. Usado por `pesquisas.py rebuild_bi` pra aplicar
+    sem raspar o site de novo. Usado por `relatorios_pipeline.py rebuild_bi` pra aplicar
     correções de agregação/média móvel no histórico já coletado, sem esperar
     a próxima rodada de raspagem."""
     sh = gc.open_by_key(sheet_id)
