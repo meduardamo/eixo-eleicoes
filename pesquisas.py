@@ -629,7 +629,18 @@ PROMPT = (
     "relatório (ex: 'Aprova', 'Desaprova', 'Não sabe', 'Ótimo/Bom', 'Regular', 'Ruim/Péssimo').\n"
     "9) NÃO inclua em aprovacao perguntas hipotéticas ou de intenção (ex: 'gostaria que se "
     "reelegesse', 'a reeleição de X', 'a eleição de Y', desejo de candidatura). aprovacao é só "
-    "avaliação do trabalho de quem já governa.\n\n"
+    "avaliação do trabalho de quem já governa.\n"
+    "10) voto_segmento é a votação por segmento DEMOGRÁFICO. O campo 'segmento' deve ser uma "
+    "categoria curta de gênero (Masculino/Feminino), idade (16 a 24 anos...), raça/cor "
+    "(Branca, Preta, Parda, Indígena), religião (Católicos, Evangélicos...), região, "
+    "escolaridade, renda, ou atividade/PEA. NUNCA use o TEXTO de uma pergunta como 'segmento' "
+    "(ex: 'Nos últimos 10 dias participou de celebração religiosa? Sim' NÃO é segmento). "
+    "Se o recorte não for demográfico, não inclua em voto_segmento.\n"
+    "10b) Em voto_segmento, quebre por segmento APENAS a votação principal estimulada de 1º "
+    "turno. NÃO quebre por segmento as simulações de 2º turno nem perguntas filtro/arrasto.\n"
+    "11) DADO AUSENTE: se um valor não estiver no material (cruzamento que não cabe no PDF, "
+    "célula em branco, cargo sem aquela quebra), OMITA o item. NUNCA grave 0 para dado ausente "
+    "- 0 é um número real (candidato com zero voto), não use 0 como 'não encontrei'.\n\n"
     "Responda SOMENTE o JSON, sem texto extra e sem markdown:\n"
     '{"voto_segmento": [...], "rejeicao": [...], "aprovacao": [...]}'
 )
@@ -776,6 +787,34 @@ def _normalizar_percentuais_lista(itens, contexto):
     return erros
 
 
+def _avisos_soma_voto(itens, cargo):
+    """Aviso (não bloqueia) quando os candidatos de um mesmo cenário+segmento somam
+    longe de 100% (ou ~200% no senador de 2 vagas). Pega candidato faltando, zero
+    indevido, base errada. Valores já normalizados (float)."""
+    from collections import defaultdict
+    grupos = defaultdict(list)
+    for v in itens:
+        try:
+            val = float(v.get("valor"))
+        except (TypeError, ValueError):
+            continue
+        chave = (str(v.get("cenario", "")), str(v.get("tipo_segmento", "")), str(v.get("segmento", "")))
+        grupos[chave].append(val)
+    eh_senador = "senador" in str(cargo).lower()
+    avisos = []
+    for (cen, _tseg, seg), vals in grupos.items():
+        if len(vals) < 2:   # 1 valor só não dá pra checar soma
+            continue
+        s = sum(vals)
+        if 90 <= s <= 110:
+            continue
+        if eh_senador and 150 <= s <= 210:   # 2 vagas: soma ~200 é legítima
+            continue
+        rotulo = seg or cen or "Total"
+        avisos.append(f"soma {s:.0f}% em '{rotulo[:24]}'")
+    return avisos[:4]
+
+
 def _turno_segmento(item):
     turno = str(item.get("turno", "t1") or "t1").strip().lower()
     cargo = _cargo_norm(item.get("cargo", ""))
@@ -869,7 +908,7 @@ def extrair_do_pdf(pdf_bytes, extra=""):
 def cmd_extrair():
     if not RELATORIOS_ID:
         raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
-    from polling_manual_core import _referencia, instituto_canonico, sigla_uf
+    from polling_manual_core import _referencia, ficha_instituto, instituto_canonico, sigla_uf
 
     sh = _sheets().open_by_key(RELATORIOS_ID)
     fila = _aba(sh, "relatorios")
@@ -956,7 +995,8 @@ def cmd_extrair():
             if erro_registro:
                 raise RuntimeError(erro_registro)
             print(f"linha {i} ({r.get('registro')} / {r.get('cargo')}): PDF baixado ({len(pdf)} bytes), enviando ao Gemini...", flush=True)
-            dados = extrair_do_pdf(pdf, extra=_bloco_canonico(r.get("uf"), r.get("cargo")))
+            extra = ficha_instituto(r.get("instituto", "")) + _bloco_canonico(r.get("uf"), r.get("cargo"))
+            dados = extrair_do_pdf(pdf, extra=extra)
         except Exception as e:
             msg = str(e)
             updates.extend([gspread.Cell(i, col_err, msg[:300]),
@@ -990,11 +1030,27 @@ def cmd_extrair():
                 _flush("parcial")
             continue
         if not (voto_filtrado or rej_filtrada or aprov_filtrada):
-            msg = f"nenhum dado encontrado para o cargo da linha ({cargo_fila})"
-            updates.extend([gspread.Cell(i, col_err, msg),
-                            gspread.Cell(i, col_ten, tentativas + 1)])
-            err_regs.append(f"{registro} {cargo_fila} [{msg}]")
-            print(f"linha {i} ({registro} / {cargo_fila}): {msg}", flush=True)
+            # Sem dado de segmento pode ser NORMAL: relatório que só traz "RESULTADO GERAL"
+            # (sem quebra demográfica) não tem o que extrair aqui, o número geral vai no
+            # topline. Só é erro de verdade se o PDF TEM quebra demográfica e mesmo assim
+            # não veio nada. Distingue procurando termo demográfico no texto do PDF.
+            from polling_manual_core import extrair_texto_pdf_bytes
+            try:
+                txt_pdf = extrair_texto_pdf_bytes(pdf).lower()
+            except Exception:
+                txt_pdf = ""
+            tem_quebra = any(w in txt_pdf for w in (
+                "masculino", "feminino", "evangélic", "evangelic", "católic", "catolic",
+                "renda familiar", "faixa etária", "faixa etaria", "escolaridade", "por região", "por regiao"))
+            if not tem_quebra:
+                updates.extend([gspread.Cell(i, col_err, "sem quebra por segmento (só resultado geral; topline cobre)"),
+                                gspread.Cell(i, ci_ext, "sim"), gspread.Cell(i, ci_data, agora)])
+                print(f"linha {i} ({registro} / {cargo_fila}): sem quebra por segmento, marcado como feito", flush=True)
+            else:
+                msg = f"nenhum dado encontrado para o cargo da linha ({cargo_fila})"
+                updates.extend([gspread.Cell(i, col_err, msg), gspread.Cell(i, col_ten, tentativas + 1)])
+                err_regs.append(f"{registro} {cargo_fila} [{msg}]")
+                print(f"linha {i} ({registro} / {cargo_fila}): {msg}", flush=True)
             _contador["n"] += 1
             if _contador["n"] >= LOTE:
                 _flush("parcial")
@@ -1036,15 +1092,19 @@ def cmd_extrair():
                               v.get("alvo", ""), v.get("resposta", ""),
                               v.get("tipo_segmento", ""), v.get("segmento", ""),
                               v.get("valor", "")])
+        # aviso de soma (não bloqueia): fica na coluna de erro como alerta pra conferência
+        avisos_soma = _avisos_soma_voto(voto_filtrado, cargo_fila)
+        nota_soma = ("conferir: " + "; ".join(avisos_soma)) if avisos_soma else ""
         # marca a linha como extraída no MESMO lote em que os dados dela vão (progresso durável)
-        updates.extend([gspread.Cell(i, col_err, ""),          # limpa erro de rodada anterior
+        updates.extend([gspread.Cell(i, col_err, nota_soma[:300]),
                         gspread.Cell(i, ci_ext, "sim"),
                         gspread.Cell(i, ci_data, agora)])
         ok_regs.append(registro)
+        aviso_txt = f"  [!] {nota_soma}" if nota_soma else ""
         print(f"linha {i} ({registro} / {cargo_fila}): "
               f"{len(voto_filtrado)} voto, "
               f"{len(rej_filtrada)} rejeição, "
-              f"{len(aprov_filtrada)} aprovação", flush=True)
+              f"{len(aprov_filtrada)} aprovação{aviso_txt}", flush=True)
         _contador["n"] += 1
         if _contador["n"] >= LOTE:
             _flush("parcial")
@@ -1090,6 +1150,52 @@ def _cargos_presentes(texto, cargo_fila):
     if "senador" in low:
         cargos.add("senador")
     return [c for c in ("presidente", "governador", "senador") if c in cargos]
+
+
+def _n_paginas_pdf(pdf_bytes):
+    try:
+        import io
+        from pypdf import PdfReader
+        return len(PdfReader(io.BytesIO(pdf_bytes)).pages)
+    except Exception:
+        return 0
+
+
+def _extrair_topline_pdf(pdf, texto, link, escopo, cargo):
+    """Extrai o topline de um cargo/turno. PDF pequeno: manda inteiro (comportamento
+    de sempre). PDF grande: lê em blocos de 5 páginas e junta os cenários, senão o
+    modelo perde o cargo que está no fim do PDF (ex.: VOX senador na pág 49, Meio/Ideia
+    92 páginas). Pré-filtra blocos pelo texto do cabeçalho pra economizar chamada."""
+    from polling_manual_core import extrair_dados_polling_gemini, extrair_texto_pdf_bytes
+    if _n_paginas_pdf(pdf) <= 10:
+        return extrair_dados_polling_gemini(texto, url_original=link, escopo=escopo, pdf_bytes=pdf)
+
+    cargo_low = str(cargo or "").lower()[:8]   # 'presiden'/'governad'/'senador'
+    payload_final, cenarios, vistos = None, [], set()
+    for bloco in _blocos_pdf(pdf, tamanho=5):
+        try:
+            txt_bloco = extrair_texto_pdf_bytes(bloco)
+        except Exception:
+            txt_bloco = ""
+        # bloco com texto que NÃO menciona o cargo: pula (bloco de imagem sem texto vai mesmo assim)
+        if txt_bloco and cargo_low and cargo_low not in txt_bloco.lower():
+            continue
+        try:
+            p = extrair_dados_polling_gemini(txt_bloco, url_original=link, escopo=escopo, pdf_bytes=bloco)
+        except Exception:
+            continue
+        for c in (p.get("cenarios") or []):
+            chave = f"{c.get('scenario_label','')}|{c.get('descricao','')}|{c.get('disputa','')}"
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            cenarios.append(c)
+            if payload_final is None:
+                payload_final = p   # metadados (uf, instituto, data) do 1º bloco com dado
+    if payload_final is None:
+        return {"cenarios": []}
+    payload_final["cenarios"] = cenarios
+    return payload_final
 
 
 def cmd_topline():
@@ -1205,15 +1311,13 @@ def cmd_topline():
         for cargo in cargos:
             for turno in ("t1", "t2"):
                 try:
-                    escopo = {"cargo": cargo, "turno": turno}
+                    escopo = {"cargo": cargo, "turno": turno, "instituto": r.get("instituto", "")}
                     if cargo != "presidente":   # governador/senador são estaduais: restrição obrigatória
                         escopo["uf"] = r.get("uf", "")
                     else:   # presidente pode ser nacional ou lido dentro do estado da fila: só referência
                         escopo["uf_referencia"] = r.get("uf", "")
                     print(f"linha {i} ({registro_fila} / {r.get('cargo')}): extraindo topline {cargo}/{turno}...", flush=True)
-                    payload = extrair_dados_polling_gemini(
-                        texto, url_original=link, escopo=escopo,
-                        pdf_bytes=pdf)
+                    payload = _extrair_topline_pdf(pdf, texto, link, escopo, cargo)
                     payload["turno"] = turno   # garante o turno pedido no rótulo/poll_id
                     # registro da fila é a fonte da verdade; só avisa se o registro da
                     # fila NÃO estiver entre os do PDF (compara sem hífen/pontuação;
@@ -1268,15 +1372,12 @@ def cmd_topline():
             msg = "todas as extrações falharam" if houve_erro else f"nenhum cenário de topline encontrado para {r.get('cargo')}"
             _falha(i, registro_fila, tentativas, msg)
             continue
-        if avisos:
-            msg = "; ".join(avisos[:3])
-            _falha(i, registro_fila, tentativas, msg)
-            continue
+        nota_validacao = "; ".join(avisos[:3]) if avisos else ""
         todos_p.extend(linha_p)
         todos_r.extend(linha_r)
         updates.extend([gspread.Cell(i, col_flag, "sim"),
                         gspread.Cell(i, col_data, agora),
-                        gspread.Cell(i, col_erro, "")])
+                        gspread.Cell(i, col_erro, nota_validacao[:300])])
         ok_regs.append(registro_fila)
         aviso_txt = f" | avisos: {'; '.join(avisos[:2])}" if avisos else ""
         print(f"linha {i} ({registro_fila}): {n_cen} cenário(s) de topline{aviso_txt}")
@@ -1354,10 +1455,10 @@ def cmd_publicar():
         if pt_all.empty:
             continue
         if "validacao" in pt_all.columns:
-            bloqueio = pt_all["validacao"].astype(str).str.strip().ne("")
-            if bloqueio.any():
-                print(f"{turno}: {int(bloqueio.sum())} cenário(s) com validação pendente; não publicando")
-            pt = pt_all[~bloqueio]
+            com_aviso = pt_all["validacao"].astype(str).str.strip().ne("")
+            if com_aviso.any():
+                print(f"{turno}: {int(com_aviso.sum())} cenário(s) com validação pendente; publicando com aviso")
+            pt = pt_all
         else:
             pt = pt_all
         if pt.empty:
