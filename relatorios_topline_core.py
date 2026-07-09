@@ -23,7 +23,6 @@ from datetime import datetime
 # intocado. As 3 funções abaixo são cópias pequenas do que era usado de lá.
 
 GEMINI_MODEL = "gemini-2.5-flash"
-MIN_TEXT_FOR_TEXT_ONLY_CHARS = int(os.getenv("MIN_TEXT_FOR_TEXT_ONLY_CHARS", "200"))
 TIPOS_RESULTADO = ["candidato", "nao_valido"]
 
 # Marca a procedência: estes dados vêm dos PDFs dos relatórios, NÃO do PollingData.
@@ -532,6 +531,11 @@ Extraia os dados estruturados para inserção em planilha.
   1º/2º"), votos_por_entrevistado=1 em cada (cada tabela soma ~100% sozinha). NÃO calcule média,
   NÃO some, NÃO junte as tabelas, e NUNCA trate "2º voto para senador" como segundo turno (turno
   é sempre t1 nesses casos; 2º voto de senado NÃO é 2º turno).
+- SENADOR NUNCA TEM SEGUNDO TURNO: eleição de senador no Brasil não tem 2º turno (decide por
+  maioria simples no 1º turno). Mesmo que o relatório traga uma pergunta chamada "simulação de
+  2º turno para Senador" ou um confronto direto de dois nomes para o cargo de senador, IGNORE
+  essa pergunta por completo, não crie cenário nenhum para ela. Isso vale só para senador; para
+  presidente e governador, confronto direto de 2º turno continua sendo t2 normalmente.
 
 FORMATO:
 {{
@@ -547,23 +551,25 @@ FORMATO:
 """.strip()
 
     texto_fonte = (texto_fonte or "").strip()
-    texto_suficiente = len(texto_fonte) >= MIN_TEXT_FOR_TEXT_ONLY_CHARS
-    if texto_suficiente:
+    # Nunca decide "só texto basta" só pelo tamanho: relatório com muita imagem/gráfico
+    # tem texto extraído comprido (rodapé legal repetido em toda página) mas ZERO dado
+    # de verdade (candidato/percentual só existe no gráfico); e tabela cruzada (região x
+    # candidato) vira uma sequência linear de números no texto, sem estrutura de
+    # linha/coluna, que o modelo pode desalinhar. Mandar o PDF junto sempre que tiver
+    # (o modelo cruza texto com o visual) resolve os dois casos; só cai pra texto puro
+    # quando não há pdf_bytes.
+    if pdf_bytes:
+        from google.genai import types
+        if texto_fonte:
+            texto_msg = (f"\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA:\n{texto_fonte}\n\n"
+                         "PDF ANEXO: confira o visual (tabelas e gráficos). O texto extraído pode "
+                         "não conter os números (relatório com dado só em gráfico) ou desalinhar "
+                         "tabela cruzada (linha x coluna); nesses casos, confie no PDF, não no texto.")
+        else:
+            texto_msg = "\n\nO material é o PDF anexo (leia as páginas, inclusive tabelas e gráficos)."
+        contents = [prompt + texto_msg, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")]
+    elif texto_fonte:
         contents = prompt + f"\n\nTEXTO FONTE:\n{texto_fonte}"
-    elif texto_fonte and pdf_bytes:
-        from google.genai import types
-        contents = [
-            prompt + (
-                "\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA (parcial/insuficiente):\n"
-                f"{texto_fonte}\n\n"
-                "PDF ANEXO: use o visual porque o texto extraído não parece suficiente."
-            ),
-            types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-        ]
-    elif pdf_bytes:
-        from google.genai import types
-        contents = [prompt + "\n\nO material é o PDF anexo (leia as páginas, inclusive tabelas e gráficos).",
-                    types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")]
     else:
         raise RuntimeError("Passe texto_fonte ou pdf_bytes.")
 
@@ -595,7 +601,12 @@ def normalizar_payload_polling(payload: dict) -> dict:
                               "votos_por_entrevistado": max(1, min(votos, 3)),
                               "itens": itens_norm})
     return {
-        "cargo": normalizar_texto_simples(payload.get("cargo")).lower() or "governador",
+        # Sem fallback pra "governador": um cargo vazio tem que continuar vazio, senão
+        # cai num default arbitrário e o cenário é gravado sob o cargo errado (ex.: um
+        # payload de presidente/senador em que o Gemini deixou "cargo" em branco virava
+        # "governador" silenciosamente). cmd_topline valida cargo contra o esperado da
+        # linha da fila e descarta o que não bater.
+        "cargo": normalizar_texto_simples(payload.get("cargo")).lower(),
         "turno": normalizar_texto_simples(payload.get("turno")).lower() or "t1",
         "uf": normalizar_texto_simples(payload.get("uf")).upper() or "BR",
         "instituto": normalizar_texto_simples(payload.get("instituto")),
