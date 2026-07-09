@@ -13,7 +13,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 160
+    timeout-minutes: 200
 
     env:
       TZ: "America/Recife"
@@ -47,7 +47,7 @@ jobs:
       - name: Extrair segmentos, rejeição e aprovação
         id: extrair
         continue-on-error: true
-        timeout-minutes: 70
+        timeout-minutes: 100
         run: |
           set +e
           echo "::group::python relatorios_pipeline.py extrair"
@@ -59,7 +59,7 @@ jobs:
       - name: Extrair topline
         id: topline
         continue-on-error: true
-        timeout-minutes: 70
+        timeout-minutes: 100
         run: |
           set +e
           echo "::group::python relatorios_pipeline.py topline"
