@@ -619,11 +619,17 @@ PROMPT = (
     "25 a 34 anos, Fundamental, Médio, Superior, Até 2 SM, Mais de 5 a 10 SM).\n"
     "4) 'tipo_segmento' classifica o segmento em uma destas categorias: genero, idade, "
     "escolaridade, renda, regiao, religiao, raca. Use exatamente esses rótulos minúsculos. "
-    "Se não encaixar em nenhuma, use 'outro'. Para o total geral (sem recorte), use "
-    "tipo_segmento='geral' e segmento='Total'.\n"
+    "Se não encaixar em nenhuma (ex.: ocupação, classe social, PEA/não PEA), use 'outro'. "
+    "NÃO inclua o total geral/sem recorte (o cenário completo já está no topline, não repita "
+    "aqui): se um item não tiver nenhum recorte demográfico, OMITA-o de voto_segmento.\n"
     "5) 'valor' é número, sem o símbolo de %.\n"
     "6) Identifique o cenário pelo nome ou título que o relatório usa (ex: 'Estimulada 1', "
-    "'Lula x Flávio'). Se houver só um, use 'Estimulada'.\n"
+    "'Lula x Flávio'). Se houver só UM cenário estimulado daquele cargo/turno no relatório "
+    "inteiro, use 'Estimulada'. Se houver MAIS DE UM (conjuntos de candidatos diferentes, "
+    "mesmo sem o relatório chamar de 'Cenário 1/2/3' explicitamente), NUNCA repita o mesmo "
+    "rótulo genérico 'Estimulada' pra cenários com candidatos diferentes: numere ('Estimulada "
+    "1', 'Estimulada 2'...) ou descreva o que muda entre eles. Rótulo repetido faz duas "
+    "tabelas diferentes parecerem uma só na conferência.\n"
     "7) Em 'candidato', use SEMPRE o formato 'Nome (SIGLA)'. Se o candidato constar na lista "
     "canônica fornecida abaixo, use EXATAMENTE o nome e a sigla de lá. A sigla do partido é "
     "sempre curta e em caixa alta (PT, PL, MDB, REP, UNIAO...), nunca por extenso.\n"
@@ -693,7 +699,6 @@ def _baixar_pdf(link):
 
 
 PAGINAS_POR_BLOCO = 5
-MIN_TEXT_FOR_TEXT_ONLY_CHARS = int(os.getenv("MIN_TEXT_FOR_TEXT_ONLY_CHARS", "200"))
 
 REGISTRO_TSE_RE = re.compile(
     r"\b(?:BR|AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)"
@@ -903,12 +908,17 @@ def _gemini_json(pdf_bytes, extra="", texto_bloco=""):
     )
     prompt = PROMPT + (f"\n\n{extra}" if extra else "")
     texto_bloco = (texto_bloco or "").strip()
-    texto_suficiente = len(texto_bloco) >= MIN_TEXT_FOR_TEXT_ONLY_CHARS
-    if texto_suficiente:
-        contents = prompt + "\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA:\n" + texto_bloco
-    elif texto_bloco:
+    # Sempre manda o PDF junto, não só quando o texto for "insuficiente" por tamanho:
+    # relatório com dado só em gráfico tem texto extraído comprido (rodapé legal
+    # repetido em toda página) mas sem nenhum candidato/percentual nele, e tabela
+    # cruzada (região x segmento) vira uma sequência linear de números no texto, sem
+    # estrutura de linha/coluna, que o modelo pode desalinhar. O visual resolve os dois.
+    if texto_bloco:
         contents = [
-            prompt + "\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA (parcial/insuficiente):\n" + texto_bloco,
+            prompt + "\n\nTEXTO EXTRAÍDO DO PDF/PÁGINA:\n" + texto_bloco +
+            "\n\nPDF ANEXO: confira o visual (tabelas e gráficos). O texto extraído pode não "
+            "conter os números (dado só em gráfico) ou desalinhar tabela cruzada (linha x "
+            "coluna); nesses casos, confie no PDF, não no texto.",
             types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
         ]
     else:
@@ -989,6 +999,19 @@ def cmd_extrair():
         cargo_item = _cargo_norm(item.get("cargo", ""))
         return not cargo_item or cargo_item == _cargo_norm(cargo_fila)
 
+    # voto_segmento é só quebra DEMOGRÁFICA. Cenário geral/total, turno, pergunta filtro
+    # etc. já vão pro topline; se entrarem aqui também, duplicam o dado e inflam a aba.
+    # Filtro no código, não só no prompt, porque o Gemini às vezes desobedece a regra.
+    TIPO_SEGMENTO_FORA = {"geral", "total", "cenario", "cenário", "turno", "pergunta", "voto"}
+    SEGMENTO_FORA = {"total", "geral"}
+
+    def _e_segmento_demografico(item):
+        tipo = _sem_acento(item.get("tipo_segmento", "")).strip().lower()
+        seg = _sem_acento(item.get("segmento", "")).strip().lower()
+        if tipo in TIPO_SEGMENTO_FORA or seg in SEGMENTO_FORA:
+            return False
+        return True
+
     # Chaves já gravadas em cada aba, carregadas UMA vez pra dedup em memória (sem
     # reler a aba a cada gravação). Protege contra duplicata quando um lote foi
     # gravado mas a linha não chegou a ser marcada (ex.: timeout no meio).
@@ -1057,7 +1080,8 @@ def cmd_extrair():
         uf = sigla_uf(r.get("uf", ""))
         inst = instituto_canonico(r.get("instituto", ""))
         data_div = _data_iso(r.get("data_divulgacao", ""))
-        voto_filtrado = [v for v in dados.get("voto_segmento", []) if _item_casa_cargo(v, cargo_fila)]
+        voto_filtrado = [v for v in dados.get("voto_segmento", [])
+                         if _item_casa_cargo(v, cargo_fila) and _e_segmento_demografico(v)]
         rej_filtrada = [v for v in dados.get("rejeicao", []) if _item_casa_cargo(v, cargo_fila)]
         aprov_filtrada = dados.get("aprovacao", []) if _cargo_norm(cargo_fila) in ("presidente", "governador") else []
         erros_valor = []
@@ -1084,9 +1108,15 @@ def cmd_extrair():
                 txt_pdf = extrair_texto_pdf_bytes(pdf).lower()
             except Exception:
                 txt_pdf = ""
-            tem_quebra = any(w in txt_pdf for w in (
+            # Exige 2+ termos demográticos DIFERENTES: um único hit isolado costuma ser
+            # falso positivo (ex.: matéria de portal de notícia com link/manchete não
+            # relacionada mencionando "feminino" de passagem, sem tabela de quebra
+            # nenhuma no relatório em si).
+            termos_batidos = sum(1 for w in (
                 "masculino", "feminino", "evangélic", "evangelic", "católic", "catolic",
-                "renda familiar", "faixa etária", "faixa etaria", "escolaridade", "por região", "por regiao"))
+                "renda familiar", "faixa etária", "faixa etaria", "escolaridade",
+                "por região", "por regiao") if w in txt_pdf)
+            tem_quebra = termos_batidos >= 2
             if not tem_quebra:
                 updates.extend([gspread.Cell(i, col_err, "sem quebra por segmento (só resultado geral; topline cobre)"),
                                 gspread.Cell(i, ci_ext, "sim"), gspread.Cell(i, ci_data, agora)])
@@ -1212,19 +1242,42 @@ def _extrair_topline_pdf(pdf, texto, link, escopo, cargo):
     de sempre). PDF grande: lê em blocos de 5 páginas e junta os cenários, senão o
     modelo perde o cargo que está no fim do PDF (ex.: VOX senador na pág 49, Meio/Ideia
     92 páginas). Pré-filtra blocos pelo texto do cabeçalho pra economizar chamada."""
-    from relatorios_topline_core import extrair_dados_polling_gemini, extrair_texto_pdf_bytes
+    from relatorios_topline_core import (
+        classificar_tipo_resultado, extrair_dados_polling_gemini, extrair_texto_pdf_bytes,
+    )
     if _n_paginas_pdf(pdf) <= 10:
         return extrair_dados_polling_gemini(texto, url_original=link, escopo=escopo, pdf_bytes=pdf)
 
-    cargo_low = str(cargo or "").lower()[:8]   # 'presiden'/'governad'/'senador'
+    # palavras que indicam o cargo no corpo do texto (matérias de site costumam falar
+    # "vaga ao Senado"/"disputa pelo Senado" em vez de "senador" literalmente)
+    PALAVRAS_CARGO = {
+        "presidente": ["presiden"],
+        "governador": ["governad", "governo do estado"],
+        "senador": ["senador", "senado"],
+    }
+    palavras_alvo = PALAVRAS_CARGO.get(str(cargo or "").lower(), [str(cargo or "").lower()])
+    outros_cargos = [p for c, ps in PALAVRAS_CARGO.items() if c != cargo for p in ps]
     payload_final, cenarios, vistos = None, [], set()
+    # seção "ativa": um PDF grande organiza os cargos em seções contínuas, mas nem toda
+    # página de uma seção repete a palavra do cargo (tabela/gráfico sem legenda, rodapé
+    # de página sem relação, bloco intermediário sem título). Fica ativo a partir do
+    # bloco onde o cargo pedido aparece, e continua ativo enquanto os blocos seguintes
+    # não mencionarem OUTRO cargo monitorado; só desativa quando um outro cargo assume
+    # claramente a seção. Bloco inicial começa ativo (cobre PDF que já abre no cargo certo).
+    ativo = True
     for bloco in _blocos_pdf(pdf, tamanho=5):
         try:
             txt_bloco = extrair_texto_pdf_bytes(bloco)
         except Exception:
             txt_bloco = ""
-        # bloco com texto que NÃO menciona o cargo: pula (bloco de imagem sem texto vai mesmo assim)
-        if txt_bloco and cargo_low and cargo_low not in txt_bloco.lower():
+        low_bloco = txt_bloco.lower()
+        if any(p in low_bloco for p in palavras_alvo):
+            ativo = True
+        elif any(p in low_bloco for p in outros_cargos):
+            ativo = False
+        # bloco sem nenhuma palavra de cargo (imagem, rodapé, texto neutro): mantém o
+        # estado do bloco anterior, não desativa nem ativa.
+        if not ativo:
             continue
         try:
             p = extrair_dados_polling_gemini(txt_bloco, url_original=link, escopo=escopo, pdf_bytes=bloco)
@@ -1232,9 +1285,27 @@ def _extrair_topline_pdf(pdf, texto, link, escopo, cargo):
             continue
         for c in (p.get("cenarios") or []):
             chave = f"{c.get('scenario_label','')}|{c.get('descricao','')}|{c.get('disputa','')}"
-            if chave in vistos:
+            # blocos diferentes às vezes capturam o MESMO cenário do PDF (ex.: título
+            # cortado de forma diferente em cada chamada: "1º CENÁRIO - COM FULANO" num
+            # bloco, "Cenário 1 (com Fulano)" no bloco seguinte). O texto do rótulo não
+            # bate, mas o conteúdo é idêntico. Fingerprint por candidato+percentual pega
+            # esse caso mesmo com rótulo diferente; sem isso, T1 grava o mesmo cenário
+            # duas vezes com scenario_label numérico incremental (1,2,3,4), diferente do
+            # T2 que colapsa pra "NA" e já cai no dedup de scenario_id.
+            # ignora "Não válido"/nao_valido no fingerprint: é o item mais instável entre
+            # as duas leituras (some, muda de posição, some numa e não na outra), então
+            # exigir que ele bata também faria o fingerprint falhar num caso que é
+            # claramente o mesmo cenário nos candidatos de verdade.
+            candidatos_fp = [it for it in (c.get("itens") or [])
+                             if classificar_tipo_resultado(str(it.get("candidato", "")), it.get("tipo", "")) != "nao_valido"]
+            fingerprint = tuple(sorted(
+                (str(it.get("candidato", "")).strip().lower(), it.get("percentual"))
+                for it in candidatos_fp)) if len(candidatos_fp) >= 2 else ()
+            if chave in vistos or (fingerprint and fingerprint in vistos):
                 continue
             vistos.add(chave)
+            if fingerprint:
+                vistos.add(fingerprint)
             cenarios.append(c)
             if payload_final is None:
                 payload_final = p   # metadados (uf, instituto, data) do 1º bloco com dado
@@ -1276,6 +1347,14 @@ def cmd_topline():
             return
         cols = CABECALHOS[aba_nome]
         df = pd.concat(dfs, ignore_index=True).reindex(columns=cols).fillna("")
+        # dedup DENTRO do próprio lote: um PDF grande, lido em blocos, pode devolver o
+        # mesmo cenário (mesmo scenario_id) mais de uma vez vindo de blocos diferentes
+        # (ex.: t2 do mesmo confronto aparece em duas seções do relatório). Sem isso, os
+        # dois vão pra planilha e a soma do cenário dobra (ex.: ~200% em vez de ~100%).
+        antes = len(df)
+        df = df.drop_duplicates(subset=chaves, keep="first")
+        if len(df) < antes:
+            print(f"  [dedup {aba_nome} intra-lote] {antes - len(df)} linha(s) duplicada(s) no mesmo lote")
         ws = _aba(sh, aba_nome)
         # dedup contra o que já está na aba (protege reprocessamento com staging não apagado)
         existentes = {tuple(str(e.get(c, "")).strip() for c in chaves)
@@ -1296,7 +1375,7 @@ def cmd_topline():
     # onde parou em vez de perder tudo. Marca a linha DEPOIS de gravar os cenários dela.
     def _flush_topline(ctx=""):
         _gravar(todos_p, "topline_pesquisas", ["scenario_id"])
-        _gravar(todos_r, "topline_resultados", ["scenario_id", "candidato_partido"])
+        _gravar(todos_r, "topline_resultados", ["scenario_id", "candidato_partido", "tipo"])
         if updates:
             fila.update_cells(updates, value_input_option="RAW")
         todos_p.clear(); todos_r.clear(); updates.clear()
@@ -1353,9 +1432,12 @@ def cmd_topline():
             return _re.sub(r"[^A-Z0-9]", "", str(s).upper())
 
         # um mesmo PDF costuma ter 1º e 2º turno; extrai cada turno separado,
-        # senão o Gemini fixa um turno só no payload e descarta o outro.
+        # senão o Gemini fixa um turno só no payload e descarta o outro. Senador NUNCA
+        # tem 2º turno no Brasil: nem pergunta pelo t2 (mesmo que o relatório traga uma
+        # "simulação de 2º turno para Senador", isso não é um resultado t2 publicável).
         for cargo in cargos:
-            for turno in ("t1", "t2"):
+            turnos_cargo = ("t1",) if cargo == "senador" else ("t1", "t2")
+            for turno in turnos_cargo:
                 try:
                     escopo = {"cargo": cargo, "turno": turno, "instituto": r.get("instituto", "")}
                     if cargo != "presidente":   # governador/senador são estaduais: restrição obrigatória
@@ -1385,19 +1467,38 @@ def cmd_topline():
                     # falha parcial não pode ficar invisível: registra no aviso da linha
                     _aviso(f"extração falhou em {cargo}/{turno}")
                     continue
+                # o cargo pedido (escopo) é a fonte da verdade; o Gemini às vezes devolve
+                # um cargo diferente do pedido (ou vazio) no payload, e esse cenário NÃO
+                # pertence à linha da fila que estamos processando (ex.: um relatório de
+                # presidente devolvendo um cenário rotulado "governador" por engano).
+                # Descarta antes de gravar, senão o dado vai pra aba errada.
+                if not df_p.empty:
+                    mask_cargo = df_p["cargo"] == cargo
+                    if (~mask_cargo).any():
+                        ids_ruins = set(df_p.loc[~mask_cargo, "scenario_id"])
+                        _aviso(f"{cargo}/{turno}: descartado(s) {len(ids_ruins)} cenário(s) "
+                               f"com cargo diferente do esperado ({cargo})")
+                        df_p = df_p[mask_cargo]
+                        df_r = df_r[~df_r["scenario_id"].isin(ids_ruins)]
                 if df_r.empty:
                     continue
                 # sanidade: percentual fora de 0-100 e soma do cenário fora da faixa.
                 # Cenário simples deve somar ~100; senador com voto duplo declarado
-                # pode somar ~200. Isso pega mistura de "Porcentagem válida" com
-                # "Porcentual" dos inválidos, como 50.3+49.7+23.9.
+                # pode somar bem menos que 200. Isso pega mistura de "Porcentagem válida"
+                # com "Porcentual" dos inválidos, como 50.3+49.7+23.9.
                 if (df_r["percentual"] < 0).any() or (df_r["percentual"] > 100).any():
                     _aviso(f"{cargo}/{turno}: percentual fora de 0-100")
                 votos_map = dict(zip(df_p["scenario_id"], df_p["votos_por_entrevistado"]))
                 for sid, grupo in df_r.groupby("scenario_id"):
                     soma = grupo["percentual"].sum()
                     votos = int(votos_map.get(sid) or 1)
-                    minimo, teto = (185, 215) if votos >= 2 else (97, 103)
+                    # "poderia citar ATÉ 2 candidatos" não é "sempre cita 2": quem citou só
+                    # 1 (ou nenhum) puxa a soma pra baixo de 200% legitimamente. Faixa
+                    # 185-215 rejeitava dado real da Paraná Pesquisas que soma 150-180%
+                    # (RJ-04259, PR-01166, BA-04848, AL-04491 — confirmado no PDF original,
+                    # nota "*Cada entrevistado poderia citar até 2 candidatos"). Mesma faixa
+                    # 150-210 já usada em _avisos_soma_voto (segmentos) pro mesmo padrão.
+                    minimo, teto = (150, 215) if votos >= 2 else (97, 103)
                     if minimo <= soma <= teto:
                         continue
                     lbl = grupo["scenario_label"].iloc[0]
