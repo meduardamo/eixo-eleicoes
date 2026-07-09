@@ -381,6 +381,37 @@ def instituto_canonico(nome):
     return melhor or (nome.split("/")[-1].strip() or nome).title()
 
 
+_FICHAS = None
+
+
+def _fichas_institutos():
+    """Carrega institutos_fichas.json uma vez. Vazio se o arquivo não existir."""
+    global _FICHAS
+    if _FICHAS is None:
+        try:
+            caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "institutos_fichas.json")
+            with open(caminho, encoding="utf-8") as f:
+                _FICHAS = json.load(f).get("institutos", [])
+        except Exception:
+            _FICHAS = []
+    return _FICHAS
+
+
+def ficha_instituto(nome):
+    """Se o instituto casa com uma ficha conhecida, devolve o bloco de texto pro prompt
+    (estrutura específica daquele instituto). Senão, ''. Casa por palavras: todas as
+    palavras de 'match' precisam aparecer no nome normalizado (minúsculo, sem acento)."""
+    alvo = _norm_ascii(nome)
+    if not alvo:
+        return ""
+    for f in _fichas_institutos():
+        termos = [str(t).lower().strip() for t in f.get("match", []) if str(t).strip()]
+        if termos and all(t in alvo for t in termos):
+            return (f"ESTRUTURA CONHECIDA DESTE INSTITUTO ({f.get('nome','')}) — SIGA À RISCA:\n"
+                    f"{f.get('ficha','')}\n\n")
+    return ""
+
+
 def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "",
                                  escopo: dict | None = None,
                                  pdf_bytes: bytes | None = None) -> dict:
@@ -391,8 +422,11 @@ def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "",
     texto insuficiente.
     """
     escopo = escopo or {}
+    # instituto NÃO entra como restrição (é sempre um só no relatório); serve só pra
+    # puxar a ficha de estrutura conhecida daquele instituto.
+    bloco_ficha = ficha_instituto(escopo.get("instituto"))
     restricoes = []
-    for chave, rotulo in (("cargo", "cargo"), ("uf", "uf"), ("turno", "turno"), ("instituto", "instituto")):
+    for chave, rotulo in (("cargo", "cargo"), ("uf", "uf"), ("turno", "turno")):
         val = normalizar_texto_simples(escopo.get(chave))
         if val:
             restricoes.append(f"- {rotulo} = {val}")
@@ -434,7 +468,7 @@ def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "",
 Você recebe o texto completo de um PDF de uma pesquisa eleitoral brasileira.
 Extraia os dados estruturados para inserção em planilha.
 
-{bloco}{bloco_ref}REGRAS:
+{bloco}{bloco_ficha}{bloco_ref}REGRAS:
 - Responda somente com JSON válido.
 - Não invente dados ausentes. Use string vazia ou null.
 - Datas devem sair em YYYY-MM-DD quando possível.
@@ -491,11 +525,13 @@ Extraia os dados estruturados para inserção em planilha.
   'cada entrevistado poderia citar até 2 candidatos'), E os percentuais daquele cenário somarem
   perto de 200% (cada nome citado conta separado, sem dividir por tabela de 1º/2º voto). Caso
   contrário, use 1.
-- SENADOR COM 1º/2º VOTO SEPARADOS: se o relatório trouxer três tabelas separadas para senador de
-  2 vagas ("1º voto", "2º voto" e "média do 1º e 2º voto", cada uma somando ~100% sozinha),
-  extraia SOMENTE a tabela de média como UM cenário (votos_por_entrevistado=1, já que soma ~100%).
-  NÃO crie cenários separados para a tabela de só 1º voto nem só 2º voto isoladas, são
-  detalhamento do cálculo, não o resultado estimulado principal.
+- SENADOR COM 1º/2º VOTO SEPARADOS: se o relatório trouxer tabelas separadas para senador de
+  2 vagas ("1º voto", "2º voto" e/ou "média do 1º e 2º voto"), crie um cenário SEPARADO para
+  cada uma que existir, preservando o dado bruto exatamente como publicado. Use scenario_label/
+  descricao que deixe claro qual é qual (ex.: "Senado 1º voto", "Senado 2º voto", "Senado média
+  1º/2º"), votos_por_entrevistado=1 em cada (cada tabela soma ~100% sozinha). NÃO calcule média,
+  NÃO some, NÃO junte as tabelas, e NUNCA trate "2º voto para senador" como segundo turno (turno
+  é sempre t1 nesses casos; 2º voto de senado NÃO é 2º turno).
 
 FORMATO:
 {{
