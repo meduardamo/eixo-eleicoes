@@ -18,7 +18,7 @@ import requests
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 SHEET_ID  = os.getenv("SPREADSHEET_ID_TSE", "1Vo-2oa11JpPaYC051Z0UYNR1yJZdhYW4RJeylHfX-bA")
 SHEET_ABA = "noticias"
 
