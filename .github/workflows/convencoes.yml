@@ -1,4 +1,4 @@
-name: convencoes-partidarias
+name: 07 - Convenções partidárias
 
 on:
   workflow_dispatch:
