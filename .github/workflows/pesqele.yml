@@ -1,4 +1,4 @@
-name: pesqele-daily
+name: 01 - PesqEle
 
 on:
   workflow_dispatch:
@@ -16,15 +16,15 @@ jobs:
     timeout-minutes: 45
 
     env:
-      HEADLESS: "1"
+      HEADLESS: "0"
       ELEICAO_TEXT: "Eleições Gerais 2026"
       ADD_HOURS: "3"
       TZ: "America/Recife"
       DAYS_BACK: ${{ github.event.inputs.days_back || '5' }}
       PESQELE_DEBUG_DIR: pesqele-debug
       PESQELE_PAGELOAD_TIMEOUT: "45"
-      PESQELE_PAGE_LOAD_STRATEGY: "eager"
-      PESQELE_FORM_TIMEOUT: "12"
+      PESQELE_PAGE_LOAD_STRATEGY: "none"
+      PESQELE_FORM_TIMEOUT: "25"
 
     steps:
       - name: Checkout
@@ -46,13 +46,24 @@ jobs:
 
       - name: Export Chrome
         run: |
-          echo "CHROME_BIN=${{ steps.setup-chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
-          "${{ steps.setup-chrome.outputs.chrome-path }}" --version
+          if command -v google-chrome-stable >/dev/null 2>&1; then
+            CHROME_PATH="$(command -v google-chrome-stable)"
+          elif command -v google-chrome >/dev/null 2>&1; then
+            CHROME_PATH="$(command -v google-chrome)"
+          else
+            CHROME_PATH="${{ steps.setup-chrome.outputs.chrome-path }}"
+          fi
+          echo "CHROME_BIN=$CHROME_PATH" >> "$GITHUB_ENV"
+          "$CHROME_PATH" --version
 
       - name: Remover chromedriver incompatível do runner
         run: |
           sudo rm -f /usr/bin/chromedriver
           which chromedriver || true
+
+      - name: Verificar Xvfb
+        run: |
+          command -v xvfb-run
 
       - name: Write Google credentials
         env:
@@ -73,7 +84,7 @@ jobs:
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: |
-          python scraper_pesqele.py
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" python scraper_pesqele.py
 
       - name: Upload diagnóstico PesqEle
         if: failure()
