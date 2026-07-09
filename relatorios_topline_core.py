@@ -276,6 +276,21 @@ def _gemini_client():
     return _CLIENT
 
 
+# Uso acumulado de tokens do Gemini nesta execução (processo novo a cada rodada do
+# workflow, então não precisa resetar entre chamadas de cmd_topline).
+USO_TOKENS = {"chamadas": 0, "entrada": 0, "saida": 0, "pensamento": 0}
+
+
+def _registrar_uso(resp):
+    meta = getattr(resp, "usage_metadata", None)
+    if not meta:
+        return
+    USO_TOKENS["chamadas"] += 1
+    USO_TOKENS["entrada"] += getattr(meta, "prompt_token_count", 0) or 0
+    USO_TOKENS["saida"] += getattr(meta, "candidates_token_count", 0) or 0
+    USO_TOKENS["pensamento"] += getattr(meta, "thoughts_token_count", 0) or 0
+
+
 def gerar_conteudo_gemini(contents, tentativas: int = 3, backoff: float = 1.5):
     from google.genai import types
     client = _gemini_client()
@@ -291,6 +306,7 @@ def gerar_conteudo_gemini(contents, tentativas: int = 3, backoff: float = 1.5):
             except Exception:
                 resp = client.models.generate_content(model=GEMINI_MODEL, contents=contents)
             if getattr(resp, "text", None):
+                _registrar_uso(resp)
                 return resp
             ultimo = RuntimeError("resposta vazia")
         except Exception as e:
