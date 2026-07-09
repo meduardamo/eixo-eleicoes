@@ -18,7 +18,6 @@ from google.oauth2.service_account import Credentials
 from google.auth.transport.requests import Request
 from google import genai
 from google.genai import types
-from gspread.utils import ValidationConditionType, rowcol_to_a1
 
 BRT = timezone(timedelta(hours=-3))
 
@@ -218,9 +217,25 @@ def _ativar_checkbox(ws, coluna, header, ate_linha):
     if coluna not in header or ate_linha < 2:
         return
     col_i = header.index(coluna) + 1
-    intervalo = f"{rowcol_to_a1(2, col_i)}:{rowcol_to_a1(ate_linha, col_i)}"
     try:
-        ws.add_validation(intervalo, ValidationConditionType.boolean, [])
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "setDataValidation": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": 1,
+                        "endRowIndex": ate_linha,
+                        "startColumnIndex": col_i - 1,
+                        "endColumnIndex": col_i,
+                    },
+                    "rule": {
+                        "condition": {"type": "BOOLEAN"},
+                        "strict": True,
+                        "showCustomUi": True,
+                    },
+                }
+            }]
+        })
     except Exception as e:
         print(f"[AVISO] não deu pra criar o checkbox de '{coluna}': {e}")
 
