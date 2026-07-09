@@ -113,6 +113,36 @@ POLLING_RESULTADOS_COLS = [
 ]
 
 
+def _normalizar_booleanos_coluna(ws, col_i, ate_linha):
+    """Converte texto literal 'TRUE'/'FALSE' (sobra de reescrita com value_input_option
+    RAW, que nunca interpreta string como booleano) em booleano de verdade. Com
+    validação BOOLEAN estrita, uma célula com o TEXTO 'TRUE' não conta como valor
+    válido de checkbox e a caixinha não marca, mesmo com a validação certa aplicada."""
+    try:
+        valores = ws.col_values(col_i)
+    except Exception as e:
+        print(f"[AVISO] não deu pra ler a coluna pra normalizar booleanos: {e}")
+        return
+    requests = []
+    for i in range(2, ate_linha + 1):
+        v = valores[i - 1].strip().upper() if i - 1 < len(valores) else ""
+        if v in ("TRUE", "FALSE"):
+            requests.append({
+                "updateCells": {
+                    "range": {"sheetId": ws.id, "startRowIndex": i - 1, "endRowIndex": i,
+                               "startColumnIndex": col_i - 1, "endColumnIndex": col_i},
+                    "rows": [{"values": [{"userEnteredValue": {"boolValue": v == "TRUE"}}]}],
+                    "fields": "userEnteredValue",
+                }
+            })
+    if not requests:
+        return
+    try:
+        ws.spreadsheet.batch_update({"requests": requests})
+    except Exception as e:
+        print(f"[AVISO] não deu pra normalizar booleanos da coluna: {e}")
+
+
 def _ativar_checkbox(ws, coluna, header, ate_linha):
     """Transforma a coluna em checkbox real do Sheets (TRUE/FALSE), da linha 2 até
     ate_linha (última linha COM pesquisa). Sem linha de dados, não faz nada, pra não
@@ -141,6 +171,7 @@ def _ativar_checkbox(ws, coluna, header, ate_linha):
         })
     except Exception as e:
         print(f"[AVISO] não deu pra criar o checkbox de '{coluna}': {e}")
+    _normalizar_booleanos_coluna(ws, col_i, ate_linha)
 
 
 def _ultima_linha_com_registro(ws):
@@ -598,7 +629,7 @@ def cmd_alerta():
 # ────────────────────────────── EXTRAÇÃO ──────────────────────────────
 
 RELATORIOS_ID = os.getenv("SPREADSHEET_ID_RELATORIOS", "")
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 
 PROMPT = (
     "Você é um analista de dados de pesquisas eleitorais da Eixo. Você recebe o PDF do "
@@ -924,9 +955,10 @@ def _registrar_uso(resp):
 
 
 def _custo_estimado(entrada, saida, pensamento):
-    # preço do gemini-2.5-flash em jul/2026: ~$0,30/1M tokens de entrada, ~$2,50/1M de
-    # saída (saída e pensamento cobram na mesma tabela). Estimativa, não fatura oficial;
-    # confira o console de billing do Google pro valor exato.
+    # preço aproximado da faixa "flash" (~$0,30/1M tokens de entrada, ~$2,50/1M de
+    # saída, saída e pensamento cobram na mesma tabela). Ajuste se trocar de modelo
+    # (GEMINI_MODEL) ou se o preço mudar. Estimativa, não fatura oficial; confira o
+    # console de billing do Google pro valor exato.
     return (entrada / 1_000_000 * 0.30) + ((saida + pensamento) / 1_000_000 * 2.50)
 
 
