@@ -20,6 +20,7 @@ from google import genai
 from google.genai import types
 
 BRT = timezone(timedelta(hours=-3))
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 
 # Cabeçalhos para fingir ser um usuário real do Windows/Chrome + IP do Googlebot (Fallback)
 STEALTH_HEADERS = {
@@ -174,28 +175,39 @@ def _garantir_coluna_relatorios(ws, header, nome):
 
 
 def _resetar_validacoes_relatorios(ws, header, ate_linha):
-    """Remove checkboxes/validações acidentais e recria só a de Conferido?."""
+    """Remove checkboxes/validações acidentais nas OUTRAS colunas e garante a de
+    Conferido?. NUNCA limpa a validação de Conferido? antes de recriar: isso roda em
+    toda execução, e limpar+recriar em duas chamadas separadas deixa uma janela em
+    que, se a segunda falhar (rede, limite de taxa), o checkbox de Conferido? some da
+    planilha até a próxima rodada consertar. setDataValidation é idempotente, então
+    só (re)aplicar a de Conferido? já resolve sem esse risco."""
     if ate_linha < 2:
         return
-    try:
-        ws.spreadsheet.batch_update({
-            "requests": [{
-                "repeatCell": {
-                    "range": {
-                        "sheetId": ws.id,
-                        "startRowIndex": 1,
-                        "endRowIndex": ate_linha,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": len(header),
-                    },
-                    "cell": {"dataValidation": None},
-                    "fields": "dataValidation",
-                }
-            }]
-        })
-    except Exception as e:
-        print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
-    _ativar_checkbox(ws, _rel_display(COL_CONFERIDO), header, ate_linha)
+    col_conferido = _rel_display(COL_CONFERIDO)
+    faixas = [(0, len(header))]
+    if col_conferido in header:
+        col_i = header.index(col_conferido)
+        faixas = [(ini, fim) for ini, fim in ((0, col_i), (col_i + 1, len(header))) if fim > ini]
+    if faixas:
+        try:
+            ws.spreadsheet.batch_update({
+                "requests": [{
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws.id,
+                            "startRowIndex": 1,
+                            "endRowIndex": ate_linha,
+                            "startColumnIndex": ini,
+                            "endColumnIndex": fim,
+                        },
+                        "cell": {"dataValidation": None},
+                        "fields": "dataValidation",
+                    }
+                } for ini, fim in faixas]
+            })
+        except Exception as e:
+            print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
+    _ativar_checkbox(ws, col_conferido, header, ate_linha)
 
 
 def _garantir_coluna(ws, header, nome):
@@ -208,6 +220,36 @@ def _garantir_coluna(ws, header, nome):
     ws.update_cell(1, novo, nome)
     header.append(nome)
     return novo
+
+
+def _normalizar_booleanos_coluna(ws, col_i, ate_linha):
+    """Converte texto literal 'TRUE'/'FALSE' (sobra de reescrita com value_input_option
+    RAW, que nunca interpreta string como booleano) em booleano de verdade. Com
+    validação BOOLEAN estrita, uma célula com o TEXTO 'TRUE' não conta como valor
+    válido de checkbox e a caixinha não marca, mesmo com a validação certa aplicada."""
+    try:
+        valores = ws.col_values(col_i)
+    except Exception as e:
+        print(f"[AVISO] não deu pra ler a coluna pra normalizar booleanos: {e}")
+        return
+    requests = []
+    for i in range(2, ate_linha + 1):
+        v = valores[i - 1].strip().upper() if i - 1 < len(valores) else ""
+        if v in ("TRUE", "FALSE"):
+            requests.append({
+                "updateCells": {
+                    "range": {"sheetId": ws.id, "startRowIndex": i - 1, "endRowIndex": i,
+                               "startColumnIndex": col_i - 1, "endColumnIndex": col_i},
+                    "rows": [{"values": [{"userEnteredValue": {"boolValue": v == "TRUE"}}]}],
+                    "fields": "userEnteredValue",
+                }
+            })
+    if not requests:
+        return
+    try:
+        ws.spreadsheet.batch_update({"requests": requests})
+    except Exception as e:
+        print(f"[AVISO] não deu pra normalizar booleanos da coluna: {e}")
 
 
 def _ativar_checkbox(ws, coluna, header, ate_linha):
@@ -238,6 +280,7 @@ def _ativar_checkbox(ws, coluna, header, ate_linha):
         })
     except Exception as e:
         print(f"[AVISO] não deu pra criar o checkbox de '{coluna}': {e}")
+    _normalizar_booleanos_coluna(ws, col_i, ate_linha)
 
 
 def _ultima_linha_com_registro(ws):
@@ -434,7 +477,7 @@ def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, d
     """
     try:
         config = types.GenerateContentConfig(temperature=0.1, tools=[types.Tool(google_search=types.GoogleSearch())])
-        res = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=config)
+        res = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt, config=config)
         return _extrair_json_objeto(getattr(res, "text", "") or "")
     except Exception as e:
         print(f"  [AVISO] Gemini/search falhou para {registro}: {str(e)[:200]}")
@@ -568,7 +611,7 @@ def _texto_imagem_gemini(gemini_client, image_bytes, mime_type):
     try:
         config = types.GenerateContentConfig(temperature=0)
         res = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_MODEL,
             contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)],
             config=config,
         )
