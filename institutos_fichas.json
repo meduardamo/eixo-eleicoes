@@ -1,0 +1,65 @@
+{
+  "_comentario": "Ficha de estrutura por instituto, injetada no prompt de extração quando o instituto da fila casa com 'match'. Documento vivo: adicione/edite entradas conforme os relatórios revelam pegadinhas. 'match' são palavras (sem acento, minúsculas) que precisam aparecer no nome do instituto. 'ficha' é o texto que vai pro Gemini.",
+  "institutos": [
+    {
+      "nome": "Verità",
+      "match": ["verita"],
+      "ficha": "Relatório em tabelas estilo SPSS, com PERGUNTA 04, 05, 06... Regras específicas da Verità:\n- Toda tabela tem colunas 'Frequência | Porcentual | Porcentagem válida | Porcentagem acumulativa'. USE SEMPRE a coluna 'Porcentual' (base total). NUNCA use 'Porcentagem válida' (ela exclui NS/NR e desalinha a soma).\n- Estrutura 'Válido / Ausente': os candidatos ficam em 'Válido'; NS/NR e Branco/nulo ficam em 'Ausente'. Consolide NS/NR + Branco/nulo num único 'Não válido', usando a coluna Porcentual.\n- 'Se a eleição fosse hoje e esses fossem os candidatos, em quem você votaria para [cargo]?' = intenção de voto estimulada principal (t1).\n- 'O candidato que você votaria é um desses nomes ou outro candidato?' = PERGUNTA FILTRO. IGNORE, não é intenção de voto.\n- 'Em uma simulação de segundo turno, em qual desses candidatos você votaria?' = t2 (confronto direto).\n- 'primeira intenção de voto para senador' = 1º voto; 'segunda intenção de voto para senador' = 2º voto. Ambos são t1 (senado NÃO tem 2º turno). Cada um é um cenário SEPARADO.\n- 'em quem você não votaria de jeito nenhum para [cargo]' = REJEIÇÃO, não intenção de voto.\n- 'votaria em candidato apoiado por Lula / por Bolsonaro' = pergunta de arrasto/apoio. NÃO é intenção de voto, IGNORE no topline e no voto por segmento."
+    },
+    {
+      "nome": "Instituto Paraná Pesquisas",
+      "match": ["parana", "pesquisas"],
+      "ficha": "Relatório em tabelas de texto. Regras do Paraná Pesquisas:\n- Traz voto ESPONTÂNEO e ESTIMULADO. Capture separado; o principal é o estimulado.\n- 'CENÁRIO 1 / CENÁRIO 2 / CENÁRIO 3' são conjuntos de candidatos DIFERENTES (com/sem certo nome). Cada CENÁRIO é um cenário próprio, não misture.\n- 'Rejeição Eleitoral – Governador / Senador' é pergunta de rejeição (vai pra rejeição, não pra intenção de voto).\n- Tem quebra demográfica boa (gênero, idade, renda, religião)."
+    },
+    {
+      "nome": "DMP",
+      "match": ["dmp"],
+      "ficha": "Relatório de rótulos explícitos e limpos. Regras do DMP:\n- Os títulos já dizem tudo: 'Governador · 1º Turno' = t1; 'Governador · 2º Turno — Nome A × Nome B' = t2 com o confronto nomeado (cada confronto é uma disputa separada).\n- Senador: 'Em quem você votaria para a 1ª e a 2ª vaga? · soma das duas indicações' = cenário consolidado que soma ~200% (cada entrevistado indica 2 nomes). Use votos_por_entrevistado=2. É t1."
+    },
+    {
+      "nome": "Instituto Vox Brasil",
+      "match": ["vox"],
+      "ficha": "Relatório sistemático e GRANDE (50+ páginas). Regras da Vox Brasil:\n- '(CANDIDATOS DO DISCO N) {CENÁRIO N}' identifica o conjunto de candidatos = cenário. Cada CENÁRIO é próprio.\n- Os segmentos vêm anexados ao título da pergunta: 'X SETOR', 'X SEXO E IDADE', 'X INSTRUÇÃO, RENDA FAMILIAR E RELIGIÃO'. Extraia esses cruzamentos como segmento demográfico.\n- Senador: 'GRÁFICO CONSOLIDADO - CENÁRIO I/II' é 1º+2º voto consolidado, soma ~200% (votos_por_entrevistado=2), é t1.\n- ATENÇÃO: os cargos ficam em blocos distantes no PDF (governador no começo, senador lá pro fim). Procure o cargo pedido no documento INTEIRO, não só no começo."
+    },
+    {
+      "nome": "IHPEC",
+      "match": ["ihpec"],
+      "ficha": "O 'relatório' costuma ser uma MATÉRIA de site (ex.: rondoniaovivo.com) renderizada, com as tabelas da pesquisa embutidas. Regras do IHPEC:\n- Ignore todo o lixo de navegação do site (manchetes de outras notícias, menus, links). Extraia SÓ as tabelas da pesquisa.\n- Senador de 2 vagas: o relatório traz '1º voto', '2º voto' E 'média do 1º e 2º voto' em tabelas separadas. Guarde os TRÊS como cenários próprios (não calcule média, não some)."
+    },
+    {
+      "nome": "Instituto França",
+      "match": ["franca"],
+      "ficha": "Relatório com os números PRINCIPAIS dentro de gráficos de barra (imagem) — leia por visão, o texto é só rodapé. Regras do França:\n- Traz 1º turno (campo cheio, ~12 candidatos) e 2º turno (2 candidatos) como gráficos 'RESULTADO GERAL' com o MESMO título. Diferencie pelo número de candidatos: muitos = t1, dois = t2.\n- 'Considerando apenas estes cinco candidatos...' é um CENÁRIO reduzido (conjunto menor), não é pergunta filtro.\n- Costuma NÃO ter quebra demográfica (só RESULTADO GERAL). Se não houver segmento, é normal, não force."
+    },
+    {
+      "nome": "Datafolha",
+      "match": ["datafolha"],
+      "ficha": "Números em gráfico (imagem) — leia por visão. Regras do Datafolha:\n- Registro duplo: a mesma pesquisa costuma ter protocolo estadual E nacional (ex.: SP-01703 e BR-06481). São linhas separadas na fila; extraia o cargo/UF pedido na linha.\n- Traz simulações de 2º turno."
+    },
+    {
+      "nome": "AtlasIntel",
+      "match": ["atlas"],
+      "ficha": "Relatório GRANDE quase todo em gráfico (imagem), pouquíssimo texto — leia por visão. Regras da AtlasIntel:\n- Trabalha com 'CENÁRIO 1, 2, 3, 4' (conjuntos de candidatos) e simulações de 2º turno.\n- Como é grande e visual, procure os gráficos no documento inteiro."
+    },
+    {
+      "nome": "Real Time Big Data",
+      "match": ["real", "time"],
+      "ficha": "Costuma vir como matéria/imagem, números em gráfico — leia por visão e ignore texto de navegação. Senador de 2 vagas com CENÁRIO 1/2 e simulações de 2º turno em alguns relatórios."
+    },
+    {
+      "nome": "Ranking Brasil",
+      "match": ["ranking"],
+      "ficha": "Formato varia (às vezes tabela de texto, às vezes só imagem). Senador de 2 vagas. Presidente pode ser amostra ESTADUAL registrada sob protocolo BR- — confira no documento a abrangência real da amostra."
+    },
+    {
+      "nome": "Brasmarket",
+      "match": ["brasmarket"],
+      "ficha": "Presidente frequentemente medido DENTRO de um estado, sob registro BR- (ex.: amostra do RS no registro BR-00409). A UF real do cenário de presidente é o ESTADO da amostra, não Brasil — confira no documento o universo pesquisado."
+    },
+    {
+      "nome": "Meio/Ideia",
+      "match": ["boas", "ideias"],
+      "ficha": "Relatório MUITO grande (90+ páginas) quase todo em gráfico (imagem) — leia por visão. Traz espontânea, estimulada 1º turno e simulação de 2º turno, cada um em gráfico próprio. Rodapé legal repetido em toda página é só ruído."
+    }
+  ]
+}
