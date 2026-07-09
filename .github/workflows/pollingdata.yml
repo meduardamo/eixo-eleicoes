@@ -1,4 +1,4 @@
-name: pollingdata-t1
+name: 08 - PollingData T1
 
 on:
   workflow_dispatch:
