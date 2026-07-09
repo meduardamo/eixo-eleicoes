@@ -19,7 +19,7 @@ from datetime import datetime
 # módulo poder ser importado só pelos helpers (sigla_uf, instituto_canonico) em
 # ambientes sem essas libs.
 
-# Este módulo é independente do scraper_polling.py de propósito: ele fica
+# Este módulo é independente do pollingdata_scraper.py de propósito: ele fica
 # intocado. As 3 funções abaixo são cópias pequenas do que era usado de lá.
 
 GEMINI_MODEL = "gemini-2.5-flash"
@@ -88,7 +88,7 @@ def normalizar_disputa_t2(valor: str, itens: list | None = None) -> str:
     nomes em ordem alfabética. Isso é essencial: sem ordem canônica, 'Lula x Bolsonaro'
     e 'Bolsonaro x Lula' (mesmo confronto, ordem diferente na fonte ou no texto que o
     Gemini devolveu) virariam duas disputas distintas, e a série quebraria no gráfico
-    (scraper_polling.py agrupa média móvel e dedup por disputa). Prioriza os candidatos
+    (pollingdata_scraper.py agrupa média móvel e dedup por disputa). Prioriza os candidatos
     estruturados de 'itens' (passam por slug_candidato_disputa, mais estável que confiar
     no texto livre do Gemini) e só cai pro campo 'disputa' bruto se não der pra montar
     dos itens.
