@@ -253,28 +253,40 @@ def _garantir_coluna_relatorios(ws, header, nome):
 
 
 def _resetar_validacoes_relatorios(ws, header, ate_linha):
-    """Remove checkboxes/validações acidentais e recria só a de Conferido?."""
+    """Remove checkboxes/validações acidentais nas OUTRAS colunas e garante a de
+    Conferido?. NUNCA limpa a validação de Conferido? antes de recriar: isso roda em
+    TODA chamada de _aba() pra 'relatorios' (extrair, topline...), e limpar+recriar em
+    duas chamadas separadas deixa uma janela em que, se a segunda falhar (rede, limite
+    de taxa), o checkbox de Conferido? some da planilha até a próxima rodada consertar.
+    setDataValidation é idempotente, então só (re)aplicar a de Conferido? já resolve
+    sem esse risco."""
     if ate_linha < 2:
         return
-    try:
-        ws.spreadsheet.batch_update({
-            "requests": [{
-                "repeatCell": {
-                    "range": {
-                        "sheetId": ws.id,
-                        "startRowIndex": 1,
-                        "endRowIndex": ate_linha,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": len(header),
-                    },
-                    "cell": {"dataValidation": None},
-                    "fields": "dataValidation",
-                }
-            }]
-        })
-    except Exception as e:
-        print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
-    _ativar_checkbox(ws, _rel_display("conferido"), header, ate_linha)
+    col_conferido = _rel_display("conferido")
+    faixas = [(0, len(header))]
+    if col_conferido in header:
+        col_i = header.index(col_conferido)
+        faixas = [(ini, fim) for ini, fim in ((0, col_i), (col_i + 1, len(header))) if fim > ini]
+    if faixas:
+        try:
+            ws.spreadsheet.batch_update({
+                "requests": [{
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws.id,
+                            "startRowIndex": 1,
+                            "endRowIndex": ate_linha,
+                            "startColumnIndex": ini,
+                            "endColumnIndex": fim,
+                        },
+                        "cell": {"dataValidation": None},
+                        "fields": "dataValidation",
+                    }
+                } for ini, fim in faixas]
+            })
+        except Exception as e:
+            print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
+    _ativar_checkbox(ws, col_conferido, header, ate_linha)
 
 
 def _aba(sh, nome):
@@ -896,6 +908,37 @@ def _blocos_pdf(pdf_bytes, tamanho=PAGINAS_POR_BLOCO):
         yield buf.getvalue()
 
 
+# Uso acumulado de tokens do Gemini nesta execução (processo novo a cada rodada do
+# workflow, então não precisa resetar entre chamadas de cmd_extrair).
+USO_TOKENS = {"chamadas": 0, "entrada": 0, "saida": 0, "pensamento": 0}
+
+
+def _registrar_uso(resp):
+    meta = getattr(resp, "usage_metadata", None)
+    if not meta:
+        return
+    USO_TOKENS["chamadas"] += 1
+    USO_TOKENS["entrada"] += getattr(meta, "prompt_token_count", 0) or 0
+    USO_TOKENS["saida"] += getattr(meta, "candidates_token_count", 0) or 0
+    USO_TOKENS["pensamento"] += getattr(meta, "thoughts_token_count", 0) or 0
+
+
+def _custo_estimado(entrada, saida, pensamento):
+    # preço do gemini-2.5-flash em jul/2026: ~$0,30/1M tokens de entrada, ~$2,50/1M de
+    # saída (saída e pensamento cobram na mesma tabela). Estimativa, não fatura oficial;
+    # confira o console de billing do Google pro valor exato.
+    return (entrada / 1_000_000 * 0.30) + ((saida + pensamento) / 1_000_000 * 2.50)
+
+
+def _resumo_uso_tokens(rotulo, uso):
+    if not uso["chamadas"]:
+        return
+    custo = _custo_estimado(uso["entrada"], uso["saida"], uso["pensamento"])
+    print(f"\nGemini ({rotulo}): {uso['chamadas']} chamada(s) · "
+          f"{uso['entrada']:,} tokens entrada · {uso['saida']:,} saída · "
+          f"{uso['pensamento']:,} pensamento · custo estimado ${custo:.4f}")
+
+
 def _gemini_json(pdf_bytes, extra="", texto_bloco=""):
     from google import genai
     from google.genai import types
@@ -924,6 +967,7 @@ def _gemini_json(pdf_bytes, extra="", texto_bloco=""):
     else:
         contents = [prompt, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")]
     resp = client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
+    _registrar_uso(resp)
     raw = (getattr(resp, "text", "") or "").strip()
     if not raw:
         fr = "?"
@@ -1190,6 +1234,7 @@ def cmd_extrair():
     print("\n───────── resumo ─────────")
     print(f"extraídos: {len(ok_regs)}  {ok_regs}")
     print(f"com erro:  {len(err_regs)}  {err_regs}")
+    _resumo_uso_tokens("segmentos", USO_TOKENS)
 
 
 # ────────────────────────────── TOPLINE ──────────────────────────────
@@ -1320,7 +1365,8 @@ def cmd_topline():
         raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
     import pandas as pd
     from relatorios_topline_core import (
-        extrair_dados_polling_gemini, extrair_texto_pdf_bytes, montar_dataframes_polling,
+        USO_TOKENS as USO_TOKENS_TOPLINE, extrair_dados_polling_gemini,
+        extrair_texto_pdf_bytes, montar_dataframes_polling,
     )
 
     sh = _sheets().open_by_key(RELATORIOS_ID)
@@ -1535,6 +1581,7 @@ def cmd_topline():
     print("\n───────── resumo ─────────")
     print(f"processados: {len(ok_regs)}  {ok_regs}")
     print(f"com erro:    {len(err_regs)}  {err_regs}")
+    _resumo_uso_tokens("topline", USO_TOKENS_TOPLINE)
 
 
 # ────────────────────────────── PUBLICAR ──────────────────────────────
