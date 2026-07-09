@@ -1501,6 +1501,27 @@ def normalizar_nome_arquivo(registro, data_div, cargo=""):
     return f"{reg_limpo}_{data_iso}.pdf"
 
 
+def _data_iso_origem(valor):
+    s = str(valor or "").strip()
+    m = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", s)
+    if m:
+        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        return s
+    return ""
+
+
+def _origem_com_carimbo(origem, data_divulgacao=""):
+    origem = str(origem or "").strip() or "Capturado na Web"
+    agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
+    partes = [origem, f"puxado em {agora}"]
+    data_prevista = _data_iso_origem(data_divulgacao)
+    hoje = datetime.now(BRT).strftime("%Y-%m-%d")
+    if data_prevista and data_prevista != hoje:
+        partes.append(f"divulgação prevista {data_prevista}")
+    return " | ".join(partes)
+
+
 def atualizar_planilha():
     print("Iniciando automação de busca de relatórios...")
     creds = obter_credenciais()
@@ -1567,7 +1588,10 @@ def atualizar_planilha():
                 nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")), linha.get("cargo", ""))
                 if renomear_arquivo_drive_por_link(creds, link_atual, nome_pdf):
                     print(f"  [OK] Arquivo renomeado no Drive: {nome_pdf}")
-                celulas_para_atualizar.append(gspread.Cell(i, col_status, "link já existente na fila"))
+                celulas_para_atualizar.append(gspread.Cell(
+                    i, col_status,
+                    _origem_com_carimbo("link já existente na fila", linha.get("data_divulgacao", "")),
+                ))
                 if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
                     celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "link_existente"))
             continue
@@ -1580,7 +1604,10 @@ def atualizar_planilha():
 
         if resultado.get("tipo") == "paywall" and not resultado.get("link"):
             pendentes_finais.append(f"{registro} - Paywall, sem matéria aberta localizada.")
-            celulas_para_atualizar.append(gspread.Cell(i, col_status, "paywall, aguardando fonte aberta"))
+            celulas_para_atualizar.append(gspread.Cell(
+                i, col_status,
+                _origem_com_carimbo("paywall, aguardando fonte aberta", linha.get("data_divulgacao", "")),
+            ))
             celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "paywall"))
             continue
 
@@ -1591,7 +1618,10 @@ def atualizar_planilha():
 
         if _fonte_video(link_fonte):
             pendentes_finais.append(f"{registro} - Fonte é vídeo ({link_fonte}); sem relatório legível, deixado pendente.")
-            celulas_para_atualizar.append(gspread.Cell(i, col_status, "fonte é vídeo, aguardando relatório/matéria"))
+            celulas_para_atualizar.append(gspread.Cell(
+                i, col_status,
+                _origem_com_carimbo("fonte é vídeo, aguardando relatório/matéria", linha.get("data_divulgacao", "")),
+            ))
             celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "nao"))
             continue
 
@@ -1603,7 +1633,13 @@ def atualizar_planilha():
             celulas_para_atualizar.append(gspread.Cell(i, col_nivel, situacao))
             if situacao in SITUACOES_PENDENTES:
                 pendentes_finais.append(_mensagem_pendente(registro, situacao))
-                celulas_para_atualizar.append(gspread.Cell(i, col_status, "verificar fonte" + _nota_conferencia(situacao)))
+                celulas_para_atualizar.append(gspread.Cell(
+                    i, col_status,
+                    _origem_com_carimbo(
+                        "verificar fonte" + _nota_conferencia(situacao),
+                        linha.get("data_divulgacao", ""),
+                    ),
+                ))
                 continue
             pasta_id = resolver_pasta_drive(creds, linha.get("cargo", ""), linha.get("uf", ""))
             nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")), linha.get("cargo", ""))
@@ -1615,7 +1651,13 @@ def atualizar_planilha():
 
             nota = _nota_conferencia(situacao)
             celulas_para_atualizar.append(gspread.Cell(i, col_link, link_drive))
-            celulas_para_atualizar.append(gspread.Cell(i, col_status, resultado.get("origem_texto", "Capturado na Web") + nota))
+            celulas_para_atualizar.append(gspread.Cell(
+                i, col_status,
+                _origem_com_carimbo(
+                    resultado.get("origem_texto", "Capturado na Web") + nota,
+                    linha.get("data_divulgacao", ""),
+                ),
+            ))
             pdfs_salvos += 1
             links_preenchidos += 1
             print(f"  [OK] Salvo no Drive: {nome_pdf}{nota}")
