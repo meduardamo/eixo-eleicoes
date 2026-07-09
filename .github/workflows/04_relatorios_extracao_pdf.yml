@@ -41,7 +41,7 @@ jobs:
           date
           python --version
           echo "Workflow: polling-pdf-extrair-topline"
-          echo "Comandos: pesquisas.py extrair; pesquisas.py topline"
+          echo "Comandos: relatorios_pipeline.py extrair; relatorios_pipeline.py topline"
           echo "Publicação PollingData: DESATIVADA"
 
       - name: Extrair segmentos, rejeição e aprovação
@@ -50,8 +50,8 @@ jobs:
         timeout-minutes: 70
         run: |
           set +e
-          echo "::group::python pesquisas.py extrair"
-          python -u pesquisas.py extrair
+          echo "::group::python relatorios_pipeline.py extrair"
+          python -u relatorios_pipeline.py extrair
           status=$?
           echo "::endgroup::"
           exit "$status"
@@ -62,8 +62,8 @@ jobs:
         timeout-minutes: 70
         run: |
           set +e
-          echo "::group::python pesquisas.py topline"
-          python -u pesquisas.py topline
+          echo "::group::python relatorios_pipeline.py topline"
+          python -u relatorios_pipeline.py topline
           status=$?
           echo "::endgroup::"
           exit "$status"
