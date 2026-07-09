@@ -67,6 +67,13 @@ def env_truthy(nome: str, default: str = "") -> bool:
     return str(os.getenv(nome, default)).strip().lower() in {"1", "true", "sim", "yes", "y"}
 
 
+def env_bool(nome: str, default: bool = False) -> bool:
+    raw = os.getenv(nome)
+    if raw is None or str(raw).strip() == "":
+        return default
+    return str(raw).strip().lower() in {"1", "true", "sim", "yes", "y"}
+
+
 def salvar_diagnostico_pagina(driver: webdriver.Chrome, contexto: str) -> str:
     """Salva HTML e screenshot para baixar como artifact no GitHub Actions."""
     pasta = Path(DEBUG_DIR)
@@ -114,6 +121,26 @@ def _texto_pagina_norm(driver: webdriver.Chrome) -> str:
     return bruto
 
 
+def _tem_pagina_parcial_util(driver: webdriver.Chrome) -> bool:
+    """Distingue HTML parcial real da aba inicial vazia do Chrome (data:,)."""
+    try:
+        url = (driver.current_url or "").strip().lower()
+    except Exception:
+        url = ""
+    try:
+        html = (driver.page_source or "").strip()
+    except Exception:
+        html = ""
+
+    if not url or url.startswith(("data:", "about:blank")):
+        return False
+    if ID_ELEICAO_LABEL in html or ID_BTN_PESQUISAR in html:
+        return True
+    texto = re.sub(r"<[^>]+>", " ", html)
+    texto = re.sub(r"\s+", " ", texto).strip().lower()
+    return len(html) > 300 or "pesquisa" in texto or "tse" in url
+
+
 def validar_pagina_pesqele(driver: webdriver.Chrome, contexto: str = "carregamento") -> None:
     """Garante que o formulário do PesqEle abriu.
 
@@ -147,7 +174,7 @@ def validar_pagina_pesqele(driver: webdriver.Chrome, contexto: str = "carregamen
 
 def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = False) -> webdriver.Chrome:
     opts = webdriver.ChromeOptions()
-    opts.page_load_strategy = os.getenv("PESQELE_PAGE_LOAD_STRATEGY", "eager")
+    opts.page_load_strategy = os.getenv("PESQELE_PAGE_LOAD_STRATEGY", "none")
     chrome_bin = os.getenv("CHROME_BIN", "").strip()
     if chrome_bin:
         opts.binary_location = chrome_bin
@@ -168,7 +195,7 @@ def make_driver(profile_dir: str = "./chrome-profile-pesqele", headless: bool = 
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
 
-    if headless or env_truthy("CI"):
+    if headless:
         opts.add_argument("--headless=new")
         opts.add_argument("--disable-software-rasterizer")
     else:
@@ -197,12 +224,9 @@ def get_with_retry(driver: webdriver.Chrome, url: str, tries: int = 3) -> None:
             # mesmo com HTML parcial já disponível. Nesses casos, seguimos para a
             # validação do formulário; ela decide se é página válida, bloqueio ou
             # erro real e salva artifact de diagnóstico.
-            try:
-                if driver.current_url or (driver.page_source or "").strip():
-                    print("driver.get estourou timeout, mas há página parcial; seguindo para validação...")
-                    return
-            except Exception:
-                pass
+            if _tem_pagina_parcial_util(driver):
+                print("driver.get estourou timeout, mas há página parcial; seguindo para validação...")
+                return
 
             if i == tries - 1:
                 base = salvar_diagnostico_pagina(driver, "driver-get-timeout")
@@ -210,7 +234,7 @@ def get_with_retry(driver: webdriver.Chrome, url: str, tries: int = 3) -> None:
                     "Chrome não conseguiu carregar o PesqEle dentro do timeout "
                     f"({driver.timeouts.page_load}s). Veja o artifact de diagnóstico ({base})."
                 ) from exc
-            print(f"driver.get falhou (tentativa {i + 1}); repetindo...")
+            print(f"driver.get não saiu da página vazia (tentativa {i + 1}); repetindo...")
             time.sleep(3)
 
 
@@ -765,7 +789,7 @@ def run_to_google_sheets_insert_dedup(
 
 if __name__ == "__main__":
     eleicao = os.getenv("ELEICAO_TEXT", "Eleições Gerais 2026")
-    headless = env_truthy("HEADLESS") or env_truthy("CI")
+    headless = env_bool("HEADLESS", default=env_truthy("CI"))
     days_back = int(os.getenv("DAYS_BACK", "2"))
 
     print(f"Iniciando scraper para: {eleicao}")
