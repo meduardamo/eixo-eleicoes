@@ -20,6 +20,6 @@ jobs:
       - name: Escrever credentials.json
         run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
 
-      - run: python automacao_tse.py
+      - run: python tse_candidaturas.py
         env:
           SPREADSHEET_ID_TSE: ${{ secrets.SPREADSHEET_ID_TSE }}
