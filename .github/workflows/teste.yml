@@ -1,4 +1,4 @@
-name: polling-rebuild-bi
+name: 05 - Rebuild BI
 
 on:
   workflow_dispatch:
