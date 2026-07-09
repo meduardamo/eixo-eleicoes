@@ -2,9 +2,9 @@
 Pesquisas eleitorais: alerta diário + extração de voto por segmento e rejeição.
 
 Uso:
-  python pesquisas.py alerta    # email com as pesquisas que divulgam hoje (PesqEle)
-  python pesquisas.py extrair   # extrai voto por segmento e rejeição dos relatórios
-  python pesquisas.py rebuild_bi # reconstrói resultados_bi nas planilhas PollingData
+  python relatorios_pipeline.py alerta    # email com as pesquisas que divulgam hoje (PesqEle)
+  python relatorios_pipeline.py extrair   # extrai voto por segmento e rejeição dos relatórios
+  python relatorios_pipeline.py rebuild_bi # reconstrói resultados_bi nas planilhas PollingData
 
 Secrets: GOOGLE_CREDENTIALS_JSON, GEMINI_API_KEY, BREVO_API_KEY, EMAIL,
 DESTINATARIOS, SPREADSHEET_ID (PesqEle), SPREADSHEET_ID_RELATORIOS.
@@ -77,7 +77,7 @@ CABECALHOS = {
     "rejeicao": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
                  "candidato", "tipo_segmento", "segmento", "valor"],
     "aprovacao": ["registro", "cargo", "uf", "instituto", "data_divulgacao",
-                  "alvo", "resposta", "tipo_segmento", "segmento", "valor"],
+                  "alvo", "tipo_avaliacao", "resposta", "tipo_segmento", "segmento", "valor"],
     "topline_pesquisas": ["registro_tse", "ano", "cargo", "uf", "turno", "disputa",
                           "instituto", "classificacao_instituto", "data_campo",
                           "scenario_label", "descricao", "votos_por_entrevistado",
@@ -608,7 +608,7 @@ PROMPT = (
     "'cargo' é a disputa a que a rejeição se refere.\n\n"
     "3) aprovacao: APENAS aprovação/desaprovação ou avaliação do DESEMPENHO de quem está no "
     "cargo (presidente ou governador em exercício), quebrada por segmento. "
-    'Cada item: {"alvo": "...", "resposta": "...", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
+    'Cada item: {"alvo": "...", "tipo_avaliacao": "aprova_desaprova|nota_gestao", "resposta": "...", "tipo_segmento": "...", "segmento": "...", "valor": número}.\n\n'
     "Regras:\n"
     "1) Preserve os números EXATAMENTE como no relatório. Não arredonde nem recalcule.\n"
     "1b) Percentuais com vírgula decimal devem virar número decimal com ponto: 26,1% -> 26.1; "
@@ -642,6 +642,11 @@ PROMPT = (
     "escreva 'Governo Lula', 'Governo Federal' ou 'gestão do presidente'. Se for governador/"
     "governo estadual, use SEMPRE 'Governador <Nome>'. 'resposta' é a categoria como no "
     "relatório (ex: 'Aprova', 'Desaprova', 'Não sabe', 'Ótimo/Bom', 'Regular', 'Ruim/Péssimo').\n"
+    "8b) 'tipo_avaliacao' separa as DUAS perguntas de avaliação, que são diferentes e cada uma "
+    "soma ~100% sozinha, NÃO as misture: use 'aprova_desaprova' para a pergunta binária "
+    "(respostas Aprova / Desaprova / Não sabe) e 'nota_gestao' para a pergunta de nota/escala "
+    "(respostas Ótimo / Bom / Regular / Ruim / Péssimo, ou Ótimo-Bom / Regular / Ruim-Péssimo). "
+    "Cada linha de aprovacao deve trazer o 'tipo_avaliacao' correto.\n"
     "9) NÃO inclua em aprovacao perguntas hipotéticas ou de intenção (ex: 'gostaria que se "
     "reelegesse', 'a reeleição de X', 'a eleição de Y', desejo de candidatura). aprovacao é só "
     "avaliação do trabalho de quem já governa.\n"
@@ -830,6 +835,31 @@ def _avisos_soma_voto(itens, cargo):
     return avisos[:4]
 
 
+def _avisos_soma_aprovacao(itens):
+    """Aviso (não bloqueia) quando as respostas de uma MESMA pergunta de avaliação
+    (mesmo alvo + tipo_avaliacao + segmento) somam longe de 100%. Pega pergunta
+    incompleta (faltou uma resposta). Valores já normalizados (float)."""
+    from collections import defaultdict
+    grupos = defaultdict(list)
+    for v in itens:
+        try:
+            val = float(v.get("valor"))
+        except (TypeError, ValueError):
+            continue
+        chave = (str(v.get("alvo", "")), str(v.get("tipo_avaliacao", "")),
+                 str(v.get("tipo_segmento", "")), str(v.get("segmento", "")))
+        grupos[chave].append(val)
+    avisos = []
+    for (alvo, _tipo, _tseg, seg), vals in grupos.items():
+        if len(vals) < 2:
+            continue
+        s = sum(vals)
+        if 90 <= s <= 110:
+            continue
+        avisos.append(f"aprovação {alvo[:14]} soma {s:.0f}% em '{(seg or 'Total')[:16]}'")
+    return avisos[:3]
+
+
 def _turno_segmento(item):
     turno = str(item.get("turno", "t1") or "t1").strip().lower()
     cargo = _cargo_norm(item.get("cargo", ""))
@@ -916,14 +946,14 @@ def extrair_do_pdf(pdf_bytes, extra=""):
         aprov += dados.get("aprovacao", [])
     voto = _dedup(voto, ["cargo", "turno", "cenario", "candidato", "tipo_segmento", "segmento"])
     rej = _dedup(rej, ["cargo", "candidato", "tipo_segmento", "segmento"])
-    aprov = _dedup(aprov, ["alvo", "resposta", "tipo_segmento", "segmento"])
+    aprov = _dedup(aprov, ["alvo", "tipo_avaliacao", "resposta", "tipo_segmento", "segmento"])
     return {"voto_segmento": voto, "rejeicao": rej, "aprovacao": aprov}
 
 
 def cmd_extrair():
     if not RELATORIOS_ID:
         raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
-    from polling_manual_core import _referencia, ficha_instituto, instituto_canonico, sigla_uf
+    from relatorios_topline_core import _referencia, ficha_instituto, instituto_canonico, sigla_uf
 
     sh = _sheets().open_by_key(RELATORIOS_ID)
     fila = _aba(sh, "relatorios")
@@ -964,7 +994,7 @@ def cmd_extrair():
     # gravado mas a linha não chegou a ser marcada (ex.: timeout no meio).
     CH_VOTO = ["registro", "cargo", "turno", "cenario", "candidato", "tipo_segmento", "segmento"]
     CH_REJ = ["registro", "cargo", "candidato", "tipo_segmento", "segmento"]
-    CH_APROV = ["registro", "alvo", "resposta", "tipo_segmento", "segmento"]
+    CH_APROV = ["registro", "alvo", "tipo_avaliacao", "resposta", "tipo_segmento", "segmento"]
 
     def _carregar_chaves(ws, aba_nome, chaves):
         return {tuple(str(e.get(c, "")).strip() for c in chaves) for e in ws.get_all_records()}
@@ -1049,7 +1079,7 @@ def cmd_extrair():
             # (sem quebra demográfica) não tem o que extrair aqui, o número geral vai no
             # topline. Só é erro de verdade se o PDF TEM quebra demográfica e mesmo assim
             # não veio nada. Distingue procurando termo demográfico no texto do PDF.
-            from polling_manual_core import extrair_texto_pdf_bytes
+            from relatorios_topline_core import extrair_texto_pdf_bytes
             try:
                 txt_pdf = extrair_texto_pdf_bytes(pdf).lower()
             except Exception:
@@ -1097,19 +1127,20 @@ def cmd_extrair():
                             v.get("candidato", ""), v.get("tipo_segmento", ""),
                             v.get("segmento", ""), v.get("valor", "")])
         for v in aprov_filtrada:
-            chave = (str(registro).strip(), str(v.get("alvo", "")).strip(),
+            tipo_aval = str(v.get("tipo_avaliacao", "")).strip()
+            chave = (str(registro).strip(), str(v.get("alvo", "")).strip(), tipo_aval,
                      str(v.get("resposta", "")).strip(), str(v.get("tipo_segmento", "")).strip(),
                      str(v.get("segmento", "")).strip())
             if chave in aprov_keys:
                 continue
             aprov_keys.add(chave)
             aprov_buf.append([registro, cargo_fila, uf, inst, data_div,
-                              v.get("alvo", ""), v.get("resposta", ""),
+                              v.get("alvo", ""), tipo_aval, v.get("resposta", ""),
                               v.get("tipo_segmento", ""), v.get("segmento", ""),
                               v.get("valor", "")])
         # aviso de soma (não bloqueia): fica na coluna de erro como alerta pra conferência
-        avisos_soma = _avisos_soma_voto(voto_filtrado, cargo_fila)
-        nota_soma = ("conferir: " + "; ".join(avisos_soma)) if avisos_soma else ""
+        avisos_soma = _avisos_soma_voto(voto_filtrado, cargo_fila) + _avisos_soma_aprovacao(aprov_filtrada)
+        nota_soma = ("conferir: " + "; ".join(avisos_soma[:4])) if avisos_soma else ""
         # marca a linha como extraída no MESMO lote em que os dados dela vão (progresso durável)
         updates.extend([gspread.Cell(i, col_err, nota_soma[:300]),
                         gspread.Cell(i, ci_ext, "sim"),
@@ -1181,7 +1212,7 @@ def _extrair_topline_pdf(pdf, texto, link, escopo, cargo):
     de sempre). PDF grande: lê em blocos de 5 páginas e junta os cenários, senão o
     modelo perde o cargo que está no fim do PDF (ex.: VOX senador na pág 49, Meio/Ideia
     92 páginas). Pré-filtra blocos pelo texto do cabeçalho pra economizar chamada."""
-    from polling_manual_core import extrair_dados_polling_gemini, extrair_texto_pdf_bytes
+    from relatorios_topline_core import extrair_dados_polling_gemini, extrair_texto_pdf_bytes
     if _n_paginas_pdf(pdf) <= 10:
         return extrair_dados_polling_gemini(texto, url_original=link, escopo=escopo, pdf_bytes=pdf)
 
@@ -1217,7 +1248,7 @@ def cmd_topline():
     if not RELATORIOS_ID:
         raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
     import pandas as pd
-    from polling_manual_core import (
+    from relatorios_topline_core import (
         extrair_dados_polling_gemini, extrair_texto_pdf_bytes, montar_dataframes_polling,
     )
 
@@ -1421,8 +1452,8 @@ def cmd_publicar():
     if not (T1_ID or T2_ID):
         raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
     import pandas as pd
-    from scraper_polling import classificar_instituto, gs_client_from_env, salvar_tudo
-    from polling_manual_core import ORIGEM
+    from pollingdata_scraper import classificar_instituto, gs_client_from_env, salvar_tudo
+    from relatorios_topline_core import ORIGEM
 
     gc = gs_client_from_env()
     sh = gc.open_by_key(RELATORIOS_ID)
@@ -1506,7 +1537,7 @@ def cmd_publicar():
 def cmd_rebuild_bi():
     if not (T1_ID or T2_ID):
         raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
-    from scraper_polling import gs_client_from_env, reconstruir_resultados_bi
+    from pollingdata_scraper import gs_client_from_env, reconstruir_resultados_bi
 
     gc = gs_client_from_env()
     for turno, sheet_id in (("t1", T1_ID), ("t2", T2_ID)):
@@ -1521,7 +1552,7 @@ def cmd_canonico():
     Rodar localmente quando surgirem candidatos/institutos novos; commitar o arquivo."""
     if not (T1_ID or T2_ID):
         raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
-    from scraper_polling import gs_client_from_env
+    from pollingdata_scraper import gs_client_from_env
 
     gc = gs_client_from_env()
     institutos, pres = set(), set()
@@ -1577,4 +1608,4 @@ if __name__ == "__main__":
     elif cmd == "canonico":
         cmd_canonico()
     else:
-        print("uso: python pesquisas.py [alerta|extrair|topline|publicar|rebuild_bi|canonico]")
+        print("uso: python relatorios_pipeline.py [alerta|extrair|topline|publicar|rebuild_bi|canonico]")
