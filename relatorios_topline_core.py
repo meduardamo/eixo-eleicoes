@@ -531,6 +531,15 @@ Extraia os dados estruturados para inserção em planilha.
 - Extraia SOMENTE cenários de voto ESTIMULADO (aqueles em que os nomes dos candidatos são
   apresentados ao entrevistado). NÃO inclua voto ESPONTÂNEO (sem lista de nomes), nem rejeição,
   nem avaliação/aprovação de governo. Cada cenário estimulado vira um item de "cenarios".
+- IGNORE páginas de SÍNTESE/RESUMO/DESTAQUE (capa de capítulo, "principais leituras",
+  "síntese", cards de highlight com 1 ou 2 números grandes tipo "36% × 36%"): elas repetem
+  números de cenários que já aparecem completos em outra página, e extraí-las cria cenários
+  fragmentados/duplicados. Só extraia da tabela ou gráfico COMPLETO, com a lista de candidatos.
+- LISTA SEM CONTEXTO NÃO É CENÁRIO: se aparecer uma lista de nomes+percentuais SEM pergunta ou
+  título identificável (ex.: continuação de uma tabela que começou fora do trecho que você
+  recebeu), NÃO invente um cenário pra ela - pode ser o final de uma tabela de REJEIÇÃO ou de
+  outra pergunta. Ignore listas órfãs; só extraia quando conseguir identificar qual pergunta a
+  tabela responde.
 - Se o relatório trouxer uma pergunta filtro como "O candidato que você votaria é um desses
   nomes ou outro candidato?" e também uma pergunta formal como "Se a eleição fosse hoje...",
   extraia a pergunta formal de intenção de voto. A pergunta filtro só entra se for a única
@@ -690,8 +699,13 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
         # No t2, a disputa já diferencia cada confronto; o PollingData usa NA como
         # cenário. No t1, mantém cenários numéricos para média entre cenários.
         scenario_label = "NA" if turno == "t2" and disputa else str(idx)
-        descricao = normalizar_texto_simples(cenario.get("scenario_label")) or \
-            normalizar_texto_simples(cenario.get("descricao"))
+        # prioriza a descricao (texto que diz QUAL cenário é) sobre o scenario_label
+        # (frequentemente só "1"/"2"); a ordem invertida enchia a planilha de
+        # descricao="1", inútil pra conferência humana. Descarta rótulo puramente
+        # numérico como descricao.
+        desc_label = normalizar_texto_simples(cenario.get("scenario_label"))
+        descricao = normalizar_texto_simples(cenario.get("descricao")) or \
+            (desc_label if not desc_label.isdigit() else "")
         scenario_id = gerar_scenario_id(poll_id, scenario_label)
 
         pesquisas_rows.append({
