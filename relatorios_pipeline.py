@@ -1623,18 +1623,34 @@ def cmd_topline():
                     _aviso(f"extração falhou em {cargo}/{turno}")
                     continue
                 # o cargo pedido (escopo) é a fonte da verdade; o Gemini às vezes devolve
-                # um cargo diferente do pedido (ou vazio) no payload, e esse cenário NÃO
-                # pertence à linha da fila que estamos processando (ex.: um relatório de
-                # presidente devolvendo um cenário rotulado "governador" por engano).
+                # um cargo EXPLICITAMENTE diferente do pedido no payload, e esse cenário
+                # NÃO pertence à linha da fila que estamos processando (ex.: um relatório
+                # de presidente devolvendo um cenário rotulado "governador" por engano).
                 # Descarta antes de gravar, senão o dado vai pra aba errada.
+                # Cargo VAZIO é diferente: o prompt já restringe explicitamente qual cargo
+                # extrair (FOCO DA EXTRAÇÃO), então "não rotulou" não é sinal de vazamento,
+                # é só um campo que o modelo deixou em branco numa resposta mais fraca
+                # (comum em PDF sem texto, extração por visão). Tratar vazio como
+                # "diferente" descartaria dado real (MS-06247 Governador, texto=0).
                 if not df_p.empty:
-                    mask_cargo = df_p["cargo"] == cargo
+                    mask_cargo = (df_p["cargo"] == cargo) | (df_p["cargo"] == "")
                     if (~mask_cargo).any():
                         ids_ruins = set(df_p.loc[~mask_cargo, "scenario_id"])
                         _aviso(f"{cargo}/{turno}: descartado(s) {len(ids_ruins)} cenário(s) "
                                f"com cargo diferente do esperado ({cargo})")
-                        df_p = df_p[mask_cargo]
-                        df_r = df_r[~df_r["scenario_id"].isin(ids_ruins)]
+                        df_p = df_p[mask_cargo].copy()
+                        # df_r pode vir sem NENHUMA coluna (pd.DataFrame([]) quando o
+                        # cenário só tinha o placeholder vazio, sem nenhum item de
+                        # resultado) - "scenario_id" nem existe nesse caso, e indexar por
+                        # ele estoura KeyError em vez de simplesmente não ter nada pra
+                        # filtrar (MS-06247 Governador, PDF sem texto).
+                        if "scenario_id" in df_r.columns:
+                            df_r = df_r[~df_r["scenario_id"].isin(ids_ruins)].copy()
+                    # preenche o cargo assumido (era vazio, aceito pela restrição do
+                    # prompt) pra não sobrar célula em branco em topline_pesquisas/resultados
+                    df_p.loc[df_p["cargo"] == "", "cargo"] = cargo
+                    if "cargo" in df_r.columns:
+                        df_r.loc[df_r["cargo"] == "", "cargo"] = cargo
                 if df_r.empty:
                     continue
                 # linha de cenário sem NENHUM resultado é órfã (placeholder de bloco
