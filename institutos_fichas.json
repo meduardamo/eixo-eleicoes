@@ -4,7 +4,7 @@
     {
       "nome": "Verità",
       "match": ["verita"],
-      "ficha": "Relatório em tabelas estilo SPSS, com PERGUNTA 04, 05, 06... Regras específicas da Verità:\n- Toda tabela tem colunas 'Frequência | Porcentual | Porcentagem válida | Porcentagem acumulativa'. USE SEMPRE a coluna 'Porcentual' (base total). NUNCA use 'Porcentagem válida' (ela exclui NS/NR e desalinha a soma).\n- Estrutura 'Válido / Ausente': os candidatos ficam em 'Válido'; NS/NR e Branco/nulo ficam em 'Ausente'. Consolide NS/NR + Branco/nulo num único 'Não válido', usando a coluna Porcentual.\n- 'Se a eleição fosse hoje e esses fossem os candidatos, em quem você votaria para [cargo]?' = intenção de voto estimulada principal (t1).\n- 'O candidato que você votaria é um desses nomes ou outro candidato?' = PERGUNTA FILTRO. IGNORE, não é intenção de voto.\n- 'Em uma simulação de segundo turno, em qual desses candidatos você votaria?' = t2 (confronto direto).\n- 'primeira intenção de voto para senador' = 1º voto; 'segunda intenção de voto para senador' = 2º voto. Ambos são t1 (senado NÃO tem 2º turno). Cada um é um cenário SEPARADO.\n- 'em quem você não votaria de jeito nenhum para [cargo]' = REJEIÇÃO, não intenção de voto.\n- 'votaria em candidato apoiado por Lula / por Bolsonaro' = pergunta de arrasto/apoio. NÃO é intenção de voto, IGNORE no topline e no voto por segmento."
+      "ficha": "Relatório em tabelas estilo SPSS, com PERGUNTA 04, 05, 06... Regras específicas da Verità:\n- Toda tabela tem colunas 'Frequência | Porcentual | Porcentagem válida | Porcentagem acumulativa'. USE SEMPRE a coluna 'Porcentual' (base total). NUNCA use 'Porcentagem válida' (ela exclui NS/NR e desalinha a soma).\n- Estrutura 'Válido / Ausente': os candidatos ficam em 'Válido'; NS/NR e Branco/nulo ficam em 'Ausente'. Consolide NS/NR + Branco/nulo num único 'Não válido', usando a coluna Porcentual.\n- 'Se a eleição fosse hoje e esses fossem os candidatos, em quem você votaria para [cargo]?' = intenção de voto estimulada principal (t1).\n- 'O candidato que você votaria é um desses nomes ou outro candidato?' = PERGUNTA FILTRO. IGNORE, não é intenção de voto.\n- 'Em uma simulação de segundo turno, em qual desses candidatos você votaria?' = t2 (confronto direto).\n- 'primeira intenção de voto para senador' = 1º voto; 'segunda intenção de voto para senador' = 2º voto. Ambos são t1 (senado NÃO tem 2º turno). Cada um é um cenário SEPARADO.\n- 'em quem você não votaria de jeito nenhum para [cargo]' = REJEIÇÃO, não intenção de voto.\n- 'votaria em candidato apoiado por Lula / por Bolsonaro' = pergunta de arrasto/apoio. NÃO é intenção de voto, IGNORE no topline e no voto por segmento.\n- ATENÇÃO AOS CRUZAMENTOS: o cruzamento demográfico da PERGUNTA FILTRO vem ANTES do cruzamento da pergunta formal e a tabela é visualmente idêntica. Confira de qual pergunta a tabela veio antes de usar; só a formal ('Se a eleição fosse hoje...') entra.\n- Nos cruzamentos, confie no PDF visual: a ordem das colunas no texto extraído desalinha (valor certo no candidato errado)."
     },
     {
       "nome": "Instituto Paraná Pesquisas",
@@ -24,7 +24,7 @@
     {
       "nome": "IHPEC",
       "match": ["ihpec"],
-      "ficha": "O 'relatório' costuma ser uma MATÉRIA de site (ex.: rondoniaovivo.com) renderizada, com as tabelas da pesquisa embutidas. Regras do IHPEC:\n- Ignore todo o lixo de navegação do site (manchetes de outras notícias, menus, links). Extraia SÓ as tabelas da pesquisa.\n- Senador de 2 vagas: o relatório traz '1º voto', '2º voto' E 'média do 1º e 2º voto' em tabelas separadas. Guarde os TRÊS como cenários próprios (não calcule média, não some)."
+      "ficha": "O 'relatório' costuma ser uma MATÉRIA de site (ex.: rondoniaovivo.com) renderizada, com as tabelas da pesquisa embutidas. Regras do IHPEC:\n- Ignore todo o lixo de navegação do site (manchetes de outras notícias, menus, links). Extraia SÓ as tabelas da pesquisa.\n- Senador de 2 vagas: o relatório traz '1º voto', '2º voto' E 'média do 1º e 2º voto' em tabelas separadas. Guarde os TRÊS como cenários próprios (não calcule média, não some).\n- A matéria pode repetir as MESMAS tabelas mais de uma vez na página: não duplique cenários.\n- Tabelas de REJEIÇÃO podem quebrar entre páginas: um rabo de lista nome+percentual sem título é continuação da rejeição, NÃO é intenção de voto."
     },
     {
       "nome": "Instituto França",
@@ -34,22 +34,22 @@
     {
       "nome": "Datafolha",
       "match": ["datafolha"],
-      "ficha": "Números em gráfico (imagem) — leia por visão. Regras do Datafolha:\n- Registro duplo: a mesma pesquisa costuma ter protocolo estadual E nacional (ex.: SP-01703 e BR-06481). São linhas separadas na fila; extraia o cargo/UF pedido na linha.\n- Traz simulações de 2º turno."
+      "ficha": "Números em gráfico (imagem) — leia por visão. Regras do Datafolha:\n- Registro duplo: a mesma pesquisa costuma ter protocolo estadual E nacional (ex.: SP-01703 e BR-06481). São linhas separadas na fila; extraia o cargo/UF pedido na linha.\n- Traz simulações de 2º turno.\n- Senador: a pergunta costuma ser de voto ÚNICO (soma ~100), mesmo em eleição de 2 vagas. Só use votos_por_entrevistado=2 se a soma do cenário indicar ~200.\n- A fonte é geralmente MATÉRIA (Folha/CNN), não o relatório oficial: recortes regionais citam só os líderes, soma parcial é esperada."
     },
     {
       "nome": "AtlasIntel",
       "match": ["atlas"],
-      "ficha": "Relatório GRANDE quase todo em gráfico (imagem), pouquíssimo texto — leia por visão. Regras da AtlasIntel:\n- Trabalha com 'CENÁRIO 1, 2, 3, 4' (conjuntos de candidatos) e simulações de 2º turno.\n- Como é grande e visual, procure os gráficos no documento inteiro."
+      "ficha": "Relatório GRANDE quase todo em gráfico (imagem), pouquíssimo texto — leia por visão. Regras da AtlasIntel:\n- Trabalha com 'CENÁRIO 1, 2, 3, 4' (conjuntos de candidatos) e simulações de 2º turno.\n- Como é grande e visual, procure os gráficos no documento inteiro.\n- 'Repetição hipotética do cenário de 2022' é cenário de 1º TURNO (campo cheio de 2022, com item 'Outro candidato de 2022'), NÃO é t2. O confronto direto Lula x Jair aparece separado nos cards de 2º turno.\n- Inválidos baixíssimos (~1%) são normais na metodologia deles; não é erro de soma.\n- Os cards de 2º turno vêm vários na MESMA página: cada card é uma disputa separada.\n- IGNORE capas de capítulo e páginas de sumário/estrutura do eleitorado."
     },
     {
       "nome": "Real Time Big Data",
       "match": ["real", "time"],
-      "ficha": "Costuma vir como matéria/imagem, números em gráfico — leia por visão e ignore texto de navegação. Senador de 2 vagas com CENÁRIO 1/2 e simulações de 2º turno em alguns relatórios."
+      "ficha": "Costuma vir como matéria/imagem, números em gráfico — leia por visão e ignore texto de navegação. Senador de 2 vagas com CENÁRIO 1/2 e simulações de 2º turno em alguns relatórios.\n- Fonte costuma ser matéria de portal (CartaCapital, R7...). Registra amostra estadual sob protocolo BR- (ex.: BR-04169 é amostra do Maranhão): a UF real vem do texto da matéria."
     },
     {
       "nome": "Ranking Brasil",
       "match": ["ranking"],
-      "ficha": "Formato varia (às vezes tabela de texto, às vezes só imagem). Senador de 2 vagas. Presidente pode ser amostra ESTADUAL registrada sob protocolo BR- — confira no documento a abrangência real da amostra."
+      "ficha": "Formato varia (às vezes tabela de texto, às vezes só imagem). Senador de 2 vagas. Presidente pode ser amostra ESTADUAL registrada sob protocolo BR- — confira no documento a abrangência real da amostra.\n- A matéria cita as ondas ANTERIORES no texto corrido ('na pesquisa anterior, X tinha 42%'): extraia SÓ a rodada atual.\n- Registro duplo comum: a mesma pesquisa sai com protocolo estadual E BR- (ex.: MS-06247 e BR-09350). Extraia o cargo/UF da linha da fila."
     },
     {
       "nome": "Brasmarket",
@@ -59,7 +59,27 @@
     {
       "nome": "Meio/Ideia",
       "match": ["boas", "ideias"],
-      "ficha": "Relatório MUITO grande (90+ páginas) quase todo em gráfico (imagem) — leia por visão. Traz espontânea, estimulada 1º turno e simulação de 2º turno, cada um em gráfico próprio. Rodapé legal repetido em toda página é só ruído."
+      "ficha": "Relatório MUITO grande (90+ páginas) quase todo em gráfico (imagem) — leia por visão. Traz espontânea, estimulada 1º turno e simulação de 2º turno, cada um em gráfico próprio. Rodapé legal repetido em toda página é só ruído.\n- Páginas 'EVOLUÇÃO' repetem o valor atual + série histórica: extraia só da página principal do cenário, nunca da evolução.\n- 'EM QUEM PODERIA VOTAR?' NÃO é rejeição (rejeição é só 'em quem NÃO votaria de jeito nenhum').\n- Avaliações por ÁREA (economia, segurança, saúde, educação) NÃO são a avaliação geral do governo: em aprovacao, use só a avaliação geral.\n- Confrontos de 2º turno ficam espalhados em TRÊS seções do PDF (x Flávio no início, x Michelle no meio, 'DEMAIS CENÁRIOS' perto do fim): procure no documento inteiro."
+    },
+    {
+      "nome": "Gerp",
+      "match": ["gerp"],
+      "ficha": "Deck em cards: cada cenário tem um card 'LÍDER'/'2º COLOCADO' + tabela 'DEMAIS'; o cenário completo é a UNIÃO dos dois (líderes + demais candidatos + Não sabe/Nenhum). Regras do Gerp:\n- IGNORE capas de capítulo e páginas de SÍNTESE/'principais leituras': elas repetem 1 ou 2 números de destaque (ex.: '36% × 36%') de cenários que já aparecem completos em outra página; extrair delas cria cenário fragmentado.\n- '1º TURNO ALTERNATIVO · SEM FULANO · COM BELTRANO' são cenários t1 separados (substituição de nome), um por página.\n- 'Desempenho por área' (Lula vs Flávio por tema) NÃO é aprovação nem intenção de voto; ignore.\n- Registro duplo possível. Traz quebra demográfica boa nos cruzamentos por perfil."
+    },
+    {
+      "nome": "DataCapital",
+      "match": ["datacapital"],
+      "ficha": "Cards de gráfico de pizza em IMAGEM, praticamente sem texto: leia por visão. Regras do DataCapital:\n- Traz ESPONTÂNEA e ESTIMULADA para cada cargo, em cards separados com o mesmo layout: extraia SÓ a estimulada (o selo no topo do card diz qual é).\n- Senado de 2 vagas em '1º VOTO' e '2º VOTO' separados, cada um soma ~100: dois cenários t1, votos_por_entrevistado=1.\n- Pode medir presidente dentro do estado sob o mesmo registro estadual; nem sempre a fila tem linha pra presidente."
+    },
+    {
+      "nome": "Delta",
+      "match": ["delta"],
+      "ficha": "Fonte é matéria de portal com os números em gráfico (imagem): leia por visão. Regras da Delta:\n- Senador com 'CENÁRIO I/II' (com/sem certo nome): cenários separados.\n- O MESMO cenário pode aparecer duas vezes na matéria com título grafado diferente (ex.: '1º CENÁRIO - COM FULANO' e 'Cenário 1 (com Fulano)'): é um só, não duplique."
+    },
+    {
+      "nome": "Positiva Pesquisas",
+      "match": ["positiva"],
+      "ficha": "Fonte costuma ser matéria de portal regional. Regras da Positiva:\n- Recortes por região citam só os 2 primeiros colocados: soma parcial (<100) é esperada, não é erro.\n- O número principal é o 'total geral ponderado' citado no texto."
     }
   ]
 }
