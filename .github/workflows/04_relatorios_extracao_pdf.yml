@@ -3,12 +3,12 @@ name: 04 - Extrai PDF
 on:
   workflow_dispatch:
   schedule:
-    # GitHub Actions usa UTC; Recife = UTC-3. 3 rodadas: pega o que foi marcado como
-    # conferido a qualquer hora do dia. Minuto fora do :00 pra reduzir o atraso de
-    # enfileiramento do GitHub.
-    - cron: '17 14 * * *'   # 11:17 Recife
-    - cron: '17 19 * * *'   # 16:17 Recife
-    - cron: '17 23 * * *'   # 20:17 Recife
+    # GitHub Actions usa UTC; Brasil/Recife = UTC-3.
+    # Rodadas depois das buscas e da conferência manual dos links.
+    - cron: '35 14 * * *'   # 11:35 Brasil
+    - cron: '35 18 * * *'   # 15:35 Brasil
+    - cron: '35 22 * * *'   # 19:35 Brasil
+    - cron: '20 3 * * *'    # 00:20 Brasil
 
 jobs:
   run:
