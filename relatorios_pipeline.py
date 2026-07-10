@@ -663,8 +663,14 @@ PROMPT = (
     "4) 'tipo_segmento' classifica o segmento em uma destas categorias: genero, idade, "
     "escolaridade, renda, regiao, religiao, raca. Use exatamente esses rótulos minúsculos. "
     "Se não encaixar em nenhuma (ex.: ocupação, classe social, PEA/não PEA), use 'outro'. "
-    "NÃO inclua o total geral/sem recorte (o cenário completo já está no topline, não repita "
-    "aqui): se um item não tiver nenhum recorte demográfico, OMITA-o de voto_segmento.\n"
+    "Para o total geral (sem recorte), use tipo_segmento='geral' e segmento='Total'.\n"
+    "4b) REGRA DO TOTAL GERAL, diferente em cada lista: em voto_segmento, NÃO inclua o total "
+    "geral/sem recorte (a intenção de voto geral já vai pro topline por outro fluxo; repetir "
+    "aqui duplica o dado) - se o item de voto não tiver recorte demográfico, OMITA-o. Já em "
+    "rejeicao e aprovacao é o CONTRÁRIO: o total geral (tipo_segmento='geral', segmento='Total') "
+    "é o número principal e DEVE SEMPRE ser incluído quando o relatório o trouxer, além das "
+    "quebras demográficas - rejeição e aprovação não têm outro fluxo, se faltar o geral aqui "
+    "o dado se perde.\n"
     "5) 'valor' é número, sem o símbolo de %.\n"
     "6) Identifique o cenário pelo nome ou título que o relatório usa (ex: 'Estimulada 1', "
     "'Lula x Flávio'). Se houver só UM cenário estimulado daquele cargo/turno no relatório "
@@ -707,6 +713,13 @@ PROMPT = (
     "Se o recorte não for demográfico, não inclua em voto_segmento.\n"
     "10b) Em voto_segmento, quebre por segmento APENAS a votação principal estimulada de 1º "
     "turno. NÃO quebre por segmento as simulações de 2º turno nem perguntas filtro/arrasto.\n"
+    "10c) PERGUNTA FILTRO NUNCA entra em voto_segmento: a pergunta 'O candidato que você "
+    "votaria é um desses nomes ou outro candidato?' (assinatura: respostas com 'Outro "
+    "candidato' e alto percentual de 'Ausente'/sem resposta) NÃO é intenção de voto - é só um "
+    "filtro que antecede a pergunta formal. CUIDADO: o cruzamento demográfico dela vem em "
+    "tabela IGUAL à da pergunta formal e costuma aparecer ANTES no relatório; não a confunda "
+    "com a estimulada real nem a rotule de 'Estimulada'. Quebre por segmento a pergunta formal "
+    "('Se a eleição fosse hoje e esses fossem os candidatos...'), que vem logo depois.\n"
     "11) DADO AUSENTE: se um valor não estiver no material (cruzamento que não cabe no PDF, "
     "célula em branco, cargo sem aquela quebra), OMITA o item. NUNCA grave 0 para dado ausente "
     "- 0 é um número real (candidato com zero voto), não use 0 como 'não encontrei'.\n\n"
@@ -923,13 +936,23 @@ def _turno_segmento(item):
     return "t2" if turno == "t2" else "t1"
 
 
+LIMITE_BYTES_BLOCO = 15_000_000   # a API do Gemini rejeita requisição inline grande demais
+
+
 def _blocos_pdf(pdf_bytes, tamanho=PAGINAS_POR_BLOCO):
     """Fatia o PDF em blocos de páginas. Cada página é um slide autocontido,
-    então a tabela nunca se parte entre blocos."""
+    então a tabela nunca se parte entre blocos. Reduz o tamanho do bloco quando o PDF
+    tem poucas páginas mas é gigante em bytes (scan em resolução muito alta, ex.: 17
+    páginas / 85MB): um bloco de 5 páginas nesse caso ainda estoura o limite de
+    requisição inline do Gemini (400 INVALID_ARGUMENT), mesmo já sendo "só um bloco"."""
     import io
     from pypdf import PdfReader, PdfWriter
     reader = PdfReader(io.BytesIO(pdf_bytes))
     n = len(reader.pages)
+    if n:
+        bytes_por_pagina = len(pdf_bytes) / n
+        if bytes_por_pagina > 0:
+            tamanho = max(1, min(tamanho, int(LIMITE_BYTES_BLOCO // bytes_por_pagina)))
     for ini in range(0, n, tamanho):
         writer = PdfWriter()
         for i in range(ini, min(ini + tamanho, n)):
@@ -1177,13 +1200,20 @@ def cmd_extrair():
         if not (voto_filtrado or rej_filtrada or aprov_filtrada):
             # Sem dado de segmento pode ser NORMAL: relatório que só traz "RESULTADO GERAL"
             # (sem quebra demográfica) não tem o que extrair aqui, o número geral vai no
-            # topline. Só é erro de verdade se o PDF TEM quebra demográfica e mesmo assim
-            # não veio nada. Distingue procurando termo demográfico no texto do PDF.
+            # topline. Só é erro de verdade se o PDF TEM quebra demográfica PRO CARGO DA
+            # LINHA e mesmo assim não veio nada. Distingue procurando termo demográfico
+            # no texto do PDF, mas só na seção do cargo pedido: um relatório multi-cargo
+            # pode ter quebra pra Governador e não pra Senador, e olhar o PDF inteiro
+            # faria a checagem "ver" a quebra do Governador e gerar erro falso pro
+            # Senador (aconteceu com RO-07927: IHPEC tem quebra só pra Governador).
             from relatorios_topline_core import extrair_texto_pdf_bytes
-            try:
-                txt_pdf = extrair_texto_pdf_bytes(pdf).lower()
-            except Exception:
-                txt_pdf = ""
+            if _n_paginas_pdf(pdf) <= 10:
+                try:
+                    txt_pdf = extrair_texto_pdf_bytes(pdf).lower()
+                except Exception:
+                    txt_pdf = ""
+            else:
+                txt_pdf = " ".join(t for _, t in _blocos_ativos_cargo(pdf, _cargo_norm(cargo_fila))).lower()
             # Exige 2+ termos demográticos DIFERENTES: um único hit isolado costuma ser
             # falso positivo (ex.: matéria de portal de notícia com link/manchete não
             # relacionada mencionando "feminino" de passagem, sem tabela de quebra
@@ -1278,6 +1308,43 @@ POLLING_ID = os.getenv("SPREADSHEET_ID_POLLINGDATA", "")
 FLAG_TOPLINE = "topline_extraido"
 CARGOS_POLLING = {"presidente", "governador", "senador"}
 
+# palavras que indicam o cargo no corpo do texto (matérias de site costumam falar
+# "vaga ao Senado"/"disputa pelo Senado" em vez de "senador" literalmente)
+PALAVRAS_CARGO = {
+    "presidente": ["presiden"],
+    "governador": ["governad", "governo do estado"],
+    "senador": ["senador", "senado"],
+}
+
+
+def _blocos_ativos_cargo(pdf, cargo):
+    """Gera (bloco_bytes, texto_bloco) só dos blocos de 5 páginas que pertencem à
+    seção do cargo pedido. Um PDF grande organiza os cargos em seções contínuas, mas
+    nem toda página de uma seção repete a palavra do cargo (tabela/gráfico sem
+    legenda, rodapé de página sem relação, bloco intermediário sem título). Fica ativo
+    a partir do bloco onde o cargo pedido aparece, e continua ativo enquanto os blocos
+    seguintes não mencionarem OUTRO cargo monitorado; só desativa quando um outro
+    cargo assume claramente a seção. Bloco inicial começa ativo (cobre PDF que já abre
+    no cargo certo)."""
+    from relatorios_topline_core import extrair_texto_pdf_bytes
+    palavras_alvo = PALAVRAS_CARGO.get(str(cargo or "").lower(), [str(cargo or "").lower()])
+    outros_cargos = [p for c, ps in PALAVRAS_CARGO.items() if c != cargo for p in ps]
+    ativo = True
+    for bloco in _blocos_pdf(pdf, tamanho=5):
+        try:
+            txt_bloco = extrair_texto_pdf_bytes(bloco)
+        except Exception:
+            txt_bloco = ""
+        low_bloco = txt_bloco.lower()
+        if any(p in low_bloco for p in palavras_alvo):
+            ativo = True
+        elif any(p in low_bloco for p in outros_cargos):
+            ativo = False
+        # bloco sem nenhuma palavra de cargo (imagem, rodapé, texto neutro): mantém o
+        # estado do bloco anterior, não desativa nem ativa.
+        if ativo:
+            yield bloco, txt_bloco
+
 
 def _cargos_da_linha(valor):
     return [_cargo_norm(c) for c in _cargos_monitorados(valor)]
@@ -1319,76 +1386,81 @@ def _extrair_topline_pdf(pdf, texto, link, escopo, cargo):
     de sempre). PDF grande: lê em blocos de 5 páginas e junta os cenários, senão o
     modelo perde o cargo que está no fim do PDF (ex.: VOX senador na pág 49, Meio/Ideia
     92 páginas). Pré-filtra blocos pelo texto do cabeçalho pra economizar chamada."""
-    from relatorios_topline_core import (
-        classificar_tipo_resultado, extrair_dados_polling_gemini, extrair_texto_pdf_bytes,
-    )
+    from relatorios_topline_core import classificar_tipo_resultado, extrair_dados_polling_gemini
     if _n_paginas_pdf(pdf) <= 10:
         return extrair_dados_polling_gemini(texto, url_original=link, escopo=escopo, pdf_bytes=pdf)
 
-    # palavras que indicam o cargo no corpo do texto (matérias de site costumam falar
-    # "vaga ao Senado"/"disputa pelo Senado" em vez de "senador" literalmente)
-    PALAVRAS_CARGO = {
-        "presidente": ["presiden"],
-        "governador": ["governad", "governo do estado"],
-        "senador": ["senador", "senado"],
-    }
-    palavras_alvo = PALAVRAS_CARGO.get(str(cargo or "").lower(), [str(cargo or "").lower()])
-    outros_cargos = [p for c, ps in PALAVRAS_CARGO.items() if c != cargo for p in ps]
+    def _mapa_candidatos(c):
+        """dict candidato_normalizado -> percentual, só candidatos de verdade com número.
+        'Não válido' fica fora: é o item mais instável entre duas leituras do mesmo
+        cenário (some, muda de posição), e incluí-lo faria comparações de conteúdo
+        falharem em cenários claramente idênticos nos candidatos."""
+        mapa = {}
+        for it in (c.get("itens") or []):
+            if classificar_tipo_resultado(str(it.get("candidato", "")), it.get("tipo", "")) == "nao_valido":
+                continue
+            if it.get("percentual") is None:
+                continue
+            mapa[str(it.get("candidato", "")).strip().lower()] = it.get("percentual")
+        return mapa
+
     payload_final, cenarios, vistos = None, [], set()
-    # seção "ativa": um PDF grande organiza os cargos em seções contínuas, mas nem toda
-    # página de uma seção repete a palavra do cargo (tabela/gráfico sem legenda, rodapé
-    # de página sem relação, bloco intermediário sem título). Fica ativo a partir do
-    # bloco onde o cargo pedido aparece, e continua ativo enquanto os blocos seguintes
-    # não mencionarem OUTRO cargo monitorado; só desativa quando um outro cargo assume
-    # claramente a seção. Bloco inicial começa ativo (cobre PDF que já abre no cargo certo).
-    ativo = True
-    for bloco in _blocos_pdf(pdf, tamanho=5):
-        try:
-            txt_bloco = extrair_texto_pdf_bytes(bloco)
-        except Exception:
-            txt_bloco = ""
-        low_bloco = txt_bloco.lower()
-        if any(p in low_bloco for p in palavras_alvo):
-            ativo = True
-        elif any(p in low_bloco for p in outros_cargos):
-            ativo = False
-        # bloco sem nenhuma palavra de cargo (imagem, rodapé, texto neutro): mantém o
-        # estado do bloco anterior, não desativa nem ativa.
-        if not ativo:
-            continue
+    mapas_aceitos = []   # paralelo a 'cenarios': mapa candidato->pct de cada cenário aceito
+    blocos_falhos = 0
+    for bloco, txt_bloco in _blocos_ativos_cargo(pdf, cargo):
         try:
             p = extrair_dados_polling_gemini(txt_bloco, url_original=link, escopo=escopo, pdf_bytes=bloco)
-        except Exception:
+        except Exception as e:
+            # falha de UM bloco não pode ser invisível: os cenários daquelas páginas
+            # somem e a linha ainda seria marcada como sucesso (ex.: BR-05628 perdeu
+            # os confrontos Lula x Renan e Lula x Joaquim das págs. 42/44 sem nenhum
+            # rastro no log). Conta e propaga pro aviso da linha.
+            blocos_falhos += 1
+            print(f"    [bloco falhou] {e}", flush=True)
             continue
         for c in (p.get("cenarios") or []):
+            mapa = _mapa_candidatos(c)
+            # cenário sem nenhum candidato com percentual numérico é lixo: ou é o
+            # placeholder vazio que normalizar_payload_polling injeta quando um bloco
+            # não tem dado, ou é gráfico de que o modelo só leu os nomes (sem números).
+            # Se passasse, viraria linha órfã em topline_pesquisas sem resultado nenhum.
+            if not mapa:
+                continue
             chave = f"{c.get('scenario_label','')}|{c.get('descricao','')}|{c.get('disputa','')}"
-            # blocos diferentes às vezes capturam o MESMO cenário do PDF (ex.: título
-            # cortado de forma diferente em cada chamada: "1º CENÁRIO - COM FULANO" num
-            # bloco, "Cenário 1 (com Fulano)" no bloco seguinte). O texto do rótulo não
-            # bate, mas o conteúdo é idêntico. Fingerprint por candidato+percentual pega
-            # esse caso mesmo com rótulo diferente; sem isso, T1 grava o mesmo cenário
-            # duas vezes com scenario_label numérico incremental (1,2,3,4), diferente do
-            # T2 que colapsa pra "NA" e já cai no dedup de scenario_id.
-            # ignora "Não válido"/nao_valido no fingerprint: é o item mais instável entre
-            # as duas leituras (some, muda de posição, some numa e não na outra), então
-            # exigir que ele bata também faria o fingerprint falhar num caso que é
-            # claramente o mesmo cenário nos candidatos de verdade.
-            candidatos_fp = [it for it in (c.get("itens") or [])
-                             if classificar_tipo_resultado(str(it.get("candidato", "")), it.get("tipo", "")) != "nao_valido"]
-            fingerprint = tuple(sorted(
-                (str(it.get("candidato", "")).strip().lower(), it.get("percentual"))
-                for it in candidatos_fp)) if len(candidatos_fp) >= 2 else ()
+            # blocos diferentes às vezes capturam o MESMO cenário do PDF com rótulo
+            # diferente ("1º CENÁRIO - COM FULANO" num bloco, "Cenário 1 (com Fulano)"
+            # no seguinte), e páginas de síntese/destaque repetem só os líderes do
+            # cenário (ex.: capa de capítulo "36% × 36%"). Dedup em dois níveis:
+            # conteúdo idêntico (fingerprint) e SUBCONJUNTO de um cenário já aceito
+            # (mesmos candidatos com os mesmos números, só que menos candidatos =
+            # fragmento/resumo do mesmo cenário, não um cenário novo).
+            fingerprint = tuple(sorted(mapa.items())) if len(mapa) >= 2 else ()
             if chave in vistos or (fingerprint and fingerprint in vistos):
                 continue
+            eh_subconjunto = any(
+                mapa.keys() <= m.keys() and all(m[k] == v for k, v in mapa.items())
+                for m in mapas_aceitos)
+            if eh_subconjunto:
+                continue
+            # caso inverso: o cenário NOVO é a versão completa de um fragmento aceito
+            # antes (o resumo veio num bloco anterior à tabela cheia). Substitui.
+            for idx, m in enumerate(mapas_aceitos):
+                if m.keys() <= mapa.keys() and all(mapa[k] == v for k, v in m.items()):
+                    cenarios[idx] = c
+                    mapas_aceitos[idx] = mapa
+                    break
+            else:
+                cenarios.append(c)
+                mapas_aceitos.append(mapa)
             vistos.add(chave)
             if fingerprint:
                 vistos.add(fingerprint)
-            cenarios.append(c)
             if payload_final is None:
                 payload_final = p   # metadados (uf, instituto, data) do 1º bloco com dado
     if payload_final is None:
-        return {"cenarios": []}
+        return {"cenarios": [], "blocos_falhos": blocos_falhos}
     payload_final["cenarios"] = cenarios
+    payload_final["blocos_falhos"] = blocos_falhos
     return payload_final
 
 
@@ -1524,6 +1596,11 @@ def cmd_topline():
                         escopo["uf_referencia"] = r.get("uf", "")
                     print(f"linha {i} ({registro_fila} / {r.get('cargo')}): extraindo topline {cargo}/{turno}...", flush=True)
                     payload = _extrair_topline_pdf(pdf, texto, link, escopo, cargo)
+                    n_falhos = payload.get("blocos_falhos") or 0
+                    if n_falhos:
+                        houve_erro = True
+                        _aviso(f"{cargo}/{turno}: {n_falhos} bloco(s) do PDF falharam na "
+                               "leitura; cenários dessas páginas podem estar faltando")
                     payload["turno"] = turno   # garante o turno pedido no rótulo/poll_id
                     # registro da fila é a fonte da verdade; só avisa se o registro da
                     # fila NÃO estiver entre os do PDF (compara sem hífen/pontuação;
@@ -1560,6 +1637,52 @@ def cmd_topline():
                         df_r = df_r[~df_r["scenario_id"].isin(ids_ruins)]
                 if df_r.empty:
                     continue
+                # linha de cenário sem NENHUM resultado é órfã (placeholder de bloco
+                # vazio ou gráfico lido sem números): não grava, senão vira linha morta
+                # em topline_pesquisas.
+                orfaos = ~df_p["scenario_id"].isin(df_r["scenario_id"])
+                if orfaos.any():
+                    df_p = df_p[~orfaos]
+                # pergunta filtro ("o candidato que você votaria é um desses nomes ou
+                # outro candidato?") vazando como cenário: a assinatura é um item de
+                # resposta "Outro candidato" (não confundir com "Outros", legítimo).
+                # A regra do prompt (filtro só entra se for a única medição do cargo/
+                # turno) falha no chunking, porque cada bloco é avaliado isolado e o
+                # bloco da pergunta filtro não vê as outras medições; avalia aqui no
+                # consolidado (AM-03497 senador, Verità).
+                cands_norm = df_r["candidato"].map(lambda s: _sem_acento(str(s)).strip().lower())
+                filtro_ids = set(df_r.loc[cands_norm.str.match(r"outros? candidatos?$"), "scenario_id"])
+                if filtro_ids and df_p["scenario_id"].nunique() > len(filtro_ids):
+                    _aviso(f"{cargo}/{turno}: descartado(s) {len(filtro_ids)} cenário(s) de "
+                           "pergunta filtro (resposta 'outro candidato'; há medição formal)")
+                    df_p = df_p[~df_p["scenario_id"].isin(filtro_ids)]
+                    df_r = df_r[~df_r["scenario_id"].isin(filtro_ids)]
+                if df_r.empty:
+                    continue
+                # cenário de t1 somando muito pouco é fragmento, não cenário: rabo de
+                # tabela cortada na fronteira de blocos (ex.: metade de baixo de uma
+                # tabela de REJEIÇÃO sem o título, que o modelo interpreta como intenção
+                # de voto - RO-07927 governador, soma 13.6). Nenhum cenário legítimo soma
+                # menos de 50 nem sem o "Não válido".
+                somas_sid = df_r.groupby("scenario_id")["percentual"].sum()
+                fragmentos = set(somas_sid[somas_sid < 50].index)
+                if fragmentos:
+                    _aviso(f"{cargo}/{turno}: descartado(s) {len(fragmentos)} fragmento(s) "
+                           f"com soma abaixo de 50% (lista parcial/sem contexto)")
+                    df_p = df_p[~df_p["scenario_id"].isin(fragmentos)]
+                    df_r = df_r[~df_r["scenario_id"].isin(fragmentos)]
+                if df_r.empty:
+                    continue
+                # votos_por_entrevistado=2 com soma ~100 é marcação errada: o modelo viu
+                # "senador de 2 vagas" e marcou voto duplo, mas os números são de uma
+                # pergunta de voto único (soma ~100). Corrige pra 1, senão o downstream
+                # divide/normaliza errado (SP-01703 Datafolha senador).
+                somas_sid = df_r.groupby("scenario_id")["percentual"].sum()
+                for sid_v in df_p.loc[df_p["votos_por_entrevistado"].astype(str) == "2", "scenario_id"]:
+                    if somas_sid.get(sid_v, 0) < 140:
+                        df_p.loc[df_p["scenario_id"] == sid_v, "votos_por_entrevistado"] = 1
+                        _aviso(f"{cargo}/{turno}: votos_por_entrevistado corrigido 2->1 "
+                               f"(soma ~100, voto único)")
                 # sanidade: percentual fora de 0-100 e soma do cenário fora da faixa.
                 # Cenário simples deve somar ~100; senador com voto duplo declarado
                 # pode somar bem menos que 200. Isso pega mistura de "Porcentagem válida"
