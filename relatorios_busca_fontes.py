@@ -475,13 +475,23 @@ def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, d
       "origem_texto": "Descrição breve (ex: 'Relatório no site do instituto' ou 'Matéria G1')"
     }}
     """
-    try:
-        config = types.GenerateContentConfig(temperature=0.1, tools=[types.Tool(google_search=types.GoogleSearch())])
-        res = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt, config=config)
-        return _extrair_json_objeto(getattr(res, "text", "") or "")
-    except Exception as e:
-        print(f"  [AVISO] Gemini/search falhou para {registro}: {str(e)[:200]}")
-        return {"tipo": "nao_encontrado"}
+    config = types.GenerateContentConfig(temperature=0.1, tools=[types.Tool(google_search=types.GoogleSearch())])
+    ultimo = None
+    # "Server disconnected without sending a response" é falha de conexão transitória
+    # (não erro da API), comum em chamada com grounding (mais pesada/demorada). Sem
+    # retry, um blip de rede zera a busca do registro até a próxima rodada do dia
+    # seguinte; com 3 tentativas e backoff exponencial (mesmo padrão de
+    # gerar_conteudo_gemini em relatorios_topline_core.py) a maioria se resolve na hora.
+    for tentativa in range(1, 4):
+        try:
+            res = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt, config=config)
+            return _extrair_json_objeto(getattr(res, "text", "") or "")
+        except Exception as e:
+            ultimo = e
+            if tentativa < 3:
+                time.sleep(1.5 * (2 ** (tentativa - 1)))
+    print(f"  [AVISO] Gemini/search falhou para {registro} após 3 tentativas: {str(ultimo)[:200]}")
+    return {"tipo": "nao_encontrado"}
 
 
 def _norm(s):
