@@ -790,6 +790,10 @@ PROMPT = (
     "(respostas Aprova / Desaprova / Não sabe) e 'nota_gestao' para a pergunta de nota/escala "
     "(respostas Ótimo / Bom / Regular / Ruim / Péssimo, ou Ótimo-Bom / Regular / Ruim-Péssimo). "
     "Cada linha de aprovacao deve trazer o 'tipo_avaliacao' correto.\n"
+    "Cada linha de aprovacao deve trazer o 'tipo_avaliacao' correto. Em UMA mesma pergunta, "
+    "use uma base só: se Ótimo e Bom (ou Ótima e Boa) aparecem separados, NÃO inclua o subtotal "
+    "Ótimo/Bom (ou Ótima/Boa); aplique a mesma regra a Ruim/Péssimo. Só use a categoria "
+    "combinada quando as categorias individuais não estiverem no gráfico.\n"
     "9) NÃO inclua em aprovacao perguntas hipotéticas ou de intenção (ex: 'gostaria que se "
     "reelegesse', 'a reeleição de X', 'a eleição de Y', desejo de candidatura). aprovacao é só "
     "avaliação do trabalho de quem já governa.\n"
@@ -1160,6 +1164,40 @@ def _padronizar_resposta(resposta):
     return rotulos.get(_chave_padronizacao(texto), texto)
 
 
+def _remover_subtotais_avaliacao(itens):
+    """Remove totais derivados quando as categorias componentes já foram extraídas.
+
+    Alguns gráficos exibem, por exemplo, Ótima + Boa e também o número em
+    destaque Ótima/Boa. O destaque não é uma nova resposta; gravá-lo junto às
+    componentes duplica a pergunta e faz a soma passar de 100%. Quando o
+    gráfico publica SOMENTE a categoria combinada, ela é mantida.
+    """
+    componentes_por_subtotal = {
+        "otima boa": {"otima", "boa"},
+        "otimo bom": {"otimo", "bom"},
+        "ruim pessima": {"ruim", "pessima"},
+        "ruim pessimo": {"ruim", "pessimo"},
+    }
+    grupos = {}
+    for idx, item in enumerate(itens):
+        chave = (
+            _texto_limpo(item.get("alvo", "")),
+            _texto_limpo(item.get("tipo_avaliacao", "")).lower(),
+            _texto_limpo(item.get("tipo_segmento", "")).lower(),
+            _texto_limpo(item.get("segmento", "")),
+        )
+        grupos.setdefault(chave, []).append((idx, _chave_padronizacao(item.get("resposta", ""))))
+
+    descartar = set()
+    for respostas in grupos.values():
+        presentes = {resposta for _, resposta in respostas}
+        for idx, resposta in respostas:
+            componentes = componentes_por_subtotal.get(resposta)
+            if componentes and componentes.issubset(presentes):
+                descartar.add(idx)
+    return [item for idx, item in enumerate(itens) if idx not in descartar]
+
+
 def _padronizar_dados_extraidos(dados):
     """Normaliza antes da deduplicação e de qualquer escrita nas abas."""
     for item in dados.get("voto_segmento", []):
@@ -1300,6 +1338,7 @@ def extrair_do_pdf(pdf_bytes, extra=""):
         voto += dados.get("voto_segmento", [])
         rej += dados.get("rejeicao", [])
         aprov += dados.get("aprovacao", [])
+    aprov = _remover_subtotais_avaliacao(aprov)
     voto = _dedup(voto, ["cargo", "turno", "cenario", "candidato", "tipo_segmento", "segmento"])
     rej = _dedup(rej, ["cargo", "candidato", "tipo_segmento", "segmento"])
     aprov = _dedup(aprov, ["alvo", "tipo_avaliacao", "resposta", "tipo_segmento", "segmento"])
