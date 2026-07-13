@@ -16,9 +16,6 @@ on:
           - "false"
           - "true"
   schedule:
-    # GitHub Actions usa UTC; Recife = UTC-3.
-    # Manhã: deixa a fila atualizada para a equipe conferir.
-    - cron: '10 11 * * *'  # 08:10 Recife
     # Tarde: pega anúncios publicados depois da manhã.
     - cron: '40 19 * * *'  # 16:40 Recife
 
