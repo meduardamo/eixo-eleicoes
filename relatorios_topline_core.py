@@ -421,7 +421,8 @@ def ficha_instituto(nome):
         return ""
     for f in _fichas_institutos():
         termos = [str(t).lower().strip() for t in f.get("match", []) if str(t).strip()]
-        if termos and all(t in alvo for t in termos):
+        excluir = [str(t).lower().strip() for t in f.get("exclude", []) if str(t).strip()]
+        if termos and all(t in alvo for t in termos) and not any(x in alvo for x in excluir):
             return (f"ESTRUTURA CONHECIDA DESTE INSTITUTO ({f.get('nome','')}) — SIGA À RISCA:\n"
                     f"{f.get('ficha','')}\n\n")
     return ""
