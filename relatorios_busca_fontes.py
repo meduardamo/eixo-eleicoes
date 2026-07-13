@@ -21,6 +21,9 @@ from google.genai import types
 
 BRT = timezone(timedelta(hours=-3))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+# Só busca fonte de pesquisa divulgada nos últimos N dias. Mais velha que isso não
+# vale mais buscar/divulgar. Ajustável por env (MAX_DIAS_BUSCA).
+MAX_DIAS_BUSCA = int(os.getenv("MAX_DIAS_BUSCA", "5"))
 
 # Cabeçalhos para fingir ser um usuário real do Windows/Chrome + IP do Googlebot (Fallback)
 STEALTH_HEADERS = {
@@ -57,6 +60,7 @@ RELATORIOS_COLUNAS = [
     ("link", "Link do relatório"),
     (COL_ORIGEM_LINK, "Origem do link"),
     (COL_NIVEL_CONFERENCIA, "Nível de conferência"),
+    ("tipo_fonte", "Tipo"),
     (COL_CONFERIDO, "Conferido?"),
     ("segmentos_extraido", "Segmentos extraídos?"),
     ("segmentos_data_extracao", "Data da extração de segmentos"),
@@ -78,6 +82,7 @@ ALIASES_RELATORIOS = {
     "Link do relatório": ["link"],
     "Origem do link": [COL_ORIGEM_LINK, "origem_busca"],
     "Nível de conferência": [COL_NIVEL_CONFERENCIA],
+    "Tipo": ["tipo_fonte", "tipo", "tipo_de_fonte"],
     "Conferido?": [COL_CONFERIDO],
     "Segmentos extraídos?": ["segmentos_extraido", "extraido"],
     "Data da extração de segmentos": ["segmentos_data_extracao", "data_extracao"],
@@ -1579,6 +1584,19 @@ def _data_iso_origem(valor):
     return ""
 
 
+def _dias_desde_divulgacao(data_divulgacao):
+    """Dias entre a data de divulgação e hoje (BRT). None se a data não for legível
+    (nesse caso o chamador NÃO deve pular a linha, pra não descartar por falha de parse)."""
+    iso = _data_iso_origem(data_divulgacao)
+    if not iso:
+        return None
+    try:
+        d = datetime.strptime(iso, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    return (datetime.now(BRT).date() - d).days
+
+
 def _origem_com_carimbo(origem, data_divulgacao=""):
     origem = str(origem or "").strip() or "Capturado na Web"
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
@@ -1662,6 +1680,21 @@ def atualizar_planilha():
                 ))
                 if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
                     celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "link_existente"))
+            continue
+
+        dias = _dias_desde_divulgacao(linha.get("data_divulgacao", ""))
+        if dias is not None and dias > MAX_DIAS_BUSCA:
+            # divulgada há mais de MAX_DIAS_BUSCA: não vale mais buscar (nem seria
+            # divulgada). Carimba uma vez (só se origem ainda vazia) pra a equipe saber
+            # o motivo de a linha não ter link, e pula em silêncio nas próximas rodadas.
+            if not str(linha.get(COL_ORIGEM_LINK, "")).strip():
+                celulas_para_atualizar.append(gspread.Cell(
+                    i, col_status,
+                    _origem_com_carimbo(f"não buscado: divulgada há mais de {MAX_DIAS_BUSCA} dias",
+                                        linha.get("data_divulgacao", "")),
+                ))
+                if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
+                    celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "fora_da_janela"))
             continue
 
         print(f"Buscando: {registro} / {linha.get('cargo', '')}...")
