@@ -33,6 +33,7 @@ RELATORIOS_COLUNAS = [
     ("link", "Link do relatório"),
     ("origem_link", "Origem do link"),
     ("nivel_conferencia", "Nível de conferência"),
+    ("tipo_fonte", "Tipo"),
     ("conferido", "Conferido?"),
     ("segmentos_extraido", "Segmentos extraídos?"),
     ("segmentos_data_extracao", "Data da extração de segmentos"),
@@ -54,6 +55,7 @@ ALIASES_RELATORIOS = {
     "Link do relatório": ["link"],
     "Origem do link": ["origem_link", "origem_busca"],
     "Nível de conferência": ["nivel_conferencia"],
+    "Tipo": ["tipo_fonte", "tipo", "tipo_de_fonte"],
     "Conferido?": ["conferido"],
     "Segmentos extraídos?": ["segmentos_extraido", "extraido"],
     "Data da extração de segmentos": ["segmentos_data_extracao", "data_extracao"],
@@ -320,9 +322,15 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     _ativar_checkbox(ws, col_conferido, header, ate_linha)
 
 
-def _aba(sh, nome):
+def _aba(sh, nome, manutencao=True):
     """Garante a aba e o cabeçalho. Cria a aba se não existir; escreve o
-    cabeçalho se a primeira linha estiver vazia. Não mexe em dados existentes."""
+    cabeçalho se a primeira linha estiver vazia. Não mexe em dados existentes.
+
+    manutencao=False pula a manutenção pesada da aba 'relatorios' (split de
+    linhas multicargo + reset das validações + remoção de colunas sobrando).
+    Comandos que só LEEM a fila (extrair, topline) passam False pra não refazer,
+    a cada invocação, um trabalho de planilha que só precisa rodar quando linhas
+    novas entram (isso acontece no passo que adiciona pesquisas e no busca_fontes)."""
     header = CABECALHOS[nome]
     try:
         ws = sh.worksheet(nome)
@@ -331,9 +339,10 @@ def _aba(sh, nome):
     if not ws.row_values(1):
         ws.update(range_name="A1", values=[header])
     elif nome == "relatorios":
-        header = _normalizar_cabecalho(ws, header, remover_sobras=True)
-        _separar_linhas_multicargo(ws, header)
-        _resetar_validacoes_relatorios(ws, header, _ultima_linha_com_registro(ws))
+        header = _normalizar_cabecalho(ws, header, remover_sobras=manutencao)
+        if manutencao:
+            _separar_linhas_multicargo(ws, header)
+            _resetar_validacoes_relatorios(ws, header, _ultima_linha_com_registro(ws))
     elif nome in ("topline_pesquisas", "topline_resultados"):
         _normalizar_cabecalho(ws, header)
     return ws
@@ -734,9 +743,41 @@ def _drive_id(link):
     return m.group(1) if m else None
 
 
+def _pdf_cache_path(link):
+    """Caminho de cache pro PDF do link, num diretório temporário estável do runner.
+    Serve pra baixar UMA vez por link e reusar entre cmd_extrair e cmd_topline (mesmo
+    job) e entre tentativas, em vez de rebaixar o mesmo PDF várias vezes."""
+    import hashlib, tempfile
+    if not link:
+        return None
+    d = os.path.join(tempfile.gettempdir(), "eixo_pdf_cache")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        return None
+    h = hashlib.sha1(str(link).encode("utf-8", "ignore")).hexdigest()[:20]
+    return os.path.join(d, f"{h}.pdf")
+
+
 def _baixar_pdf(link):
-    """Baixa o PDF do link. Se for link do Google Drive, usa a API do Drive com a
-    conta de serviço (a pasta precisa estar compartilhada com ela). Senão, download direto."""
+    """Baixa o PDF do link (com cache em disco pra não rebaixar o mesmo arquivo).
+    Se for link do Google Drive, usa a API do Drive com a conta de serviço (a pasta
+    precisa estar compartilhada com ela). Senão, download direto."""
+    cache = _pdf_cache_path(link)
+    if cache and os.path.exists(cache) and os.path.getsize(cache) > 1000:
+        with open(cache, "rb") as f:
+            return f.read()
+    conteudo = _baixar_pdf_raw(link)
+    if cache and conteudo:
+        try:
+            with open(cache, "wb") as f:
+                f.write(conteudo)
+        except OSError:
+            pass
+    return conteudo
+
+
+def _baixar_pdf_raw(link):
     fid = _drive_id(link)
     if not fid:
         return requests.get(link, headers=HEADERS, timeout=60).content
@@ -1065,7 +1106,7 @@ def cmd_extrair():
     from relatorios_topline_core import _referencia, ficha_instituto, instituto_canonico, sigla_uf
 
     sh = _sheets().open_by_key(RELATORIOS_ID)
-    fila = _aba(sh, "relatorios")
+    fila = _aba(sh, "relatorios", manutencao=False)
     ws_voto = _aba(sh, "voto_segmento")
     ws_rej = _aba(sh, "rejeicao")
     ws_aprov = _aba(sh, "aprovacao")
@@ -1470,11 +1511,11 @@ def cmd_topline():
     import pandas as pd
     from relatorios_topline_core import (
         USO_TOKENS as USO_TOKENS_TOPLINE, extrair_dados_polling_gemini,
-        extrair_texto_pdf_bytes, montar_dataframes_polling,
+        extrair_texto_pdf_bytes, montar_dataframes_polling, ficha_instituto,
     )
 
     sh = _sheets().open_by_key(RELATORIOS_ID)
-    fila = _aba(sh, "relatorios")
+    fila = _aba(sh, "relatorios", manutencao=False)
 
     header = fila.row_values(1)
     col_flag = _garantir_coluna_relatorios(fila, header, FLAG_TOPLINE)
@@ -1544,6 +1585,12 @@ def cmd_topline():
         link = str(r.get("link", "")).strip()
         registro_fila = str(r.get("registro", "")).strip()
         if not link or not _verdadeiro(r.get("conferido")) or _verdadeiro(r.get(FLAG_TOPLINE)):
+            continue
+        # Topline automático só p/ RELATÓRIO de instituto COM FICHA. Notícia, ou instituto
+        # fora da ficha, tem o topline feito à mão no polling_manual (gerador-de-envios).
+        # Segmento/rejeição/aprovação NÃO têm gate (rodam em qualquer PDF, no cmd_extrair).
+        if (not _sem_acento(r.get("tipo_fonte")).strip().lower().startswith("relat")
+                or not ficha_instituto(r.get("instituto", "")).strip()):
             continue
         tentativas = _int0(r.get("topline_tentativas"))
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
@@ -1789,6 +1836,13 @@ def cmd_publicar():
     col_pub = _garantir_coluna(ws_p, header_p, "publicado")
     if "publicado" not in df_p.columns:
         df_p["publicado"] = ""
+    # Gate de liberação humana: cenário com 'validacao' não vazia (soma que não fecha,
+    # bloco de PDF que falhou, percentual fora de 0-100) fica RETIDO e só publica quando
+    # alguém marca 'liberado' na aba topline_pesquisas. Evita número errado/parcial ir
+    # pro gráfico público sem revisão. Cenário limpo (validacao vazia) publica normal.
+    _garantir_coluna(ws_p, header_p, "liberado")
+    if "liberado" not in df_p.columns:
+        df_p["liberado"] = ""
 
     feito = df_p["publicado"].astype(str).str.strip().str.lower().isin(["sim", "true", "1", "x"])
     pendentes = df_p[~feito]
@@ -1801,7 +1855,7 @@ def cmd_publicar():
         # tira colunas de controle do staging: o salvar_tudo forçaria metodologia por
         # último e jogaria colunas novas antes dela (origem entra depois, => _marcar_origem).
         df = df.drop(columns=[
-            "publicado", "origem", "validacao", "descricao", "votos_por_entrevistado"
+            "publicado", "liberado", "origem", "validacao", "descricao", "votos_por_entrevistado"
         ], errors="ignore").copy()
         if "instituto" in df.columns:
             df["classificacao_instituto"] = df["instituto"].apply(classificar_instituto)
@@ -1821,9 +1875,15 @@ def cmd_publicar():
             continue
         if "validacao" in pt_all.columns:
             com_aviso = pt_all["validacao"].astype(str).str.strip().ne("")
-            if com_aviso.any():
-                print(f"{turno}: {int(com_aviso.sum())} cenário(s) com validação pendente; publicando com aviso")
-            pt = pt_all
+            if "liberado" in pt_all.columns:
+                liberado = pt_all["liberado"].astype(str).str.strip().str.lower().isin(["sim", "true", "1", "x"])
+            else:
+                liberado = pd.Series(False, index=pt_all.index)
+            segurar = com_aviso & ~liberado
+            if segurar.any():
+                print(f"{turno}: {int(segurar.sum())} cenário(s) RETIDOS por validação pendente "
+                      "(marque 'liberado' na topline_pesquisas pra publicar)")
+            pt = pt_all[~segurar]
         else:
             pt = pt_all
         if pt.empty:
