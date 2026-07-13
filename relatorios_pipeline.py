@@ -762,13 +762,11 @@ PROMPT = (
     "quebras demográficas - rejeição e aprovação não têm outro fluxo, se faltar o geral aqui "
     "o dado se perde.\n"
     "5) 'valor' é número, sem o símbolo de %.\n"
-    "6) Identifique o cenário pelo nome ou título que o relatório usa (ex: 'Estimulada 1', "
-    "'Lula x Flávio'). Se houver só UM cenário estimulado daquele cargo/turno no relatório "
-    "inteiro, use 'Estimulada'. Se houver MAIS DE UM (conjuntos de candidatos diferentes, "
-    "mesmo sem o relatório chamar de 'Cenário 1/2/3' explicitamente), NUNCA repita o mesmo "
-    "rótulo genérico 'Estimulada' pra cenários com candidatos diferentes: numere ('Estimulada "
-    "1', 'Estimulada 2'...) ou descreva o que muda entre eles. Rótulo repetido faz duas "
-    "tabelas diferentes parecerem uma só na conferência.\n"
+    "6) Em 'cenario', use 'Cenário N' para votação estimulada de 1º turno. A única votação "
+    "estimulada de um cargo/turno é 'Cenário 1' (NUNCA apenas 'Estimulada'). 'Estimulada 1', "
+    "'Estimulada - Cenário 1' e 'Cenário 01' também viram 'Cenário 1'. Em confronto direto, "
+    "use os dois nomes completos com partido (ex.: 'Lula (PT) x Flávio Bolsonaro (PL)'). "
+    "NUNCA repita o mesmo rótulo para conjuntos de candidatos diferentes.\n"
     "7) Em 'candidato', use SEMPRE o formato 'Nome (SIGLA)'. Se o candidato constar na lista "
     "canônica fornecida abaixo, use EXATAMENTE o nome e a sigla de lá. A sigla do partido é "
     "sempre curta e em caixa alta (PT, PL, MDB, REP, UNIAO...), nunca por extenso.\n"
@@ -1056,6 +1054,28 @@ def _turno_segmento(item):
         if fala_de_voto_senado and not confronto:
             return "t1"
     return "t2" if turno == "t2" else "t1"
+
+
+def _padronizar_cenario(cenario):
+    """Converte rótulos de voto estimulado para o único formato da planilha.
+
+    O Gemini pode variar entre 'Cenário 01', 'Estimulada 1' e 'Estimulada -
+    Cenário 1'. Uma estimulada sem número é, por definição, a única/primeira
+    medição do cargo e turno, então também deve ser Cenário 1. Confrontos
+    conhecidos também ganham nomes completos e partido.
+    """
+    texto = str(cenario or "").strip()
+    normalizado = _sem_acento(texto).lower()
+    if normalizado in {"lula x flavio", "lula x flavio bolsonaro"}:
+        return "Lula (PT) x Flávio Bolsonaro (PL)"
+    numero = re.search(r"\bcenario\s*0*(\d+)\b", normalizado)
+    if not numero:
+        numero = re.search(r"\bestimulad[ao]\s*[-:]?\s*0*(\d+)\b", normalizado)
+    if numero:
+        return f"Cenário {int(numero.group(1))}"
+    if normalizado in {"estimulada", "estimulado", "voto estimulado", "votacao estimulada"}:
+        return "Cenário 1"
+    return texto
 
 
 LIMITE_BYTES_BLOCO = 15_000_000   # a API do Gemini rejeita requisição inline grande demais
@@ -1362,8 +1382,9 @@ def cmd_extrair():
             # cargo/turno da disputa daquele cenário (o Gemini identifica); se faltar,
             # cai no texto da fila, pra linha nunca ficar sem referência
             turno = _turno_segmento(v)
+            cenario = _padronizar_cenario(v.get("cenario", ""))
             chave = (str(registro).strip(), str(v.get("cargo") or cargo_fila).strip(),
-                     turno, str(v.get("cenario", "")).strip(),
+                     turno, cenario,
                      str(v.get("candidato", "")).strip(), str(v.get("tipo_segmento", "")).strip(),
                      str(v.get("segmento", "")).strip())
             if chave in voto_keys:
@@ -1371,7 +1392,7 @@ def cmd_extrair():
             voto_keys.add(chave)
             voto_buf.append([registro, v.get("cargo") or cargo_fila, turno,
                              uf, inst, data_div,
-                             v.get("cenario", ""), v.get("candidato", ""),
+                             cenario, v.get("candidato", ""),
                              v.get("tipo_segmento", ""), v.get("segmento", ""),
                              v.get("valor", "")])
         for v in rej_filtrada:
