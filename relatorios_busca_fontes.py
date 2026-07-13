@@ -189,10 +189,17 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     if ate_linha < 2:
         return
     col_conferido = _rel_display(COL_CONFERIDO)
-    faixas = [(0, len(header))]
-    if col_conferido in header:
-        col_i = header.index(col_conferido)
-        faixas = [(ini, fim) for ini, fim in ((0, col_i), (col_i + 1, len(header))) if fim > ini]
+    # protege as colunas com validação própria (checkbox do Conferido? e lista suspensa
+    # do Tipo) pra não limpá-las junto com as validações acidentais das outras.
+    protegidas = sorted({header.index(_rel_display(n)) for n in (COL_CONFERIDO, "tipo_fonte")
+                         if _rel_display(n) in header})
+    faixas, ini = [], 0
+    for pc in protegidas:
+        if pc > ini:
+            faixas.append((ini, pc))
+        ini = pc + 1
+    if ini < len(header):
+        faixas.append((ini, len(header)))
     if faixas:
         try:
             ws.spreadsheet.batch_update({
@@ -213,6 +220,12 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         except Exception as e:
             print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
     _ativar_checkbox(ws, col_conferido, header, ate_linha)
+    _ativar_dropdown(ws, _rel_display("tipo_fonte"), header, ate_linha, ["relatório", "notícia", "N/A"])
+    _colorir_por_valor(ws, _rel_display("tipo_fonte"), header, ate_linha, {
+        "relatório": (0.82, 0.93, 0.82),
+        "notícia": (1.0, 0.90, 0.80),
+        "N/A": (0.90, 0.90, 0.90),
+    })
 
 
 def _garantir_coluna(ws, header, nome):
@@ -286,6 +299,72 @@ def _ativar_checkbox(ws, coluna, header, ate_linha):
     except Exception as e:
         print(f"[AVISO] não deu pra criar o checkbox de '{coluna}': {e}")
     _normalizar_booleanos_coluna(ws, col_i, ate_linha)
+
+
+def _ativar_dropdown(ws, coluna, header, ate_linha, opcoes):
+    """Lista suspensa (ONE_OF_LIST) na coluna, da linha 2 até ate_linha. strict=True +
+    showCustomUi=True: mostra a setinha e só aceita valor da lista (blank permitido)."""
+    if coluna not in header or ate_linha < 2:
+        return
+    col_i = header.index(coluna) + 1
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "setDataValidation": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": 1,
+                        "endRowIndex": ate_linha,
+                        "startColumnIndex": col_i - 1,
+                        "endColumnIndex": col_i,
+                    },
+                    "rule": {
+                        "condition": {
+                            "type": "ONE_OF_LIST",
+                            "values": [{"userEnteredValue": str(o)} for o in opcoes],
+                        },
+                        "strict": True,
+                        "showCustomUi": True,
+                    },
+                }
+            }]
+        })
+    except Exception as e:
+        print(f"[AVISO] não deu pra criar a lista suspensa de '{coluna}': {e}")
+
+
+def _colorir_por_valor(ws, coluna, header, ate_linha, cores):
+    """Formatação condicional: pinta o fundo da coluna conforme o valor. Idempotente
+    (remove as regras que já cobrem a coluna antes de recriar). A cor vale pras linhas
+    novas também."""
+    if coluna not in header or ate_linha < 2:
+        return
+    col = header.index(coluna)
+    try:
+        meta = ws.spreadsheet.fetch_sheet_metadata(
+            params={"fields": "sheets(properties(sheetId),conditionalFormats)"})
+        reqs = []
+        for s in meta.get("sheets", []):
+            if s.get("properties", {}).get("sheetId") != ws.id:
+                continue
+            cfs = s.get("conditionalFormats", [])
+            for idx in range(len(cfs) - 1, -1, -1):
+                rngs = cfs[idx].get("ranges", [])
+                if any(r.get("startColumnIndex") == col and r.get("endColumnIndex") == col + 1 for r in rngs):
+                    reqs.append({"deleteConditionalFormatRule": {"sheetId": ws.id, "index": idx}})
+        faixa = {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": max(ate_linha, ws.row_count),
+                 "startColumnIndex": col, "endColumnIndex": col + 1}
+        for valor, (r, g, b) in cores.items():
+            reqs.append({"addConditionalFormatRule": {"index": 0, "rule": {
+                "ranges": [faixa],
+                "booleanRule": {
+                    "condition": {"type": "TEXT_EQ", "values": [{"userEnteredValue": valor}]},
+                    "format": {"backgroundColor": {"red": r, "green": g, "blue": b}},
+                }}}})
+        if reqs:
+            ws.spreadsheet.batch_update({"requests": reqs})
+    except Exception as e:
+        print(f"[AVISO] não deu pra colorir a coluna '{coluna}': {e}")
 
 
 def _ultima_linha_com_registro(ws):
@@ -1519,6 +1598,17 @@ def fazer_upload_drive(creds, pasta_id, nome_arquivo, pdf_bytes, nomes_existente
     return r_upload.json().get('webViewLink', '')
 
 
+def _eh_link_drive(link):
+    """Confere se o link É do Google Drive antes de tratar como tal - checagem só de
+    domínio, sem regex frouxo. Necessária porque _drive_file_id tem um fallback
+    ([-\\w]{25,}) que casa qualquer slug longo de URL comum (site de notícia com
+    título extenso na URL), dando falso positivo pra link que não é do Drive."""
+    if not link:
+        return False
+    host = urlparse(str(link)).netloc.lower()
+    return host in ("drive.google.com", "docs.google.com") or host.endswith(".drive.google.com")
+
+
 def _drive_file_id(link):
     if not link:
         return ""
@@ -1665,11 +1755,12 @@ def atualizar_planilha():
             continue
         if _cargo_norm(linha.get("cargo", "")) not in CARGOS_MONITORADOS:
             continue
-        if link_atual:
-            # Só na primeira vez que a linha aparece já com link (origem_link ainda
-            # vazio): normaliza o nome no Drive e carimba. Depois de carimbada, pula
-            # nas próximas rodadas, senão seria 1 GET no Drive por linha toda rodada
-            # só pra reconferir um nome que já está certo.
+        if link_atual and _eh_link_drive(link_atual):
+            # Já é link do Drive: só normaliza o nome (não precisa baixar/converter,
+            # o arquivo já está lá). Só na primeira vez que a linha aparece com link
+            # (origem_link ainda vazio); depois de carimbada, pula nas próximas
+            # rodadas, senão seria 1 GET no Drive por linha toda rodada só pra
+            # reconferir um nome que já está certo.
             if not str(linha.get(COL_ORIGEM_LINK, "")).strip():
                 nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")), linha.get("cargo", ""))
                 if renomear_arquivo_drive_por_link(creds, link_atual, nome_pdf):
@@ -1682,40 +1773,56 @@ def atualizar_planilha():
                     celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "link_existente"))
             continue
 
-        dias = _dias_desde_divulgacao(linha.get("data_divulgacao", ""))
-        if dias is not None and dias > MAX_DIAS_BUSCA:
-            # divulgada há mais de MAX_DIAS_BUSCA: não vale mais buscar (nem seria
-            # divulgada). Carimba uma vez (só se origem ainda vazia) pra a equipe saber
-            # o motivo de a linha não ter link, e pula em silêncio nas próximas rodadas.
-            if not str(linha.get(COL_ORIGEM_LINK, "")).strip():
+        if link_atual:
+            # Link colado manualmente na fila (site, matéria) que NÃO é do Drive:
+            # antes disso caía no ramo acima, que só tenta renomear um arquivo do
+            # Drive - _drive_file_id vinha vazio, renomear_arquivo_drive_por_link
+            # falhava calado, e a linha ainda assim era carimbada como "resolvida"
+            # sem nada ter sido baixado/convertido/salvo. Agora cai no MESMO fluxo
+            # de baixar/converter/subir pro Drive usado pro link que a IA acha
+            # sozinha (baixar_pdf_ou_gerar_headless mais abaixo), só sem precisar
+            # buscar - o link já está na célula.
+            if str(linha.get(COL_ORIGEM_LINK, "")).strip():
+                continue   # já processado numa rodada anterior
+            link_fonte = link_atual
+            origem_texto = "Link inserido manualmente"
+        else:
+            dias = _dias_desde_divulgacao(linha.get("data_divulgacao", ""))
+            if dias is not None and dias > MAX_DIAS_BUSCA:
+                # divulgada há mais de MAX_DIAS_BUSCA: não vale mais buscar (nem seria
+                # divulgada). Carimba uma vez (só se origem ainda vazia) pra a equipe
+                # saber o motivo de a linha não ter link, e pula em silêncio nas
+                # próximas rodadas.
+                if not str(linha.get(COL_ORIGEM_LINK, "")).strip():
+                    celulas_para_atualizar.append(gspread.Cell(
+                        i, col_status,
+                        _origem_com_carimbo(f"não buscado: divulgada há mais de {MAX_DIAS_BUSCA} dias",
+                                            linha.get("data_divulgacao", "")),
+                    ))
+                    if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
+                        celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "fora_da_janela"))
+                continue
+
+            print(f"Buscando: {registro} / {linha.get('cargo', '')}...")
+            resultado = agente_buscar_link_faltante(
+                gemini_client, registro, linha.get("instituto", ""),
+                linha.get("cargo", ""), linha.get("uf", ""), linha.get("data_divulgacao", "")
+            )
+
+            if resultado.get("tipo") == "paywall" and not resultado.get("link"):
+                pendentes_finais.append(f"{registro} - Paywall, sem matéria aberta localizada.")
                 celulas_para_atualizar.append(gspread.Cell(
                     i, col_status,
-                    _origem_com_carimbo(f"não buscado: divulgada há mais de {MAX_DIAS_BUSCA} dias",
-                                        linha.get("data_divulgacao", "")),
+                    _origem_com_carimbo("paywall, aguardando fonte aberta", linha.get("data_divulgacao", "")),
                 ))
-                if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
-                    celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "fora_da_janela"))
-            continue
+                celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "paywall"))
+                continue
 
-        print(f"Buscando: {registro} / {linha.get('cargo', '')}...")
-        resultado = agente_buscar_link_faltante(
-            gemini_client, registro, linha.get("instituto", ""),
-            linha.get("cargo", ""), linha.get("uf", ""), linha.get("data_divulgacao", "")
-        )
-
-        if resultado.get("tipo") == "paywall" and not resultado.get("link"):
-            pendentes_finais.append(f"{registro} - Paywall, sem matéria aberta localizada.")
-            celulas_para_atualizar.append(gspread.Cell(
-                i, col_status,
-                _origem_com_carimbo("paywall, aguardando fonte aberta", linha.get("data_divulgacao", "")),
-            ))
-            celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "paywall"))
-            continue
-
-        link_fonte = resultado.get("link")
-        if not link_fonte:
-            pendentes_finais.append(f"{registro} - Nenhum relatório ou matéria encontrada na web hoje.")
-            continue
+            link_fonte = resultado.get("link")
+            if not link_fonte:
+                pendentes_finais.append(f"{registro} - Nenhum relatório ou matéria encontrada na web hoje.")
+                continue
+            origem_texto = resultado.get("origem_texto", "Capturado na Web")
 
         if _fonte_video(link_fonte):
             pendentes_finais.append(f"{registro} - Fonte é vídeo ({link_fonte}); sem relatório legível, deixado pendente.")
@@ -1757,7 +1864,7 @@ def atualizar_planilha():
             celulas_para_atualizar.append(gspread.Cell(
                 i, col_status,
                 _origem_com_carimbo(
-                    resultado.get("origem_texto", "Capturado na Web") + nota,
+                    origem_texto + nota,
                     linha.get("data_divulgacao", ""),
                 ),
             ))
