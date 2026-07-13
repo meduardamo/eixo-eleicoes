@@ -1677,7 +1677,7 @@ def cmd_topline():
             # RELATÓRIO de instituto SEM ficha: topline não automatiza. Sinaliza UMA vez
             # no 'topline_erro' pra equipe filtrar e fazer no polling manual.
             if "sem ficha" not in str(r.get("topline_erro", "")).lower():
-                updates.append(gspread.Cell(i, col_erro, "topline manual: relatório de instituto sem ficha"))
+                updates.append(gspread.Cell(i, col_erro, "relatório de instituto sem ficha; registre manualmente"))
             continue
         tentativas = _int0(r.get("topline_tentativas"))
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
