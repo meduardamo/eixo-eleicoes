@@ -1068,6 +1068,20 @@ def _padronizar_cenario(cenario):
     normalizado = _sem_acento(texto).lower()
     if normalizado in {"lula x flavio", "lula x flavio bolsonaro"}:
         return "Lula (PT) x Flávio Bolsonaro (PL)"
+    # Com ou sem os partidos no PDF, os confrontos conhecidos usam exatamente o
+    # mesmo rótulo. Isso evita que uma mesma disputa apareça misturada entre
+    # "Lula x Michelle" e "Lula (PT) x Michelle Bolsonaro (PL)".
+    confronto = re.sub(r"\([^)]*\)", "", normalizado)
+    confronto = " ".join(confronto.split())
+    confrontos = {
+        "lula x flavio": "Lula (PT) x Flávio Bolsonaro (PL)",
+        "lula x flavio bolsonaro": "Lula (PT) x Flávio Bolsonaro (PL)",
+        "lula x michelle": "Lula (PT) x Michelle Bolsonaro (PL)",
+        "lula x michelle bolsonaro": "Lula (PT) x Michelle Bolsonaro (PL)",
+        "sergio moro x sandro alex": "Sergio Moro (UNIAO) x Sandro Alex (PSD)",
+    }
+    if confronto in confrontos:
+        return confrontos[confronto]
     numero = re.search(r"\bcenario\s*0*(\d+)\b", normalizado)
     if not numero:
         numero = re.search(r"\bestimulad[ao]\s*[-:]?\s*0*(\d+)\b", normalizado)
@@ -1076,6 +1090,96 @@ def _padronizar_cenario(cenario):
     if normalizado in {"estimulada", "estimulado", "voto estimulado", "votacao estimulada"}:
         return "Cenário 1"
     return texto
+
+
+def _texto_limpo(valor):
+    """Remove somente variações tipográficas, sem alterar o significado."""
+    return " ".join(str(valor or "").strip().split())
+
+
+def _chave_padronizacao(valor):
+    texto = _sem_acento(_texto_limpo(valor)).lower()
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", texto).split())
+
+
+def _padronizar_candidato(candidato):
+    """Uniformiza grafias já conhecidas de candidatos e rótulos de rejeição."""
+    texto = _texto_limpo(candidato)
+    rotulos = {
+        "cintia dias psol": "Cíntia Dias (PSOL)",
+        "nao sabe nao opinou": "Não sabe/Não opinou",
+        "nao sabe nao respondeu": "Não sabe/Não respondeu",
+        "poderia votar em todos": "Poderia votar em todos",
+        "branco nulo": "Branco/Nulo",
+        "indeciso n nao resp": "Indeciso/N/Não resp.",
+    }
+    return rotulos.get(_chave_padronizacao(texto), texto)
+
+
+def _padronizar_segmento(segmento):
+    """Aplica os rótulos demográficos canônicos usados nas abas de saída."""
+    texto = _texto_limpo(segmento)
+    chave = _chave_padronizacao(texto)
+    rotulos = {
+        "feminino": "Feminino",
+        "masculino": "Masculino",
+        "catolico": "Católico",
+        "evangelico": "Evangélico",
+        "superior completo": "Superior completo",
+        "nordeste": "Nordeste",
+        "norte": "Norte",
+        "sudeste": "Sudeste",
+        "sul": "Sul",
+        "centro oeste": "Centro-Oeste",
+        "ate 02 salarios minimos": "Até 02 salários mínimos",
+    }
+    if chave in rotulos:
+        return rotulos[chave]
+
+    # A mesma faixa etária já apareceu como "16-24", "16 - 24" e
+    # "De 16 a 24 anos". Sempre grava na última forma, explícita e legível.
+    faixa = re.fullmatch(r"(?:de )?(\d{1,2})(?: a | )(\d{1,2})(?: anos?)?", chave)
+    if faixa:
+        return f"De {int(faixa.group(1))} a {int(faixa.group(2))} anos"
+
+    idade_unica = re.fullmatch(r"(\d{1,2}) anos?", chave)
+    if idade_unica:
+        return f"{int(idade_unica.group(1))} anos"
+    return texto
+
+
+def _padronizar_resposta(resposta):
+    """Normaliza apenas rótulos equivalentes de aprovação."""
+    texto = _texto_limpo(resposta)
+    rotulos = {
+        "aprova": "Aprova",
+        "desaprova": "Desaprova",
+        "ns nr": "NS/NR",
+        "nao sabe nao opinou": "Não sabe/Não opinou",
+    }
+    return rotulos.get(_chave_padronizacao(texto), texto)
+
+
+def _padronizar_dados_extraidos(dados):
+    """Normaliza antes da deduplicação e de qualquer escrita nas abas."""
+    for item in dados.get("voto_segmento", []):
+        item["cargo"] = _cargo_norm(item.get("cargo", ""))
+        item["turno"] = _turno_segmento(item)
+        item["cenario"] = _padronizar_cenario(item.get("cenario", ""))
+        item["candidato"] = _padronizar_candidato(item.get("candidato", ""))
+        item["tipo_segmento"] = _sem_acento(_texto_limpo(item.get("tipo_segmento", ""))).lower()
+        item["segmento"] = _padronizar_segmento(item.get("segmento", ""))
+    for item in dados.get("rejeicao", []):
+        item["cargo"] = _cargo_norm(item.get("cargo", ""))
+        item["candidato"] = _padronizar_candidato(item.get("candidato", ""))
+        item["tipo_segmento"] = _sem_acento(_texto_limpo(item.get("tipo_segmento", ""))).lower()
+        item["segmento"] = _padronizar_segmento(item.get("segmento", ""))
+    for item in dados.get("aprovacao", []):
+        item["tipo_avaliacao"] = _texto_limpo(item.get("tipo_avaliacao", "")).lower()
+        item["resposta"] = _padronizar_resposta(item.get("resposta", ""))
+        item["tipo_segmento"] = _sem_acento(_texto_limpo(item.get("tipo_segmento", ""))).lower()
+        item["segmento"] = _padronizar_segmento(item.get("segmento", ""))
+    return dados
 
 
 LIMITE_BYTES_BLOCO = 15_000_000   # a API do Gemini rejeita requisição inline grande demais
@@ -1192,6 +1296,7 @@ def extrair_do_pdf(pdf_bytes, extra=""):
     for bloco in _blocos_pdf(pdf_bytes):
         texto_bloco = _texto_pdf_bytes(bloco)
         dados = _gemini_json(bloco, extra, texto_bloco=texto_bloco)
+        dados = _padronizar_dados_extraidos(_gemini_json(bloco, extra, texto_bloco=texto_bloco))
         voto += dados.get("voto_segmento", [])
         rej += dados.get("rejeicao", [])
         aprov += dados.get("aprovacao", [])
@@ -1381,9 +1486,11 @@ def cmd_extrair():
         for v in voto_filtrado:
             # cargo/turno da disputa daquele cenário (o Gemini identifica); se faltar,
             # cai no texto da fila, pra linha nunca ficar sem referência
+            cargo_item = _cargo_norm(v.get("cargo") or cargo_fila)
             turno = _turno_segmento(v)
             cenario = _padronizar_cenario(v.get("cenario", ""))
             chave = (str(registro).strip(), str(v.get("cargo") or cargo_fila).strip(),
+            chave = (str(registro).strip(), cargo_item,
                      turno, cenario,
                      str(v.get("candidato", "")).strip(), str(v.get("tipo_segmento", "")).strip(),
                      str(v.get("segmento", "")).strip())
@@ -1391,18 +1498,22 @@ def cmd_extrair():
                 continue
             voto_keys.add(chave)
             voto_buf.append([registro, v.get("cargo") or cargo_fila, turno,
+            voto_buf.append([registro, cargo_item, turno,
                              uf, inst, data_div,
                              cenario, v.get("candidato", ""),
                              v.get("tipo_segmento", ""), v.get("segmento", ""),
                              v.get("valor", "")])
         for v in rej_filtrada:
             chave = (str(registro).strip(), str(v.get("cargo") or cargo_fila).strip(),
+            cargo_item = _cargo_norm(v.get("cargo") or cargo_fila)
+            chave = (str(registro).strip(), cargo_item,
                      str(v.get("candidato", "")).strip(), str(v.get("tipo_segmento", "")).strip(),
                      str(v.get("segmento", "")).strip())
             if chave in rej_keys:
                 continue
             rej_keys.add(chave)
             rej_buf.append([registro, v.get("cargo") or cargo_fila, uf, inst, data_div,
+            rej_buf.append([registro, cargo_item, uf, inst, data_div,
                             v.get("candidato", ""), v.get("tipo_segmento", ""),
                             v.get("segmento", ""), v.get("valor", "")])
         for v in aprov_filtrada:
@@ -1414,6 +1525,7 @@ def cmd_extrair():
                 continue
             aprov_keys.add(chave)
             aprov_buf.append([registro, cargo_fila, uf, inst, data_div,
+            aprov_buf.append([registro, _cargo_norm(cargo_fila), uf, inst, data_div,
                               v.get("alvo", ""), tipo_aval, v.get("resposta", ""),
                               v.get("tipo_segmento", ""), v.get("segmento", ""),
                               v.get("valor", "")])
