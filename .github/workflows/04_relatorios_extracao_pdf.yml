@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   schedule:
     # GitHub Actions usa UTC; Brasil/Recife = UTC-3.
-    # Rodadas depois das buscas e da conferência manual dos links.
-    - cron: '35 18 * * *'   # 15:35 Brasil
+    # Executa de manhã, depois da busca noturna e da conferência dos links.
+    - cron: '30 10 * * *'   # 07:30 Brasil
 
 jobs:
   run:
