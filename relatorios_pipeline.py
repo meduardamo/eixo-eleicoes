@@ -176,6 +176,74 @@ def _ativar_checkbox(ws, coluna, header, ate_linha):
     _normalizar_booleanos_coluna(ws, col_i, ate_linha)
 
 
+def _ativar_dropdown(ws, coluna, header, ate_linha, opcoes):
+    """Transforma a coluna em lista suspensa (ONE_OF_LIST) com as 'opcoes', da linha 2
+    até ate_linha. strict=True + showCustomUi=True: mostra a setinha e só aceita um
+    valor da lista (blank continua permitido)."""
+    if coluna not in header or ate_linha < 2:
+        return
+    col_i = header.index(coluna) + 1
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "setDataValidation": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": 1,
+                        "endRowIndex": ate_linha,
+                        "startColumnIndex": col_i - 1,
+                        "endColumnIndex": col_i,
+                    },
+                    "rule": {
+                        "condition": {
+                            "type": "ONE_OF_LIST",
+                            "values": [{"userEnteredValue": str(o)} for o in opcoes],
+                        },
+                        "strict": True,
+                        "showCustomUi": True,
+                    },
+                }
+            }]
+        })
+    except Exception as e:
+        print(f"[AVISO] não deu pra criar a lista suspensa de '{coluna}': {e}")
+
+
+def _colorir_por_valor(ws, coluna, header, ate_linha, cores):
+    """Formatação condicional: pinta o fundo da coluna conforme o valor (ex.: relatório
+    verde, notícia laranja, N/A cinza). 'cores' = {valor: (r,g,b)} com r,g,b em 0-1.
+    Idempotente: remove as regras que já cobrem essa coluna antes de recriar, pra não
+    acumular a cada rodada de manutenção. A cor persiste e vale pras linhas novas também."""
+    if coluna not in header or ate_linha < 2:
+        return
+    col = header.index(coluna)
+    try:
+        meta = ws.spreadsheet.fetch_sheet_metadata(
+            params={"fields": "sheets(properties(sheetId),conditionalFormats)"})
+        reqs = []
+        for s in meta.get("sheets", []):
+            if s.get("properties", {}).get("sheetId") != ws.id:
+                continue
+            cfs = s.get("conditionalFormats", [])
+            for idx in range(len(cfs) - 1, -1, -1):   # de trás pra frente: índice não desloca
+                rngs = cfs[idx].get("ranges", [])
+                if any(r.get("startColumnIndex") == col and r.get("endColumnIndex") == col + 1 for r in rngs):
+                    reqs.append({"deleteConditionalFormatRule": {"sheetId": ws.id, "index": idx}})
+        faixa = {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": max(ate_linha, ws.row_count),
+                 "startColumnIndex": col, "endColumnIndex": col + 1}
+        for valor, (r, g, b) in cores.items():
+            reqs.append({"addConditionalFormatRule": {"index": 0, "rule": {
+                "ranges": [faixa],
+                "booleanRule": {
+                    "condition": {"type": "TEXT_EQ", "values": [{"userEnteredValue": valor}]},
+                    "format": {"backgroundColor": {"red": r, "green": g, "blue": b}},
+                }}}})
+        if reqs:
+            ws.spreadsheet.batch_update({"requests": reqs})
+    except Exception as e:
+        print(f"[AVISO] não deu pra colorir a coluna '{coluna}': {e}")
+
+
 def _ultima_linha_com_registro(ws):
     col_a = ws.col_values(1)
     ultima = 1
@@ -296,10 +364,17 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     if ate_linha < 2:
         return
     col_conferido = _rel_display("conferido")
-    faixas = [(0, len(header))]
-    if col_conferido in header:
-        col_i = header.index(col_conferido)
-        faixas = [(ini, fim) for ini, fim in ((0, col_i), (col_i + 1, len(header))) if fim > ini]
+    # colunas com validação PRÓPRIA que não podem ser limpas junto (senão o checkbox do
+    # Conferido? e a lista suspensa do Tipo somem a cada rodada de manutenção).
+    protegidas = sorted({header.index(_rel_display(n)) for n in ("conferido", "tipo_fonte")
+                         if _rel_display(n) in header})
+    faixas, ini = [], 0
+    for pc in protegidas:
+        if pc > ini:
+            faixas.append((ini, pc))
+        ini = pc + 1
+    if ini < len(header):
+        faixas.append((ini, len(header)))
     if faixas:
         try:
             ws.spreadsheet.batch_update({
@@ -320,6 +395,12 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         except Exception as e:
             print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
     _ativar_checkbox(ws, col_conferido, header, ate_linha)
+    _ativar_dropdown(ws, _rel_display("tipo_fonte"), header, ate_linha, ["relatório", "notícia", "N/A"])
+    _colorir_por_valor(ws, _rel_display("tipo_fonte"), header, ate_linha, {
+        "relatório": (0.82, 0.93, 0.82),   # verde claro
+        "notícia": (1.0, 0.90, 0.80),      # laranja claro
+        "N/A": (0.90, 0.90, 0.90),         # cinza claro
+    })
 
 
 def _aba(sh, nome, manutencao=True):
@@ -1586,11 +1667,17 @@ def cmd_topline():
         registro_fila = str(r.get("registro", "")).strip()
         if not link or not _verdadeiro(r.get("conferido")) or _verdadeiro(r.get(FLAG_TOPLINE)):
             continue
-        # Topline automático só p/ RELATÓRIO de instituto COM FICHA. Notícia, ou instituto
-        # fora da ficha, tem o topline feito à mão no polling_manual (gerador-de-envios).
-        # Segmento/rejeição/aprovação NÃO têm gate (rodam em qualquer PDF, no cmd_extrair).
-        if (not _sem_acento(r.get("tipo_fonte")).strip().lower().startswith("relat")
-                or not ficha_instituto(r.get("instituto", "")).strip()):
+        # Topline automático só p/ RELATÓRIO de instituto COM FICHA. Notícia/N/A/em branco
+        # e relatório sem ficha vão pro polling_manual (gerador-de-envios). Segmento/
+        # rejeição/aprovação NÃO têm gate (rodam em qualquer PDF conferido, no cmd_extrair).
+        tipo = _sem_acento(r.get("tipo_fonte")).strip().lower()
+        if not tipo.startswith("relat"):
+            continue   # notícia / N/A / em branco: topline manual
+        if not ficha_instituto(r.get("instituto", "")).strip():
+            # RELATÓRIO de instituto SEM ficha: topline não automatiza. Sinaliza UMA vez
+            # no 'topline_erro' pra equipe filtrar e fazer no polling manual.
+            if "sem ficha" not in str(r.get("topline_erro", "")).lower():
+                updates.append(gspread.Cell(i, col_erro, "topline manual: relatório de instituto sem ficha"))
             continue
         tentativas = _int0(r.get("topline_tentativas"))
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
