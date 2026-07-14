@@ -253,6 +253,62 @@ def _ultima_linha_com_registro(ws):
     return ultima
 
 
+def _ultima_linha_com_dados(ws):
+    """Última linha com algum valor, incluindo o cabeçalho.
+
+    A grade do Google Sheets pode ter centenas de linhas vazias pré-criadas;
+    uma validação de checkbox também pode fazer ``get_all_values`` devolver linhas
+    vazias. Por isso, contamos apenas linhas com conteúdo de verdade.
+    """
+    ultima = 1
+    for linha, valores in enumerate(ws.get_all_values(), start=1):
+        # O Sheets materializa checkbox vazio como FALSE. Uma linha que só tem
+        # esse FALSE é sobra da validação, não é uma linha de dado.
+        if any(str(valor).strip() and str(valor).strip().upper() != "FALSE"
+               for valor in valores):
+            ultima = linha
+    return ultima
+
+
+def _encolher_linhas_vazias(ws):
+    """Remove somente as linhas vazias que sobram abaixo dos dados."""
+    ultima = _ultima_linha_com_dados(ws)
+    if ws.row_count <= ultima:
+        return
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "ROWS",
+                        "startIndex": ultima,
+                        "endIndex": ws.row_count,
+                    }
+                }
+            }]
+        })
+    except Exception as e:
+        print(f"[AVISO] não deu pra remover linhas vazias da aba '{ws.title}': {e}")
+
+
+def _append_rows_compacto(ws, linhas, value_input_option="RAW"):
+    """Acrescenta linhas e deixa a grade exatamente no tamanho dos dados.
+
+    Antes de gravar, expande apenas o necessário; depois remove qualquer sobra.
+    Assim as abas crescem junto com a entrada de dados, sem um bloco permanente
+    de linhas vazias.
+    """
+    if not linhas:
+        return
+    ultima = _ultima_linha_com_dados(ws)
+    necessario = ultima + len(linhas)
+    if ws.row_count < necessario:
+        ws.add_rows(necessario - ws.row_count)
+    ws.append_rows(linhas, value_input_option=value_input_option)
+    _encolher_linhas_vazias(ws)
+
+
 def _normalizar_cabecalho(ws, cabecalho, remover_sobras=False):
     """Garante a ordem canônica sem perder dados de colunas já existentes."""
     valores = ws.get_all_values()
@@ -416,7 +472,7 @@ def _aba(sh, nome, manutencao=True):
     try:
         ws = sh.worksheet(nome)
     except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title=nome, rows=1000, cols=len(header))
+        ws = sh.add_worksheet(title=nome, rows=1, cols=len(header))
     if not ws.row_values(1):
         ws.update(range_name="A1", values=[header])
     elif nome == "relatorios":
@@ -536,7 +592,7 @@ def _separar_linhas_multicargo(ws, header):
     if updates:
         ws.update_cells(updates, value_input_option="RAW")
     if novas:
-        ws.append_rows(novas, value_input_option="RAW")
+        _append_rows_compacto(ws, novas)
         print(f"{len(novas)} linha(s) multicargo separada(s) na fila de relatórios.", flush=True)
 
 
@@ -775,7 +831,8 @@ def _preencher_fila(pesquisas):
             novas.append(_rel_row(valores, header))
             existentes.add(chave)
     if novas:
-        fila.append_rows(novas, value_input_option="RAW")
+        _append_rows_compacto(fila, novas)
+        _resetar_validacoes_relatorios(fila, header, _ultima_linha_com_registro(fila))
     print(f"{len(novas)} linha(s) adicionada(s) à fila de relatórios.")
 
 
@@ -1495,11 +1552,11 @@ def cmd_extrair():
 
     def _flush(ctx=""):
         if voto_buf:
-            ws_voto.append_rows(voto_buf, value_input_option="RAW")
+            _append_rows_compacto(ws_voto, voto_buf)
         if rej_buf:
-            ws_rej.append_rows(rej_buf, value_input_option="RAW")
+            _append_rows_compacto(ws_rej, rej_buf)
         if aprov_buf:
-            ws_aprov.append_rows(aprov_buf, value_input_option="RAW")
+            _append_rows_compacto(ws_aprov, aprov_buf)
         if updates:   # marca as linhas extraídas DEPOIS de gravar os dados delas
             fila.update_cells(updates, value_input_option="RAW")
         if voto_buf or rej_buf or aprov_buf or updates:
@@ -1881,7 +1938,9 @@ def cmd_topline():
             df = df[mask]
         if df.empty:
             return
-        ws.append_rows(df.astype(str).values.tolist(), value_input_option="RAW")
+        _append_rows_compacto(ws, df.astype(str).values.tolist())
+        if aba_nome == "topline_pesquisas":
+            _ativar_checkbox(ws, "liberado", cols, _ultima_linha_com_dados(ws))
         print(f"{len(df)} linha(s) gravadas na aba '{aba_nome}'.")
 
     # Grava em lotes: se o passo estourar o tempo (timeout do Actions), o que já foi
