@@ -378,6 +378,51 @@ def _ultima_linha_com_registro(ws):
     return ultima
 
 
+def _ultima_linha_com_dados(ws):
+    """Última linha com algum valor, incluindo o cabeçalho."""
+    ultima = 1
+    for linha, valores in enumerate(ws.get_all_values(), start=1):
+        # Checkbox vazio aparece como FALSE na API, mas não representa dado.
+        if any(str(valor).strip() and str(valor).strip().upper() != "FALSE"
+               for valor in valores):
+            ultima = linha
+    return ultima
+
+
+def _encolher_linhas_vazias(ws):
+    """Apaga apenas o bloco vazio abaixo da última linha usada."""
+    ultima = _ultima_linha_com_dados(ws)
+    if ws.row_count <= ultima:
+        return
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "ROWS",
+                        "startIndex": ultima,
+                        "endIndex": ws.row_count,
+                    }
+                }
+            }]
+        })
+    except Exception as e:
+        print(f"[AVISO] não deu pra remover linhas vazias da aba '{ws.title}': {e}")
+
+
+def _append_rows_compacto(ws, linhas, value_input_option="RAW"):
+    """Expande a aba somente para as linhas novas e remove sobras ao final."""
+    if not linhas:
+        return
+    ultima = _ultima_linha_com_dados(ws)
+    necessario = ultima + len(linhas)
+    if ws.row_count < necessario:
+        ws.add_rows(necessario - ws.row_count)
+    ws.append_rows(linhas, value_input_option=value_input_option)
+    _encolher_linhas_vazias(ws)
+
+
 def _normalizar_cabecalho_relatorios(ws):
     """Garante a ordem canônica da fila sem perder dados de colunas antigas."""
     valores = ws.get_all_values()
@@ -518,7 +563,7 @@ def _separar_linhas_multicargo(ws, header):
     if updates:
         ws.update_cells(updates, value_input_option="RAW")
     if novas:
-        ws.append_rows(novas, value_input_option="RAW")
+        _append_rows_compacto(ws, novas)
         print(f"{len(novas)} linha(s) multicargo separada(s) na fila de relatórios.")
 
 
