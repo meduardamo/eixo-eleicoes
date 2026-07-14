@@ -253,6 +253,47 @@ def _colorir_por_valor(ws, coluna, header, ate_linha, cores):
         print(f"[AVISO] não deu pra colorir a coluna '{coluna}': {e}")
 
 
+def _colorir_cabecalhos_relatorios(ws, header):
+    """Dá leitura visual imediata aos três blocos operacionais da fila."""
+    grupos = [
+        # Identificação da pesquisa: cinza azulado.
+        (["registro", "cargo", "uf", "instituto", "data_divulgacao"],
+         (0.85, 0.90, 0.95)),
+        # Fonte e revisão humana: verde muito claro.
+        (["link", "origem_link", "nivel_conferencia", "tipo_fonte", "conferido"],
+         (0.88, 0.94, 0.86)),
+        # Resultado da extração demográfica: azul claro.
+        (["segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas"],
+         (0.82, 0.91, 0.97)),
+        # Resultado da extração de topline: roxo claro.
+        (["topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas"],
+         (0.89, 0.84, 0.95)),
+    ]
+    requests = []
+    for chaves, (r, g, b) in grupos:
+        indices = [header.index(_rel_display(chave)) for chave in chaves if _rel_display(chave) in header]
+        if not indices:
+            continue
+        # Os campos de cada bloco são contíguos no cabeçalho canônico.
+        requests.append({"repeatCell": {
+            "range": {
+                "sheetId": ws.id,
+                "startRowIndex": 0,
+                "endRowIndex": 1,
+                "startColumnIndex": min(indices),
+                "endColumnIndex": max(indices) + 1,
+            },
+            "cell": {"userEnteredFormat": {"backgroundColor": {"red": r, "green": g, "blue": b}}},
+            "fields": "userEnteredFormat.backgroundColor",
+        }})
+    if not requests:
+        return
+    try:
+        ws.spreadsheet.batch_update({"requests": requests})
+    except Exception as e:
+        print(f"[AVISO] não deu pra colorir cabeçalhos da aba relatorios: {e}")
+
+
 def _ultima_linha_com_registro(ws):
     col_a = ws.col_values(1)
     ultima = 1
@@ -528,6 +569,7 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         "sim": (0.82, 0.93, 0.82),
         "não": (0.96, 0.80, 0.80),  # vermelho pastel: relatório sem quebra de segmento
     })
+    _colorir_cabecalhos_relatorios(ws, header)
 
 
 def _aba(sh, nome, manutencao=True):
@@ -2055,9 +2097,21 @@ def cmd_topline():
         # Topline automático só p/ RELATÓRIO de instituto COM FICHA. Notícia/N/A/em branco
         # e relatório sem ficha vão pro polling_manual (gerador-de-envios). Segmento/
         # rejeição/aprovação NÃO têm gate (rodam em qualquer PDF conferido, no cmd_extrair).
+        # Topline automático só p/ RELATÓRIO de instituto COM FICHA. Notícia vai
+        # para o Polling Manual; N/A/em branco significa que não foi localizado
+        # relatório e não entra em nenhuma fila. Segmento/rejeição/aprovação NÃO
+        # têm gate (rodam em qualquer PDF conferido, no cmd_extrair).
         tipo = _sem_acento(r.get("tipo_fonte")).strip().lower()
         if not tipo.startswith("relat"):
             continue   # notícia / N/A / em branco: topline manual
+            if tipo.startswith("not"):
+                # Notícia conferida: há números disponíveis, mas sem a ficha de
+                # relatório necessária para extração automática confiável.
+                updates.extend([
+                    gspread.Cell(i, col_flag, _link_status_topline_manual()),
+                    gspread.Cell(i, col_erro, ""),
+                ])
+            continue
         if not ficha_instituto(r.get("instituto", "")).strip():
             # RELATÓRIO de instituto SEM ficha: topline não automatiza. Sinaliza UMA vez
             # diretamente em 'Topline extraída?', para a ação manual ficar visível.
