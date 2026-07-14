@@ -85,7 +85,7 @@ CABECALHOS = {
                           "scenario_label", "descricao", "votos_por_entrevistado",
                           "modo", "amostra", "margem_erro",
                           "confianca", "metodologia", "poll_id", "scenario_id", "fonte_url",
-                          "fonte_url_original", "conferida", "horario_raspagem",
+                          "fonte_url_original", "horario_raspagem",
                           "validacao", "origem", "publicado", "liberado"],
     "topline_resultados": ["registro_tse", "ano", "cargo", "uf", "turno", "disputa",
                            "instituto", "classificacao_instituto", "data_campo",
@@ -104,14 +104,13 @@ POLLING_PESQUISAS_COLS = [
     "scenario_id", "poll_id", "ano", "uf", "cargo", "turno", "disputa",
     "instituto", "classificacao_instituto", "registro_tse", "data_campo",
     "modo", "amostra", "margem_erro", "confianca", "scenario_label",
-    "fonte_url", "fonte_url_original", "horario_raspagem", "conferida",
-    "metodologia",
+    "fonte_url", "fonte_url_original", "horario_raspagem", "metodologia", "origem",
 ]
 POLLING_RESULTADOS_COLS = [
     "scenario_id", "poll_id", "ano", "uf", "cargo", "turno", "disputa",
     "data_campo", "instituto", "classificacao_instituto", "registro_tse",
     "scenario_label", "candidato", "partido", "candidato_partido", "tipo",
-    "percentual", "fonte_url", "horario_raspagem",
+    "percentual", "fonte_url", "horario_raspagem", "origem",
 ]
 
 
@@ -350,6 +349,60 @@ def _normalizar_cabecalho(ws, cabecalho, remover_sobras=False):
     return alvo
 
 
+def _migrar_topline_sem_conferida(ws):
+    """Transfere a marca legada para `origem` e remove `conferida` do staging.
+
+    A exclusão usa a API estrutural do Sheets, preservando as validações e a
+    formatação das demais colunas, inclusive o checkbox `liberado`.
+    """
+    valores = ws.get_all_values()
+    if not valores or "conferida" not in valores[0]:
+        return
+
+    header = valores[0]
+    if "origem" not in header:
+        _garantir_coluna(ws, header, "origem")
+        valores = ws.get_all_values()
+        header = valores[0]
+
+    i_conferida = header.index("conferida")
+    i_origem = header.index("origem")
+    atualizacoes = []
+    for linha, row in enumerate(valores[1:], start=2):
+        origem = row[i_origem].strip() if len(row) > i_origem else ""
+        legado = row[i_conferida].strip().lower() if len(row) > i_conferida else ""
+        if origem:
+            continue
+        if "manual" in legado:
+            origem = "polling_manual"
+        elif legado:
+            origem = "PDF (relatório do instituto)"
+        else:
+            # Esta aba recebe exclusivamente a extração de relatórios.
+            origem = "PDF (relatório do instituto)"
+        atualizacoes.append(gspread.Cell(linha, i_origem + 1, origem))
+
+    if atualizacoes:
+        ws.update_cells(atualizacoes, value_input_option="RAW")
+
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": i_conferida,
+                        "endIndex": i_conferida + 1,
+                    }
+                }
+            }]
+        })
+        print(f"[migracao] {ws.title}: coluna 'conferida' removida")
+    except Exception as e:
+        print(f"[AVISO] não foi possível remover 'conferida' de {ws.title}: {e}")
+
+
 def _remover_colunas_sobrando(ws, total_colunas):
     """Remove colunas antigas/duplicadas que ficaram à direita após migrar cabeçalho."""
     if ws.col_count <= total_colunas:
@@ -482,6 +535,7 @@ def _aba(sh, nome, manutencao=True):
             _resetar_validacoes_relatorios(ws, header, _ultima_linha_com_registro(ws))
     elif nome in ("topline_pesquisas", "topline_resultados"):
         _normalizar_cabecalho(ws, header)
+        _migrar_topline_sem_conferida(ws)
     return ws
 
 
@@ -2254,10 +2308,10 @@ def cmd_publicar():
         return
 
     def _preparar(df, colunas_destino):
-        # Tira controles do staging; a origem é escrita depois de salvar, só nas
-        # linhas que esta publicação inserir de fato.
+        # Tira somente controles do staging. A origem já vem da extração e segue
+        # junto para a matriz; `_marcar_origem` permanece como salvaguarda.
         df = df.drop(columns=[
-            "publicado", "liberado", "origem", "validacao", "descricao", "votos_por_entrevistado"
+            "publicado", "liberado", "validacao", "descricao", "votos_por_entrevistado"
         ], errors="ignore").copy()
         if "instituto" in df.columns:
             df["instituto"] = df["instituto"].apply(normalizar_instituto)
