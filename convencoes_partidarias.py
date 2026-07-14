@@ -30,7 +30,7 @@ from google.oauth2.service_account import Credentials
 
 
 BRT = timezone(timedelta(hours=-3))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL_CONVENCOES", "gemini-3.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL_CONVENCOES", "gemini-2.5-flash")
 ABA_PADRAO = "Convenções partidárias"
 
 CABECALHO_BASE = [
