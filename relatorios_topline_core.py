@@ -166,6 +166,143 @@ def normalizar_data_campo_segura(valor) -> str:
     return s
 
 
+MESES_PT = {
+    "janeiro": 1,
+    "fevereiro": 2,
+    "marco": 3,
+    "abril": 4,
+    "maio": 5,
+    "junho": 6,
+    "julho": 7,
+    "agosto": 8,
+    "setembro": 9,
+    "outubro": 10,
+    "novembro": 11,
+    "dezembro": 12,
+}
+
+
+def _data_iso_componentes(dia, mes, ano) -> str:
+    """Monta uma data ISO somente quando os componentes forem válidos."""
+    try:
+        return datetime(int(ano), int(mes), int(dia)).strftime("%Y-%m-%d")
+    except (TypeError, ValueError):
+        return ""
+
+
+def _data_iso_divulgacao(valor) -> str:
+    """Aceita a data de divulgação brasileira (DD/MM/AAAA) ou ISO."""
+    s = normalizar_texto_simples(valor)
+    if re.fullmatch(r"\d{2}/\d{2}/\d{4}", s):
+        try:
+            return datetime.strptime(s, "%d/%m/%Y").strftime("%Y-%m-%d")
+        except ValueError:
+            return ""
+    normalizada = normalizar_data_campo_segura(s)
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalizada):
+        return ""
+    try:
+        return datetime.strptime(normalizada, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return ""
+
+
+def _texto_data_pdf(texto) -> str:
+    texto = unicodedata.normalize("NFKD", str(texto or ""))
+    texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", texto).lower()
+
+
+def extrair_data_campo_pdf(texto_pdf: str) -> str:
+    """Extrai deterministicamente o último dia do período de campo em um PDF.
+
+    O modelo continua responsável pela leitura das tabelas. Para a data, porém,
+    a regra usa somente o trecho de metodologia/coleta do PDF: datas de capa,
+    comparativos ou divulgação não podem deslocar a série temporal.
+    """
+    texto = _texto_data_pdf(texto_pdf)
+    if not texto:
+        return ""
+
+    # Restringe a busca ao contexto de coleta. Assim "julho de 2026" no cabeçalho
+    # ou em gráficos comparativos não é confundido com data de campo.
+    contextos = re.findall(
+        r"(?:coleta\s+de\s+dados|periodo\s+de\s+campo|trabalho\s+de\s+campo|"
+        r"entrevistas?\s+(?:foram\s+)?realizadas?)[^.]{0,360}",
+        texto,
+    )
+    if not contextos:
+        return ""
+
+    meses = "|".join(MESES_PT)
+    padroes = [
+        # "27 e 30 de junho de 2026" ou "27 a 30 de junho de 2026".
+        re.compile(
+            rf"\b(?P<inicio>\d{{1,2}})\s*(?:a|ate|e|-)\s*(?P<fim>\d{{1,2}})\s+"
+            rf"de\s+(?P<mes>{meses})\s+de\s+(?P<ano>20\d{{2}})\b"
+        ),
+        # "29 de junho e 01 de julho de 2026".
+        re.compile(
+            rf"\b(?P<inicio>\d{{1,2}})\s+de\s+(?P<mes_inicio>{meses})\s*"
+            rf"(?:a|ate|e|-)\s*(?P<fim>\d{{1,2}})\s+de\s+(?P<mes>{meses})\s+"
+            rf"de\s+(?P<ano>20\d{{2}})\b"
+        ),
+        # "27/06/2026 a 30/06/2026" ou "27 a 30/06/2026".
+        re.compile(
+            r"\b(?:\d{1,2}[/-])?(?:\d{1,2}[/-])?(?:20\d{2}\s*)?"
+            r"(?:a|ate|e|-)\s*(?P<fim>\d{1,2})[/-](?P<mes_num>\d{1,2})[/-](?P<ano>20\d{2})\b"
+        ),
+    ]
+    for contexto in contextos:
+        for padrao in padroes:
+            match = padrao.search(contexto)
+            if not match:
+                continue
+            dados = match.groupdict()
+            mes = dados.get("mes_num") or MESES_PT.get(dados.get("mes", ""))
+            data = _data_iso_componentes(dados.get("fim"), mes, dados.get("ano"))
+            if data:
+                return data
+    return ""
+
+
+def resolver_data_campo_deterministica(
+    data_modelo, texto_pdf: str, data_divulgacao="", data_referencia=None,
+) -> tuple[str, str]:
+    """Resolve a data de campo e impede a gravação de datas futuras.
+
+    Prioridade: período explicitamente declarado no PDF, data válida devolvida
+    pelo modelo e, por último, data de divulgação. A data final nunca pode ser
+    posterior à data de referência nem à divulgação do próprio relatório.
+    """
+    data_pdf = extrair_data_campo_pdf(texto_pdf)
+    data_modelo_iso = _data_iso_divulgacao(data_modelo)
+    data_divulgacao_iso = _data_iso_divulgacao(data_divulgacao)
+
+    if data_referencia is None:
+        data_referencia_iso = datetime.now().strftime("%Y-%m-%d")
+    elif hasattr(data_referencia, "strftime"):
+        data_referencia_iso = data_referencia.strftime("%Y-%m-%d")
+    else:
+        data_referencia_iso = _data_iso_divulgacao(data_referencia)
+
+    data = data_pdf or data_modelo_iso or data_divulgacao_iso
+    if not data:
+        return "", "data_campo ausente ou inválida; cenário retido"
+    if data_referencia_iso and data > data_referencia_iso:
+        return "", f"data_campo {data} é futura; cenário retido"
+    if data_divulgacao_iso and data > data_divulgacao_iso:
+        return "", (
+            f"data_campo {data} é posterior à divulgação {data_divulgacao_iso}; "
+            "cenário retido"
+        )
+    if data_pdf and data_pdf != data_modelo_iso:
+        return data_pdf, f"data_campo corrigida pelo período do PDF: {data_pdf}"
+    if not data_modelo_iso and data_divulgacao_iso:
+        return data_divulgacao_iso, f"data_campo sem período; usada divulgação: {data_divulgacao_iso}"
+    return data, ""
+
+
 # ─────────────────────────── normalizadores ───────────────────────────
 
 def normalizar_texto_simples(valor) -> str:
