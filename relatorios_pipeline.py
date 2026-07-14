@@ -789,7 +789,6 @@ PROMPT = (
     "soma ~100% sozinha, NÃO as misture: use 'aprova_desaprova' para a pergunta binária "
     "(respostas Aprova / Desaprova / Não sabe) e 'nota_gestao' para a pergunta de nota/escala "
     "(respostas Ótimo / Bom / Regular / Ruim / Péssimo, ou Ótimo-Bom / Regular / Ruim-Péssimo). "
-    "Cada linha de aprovacao deve trazer o 'tipo_avaliacao' correto.\n"
     "Cada linha de aprovacao deve trazer o 'tipo_avaliacao' correto. Em UMA mesma pergunta, "
     "use uma base só: se Ótimo e Bom (ou Ótima e Boa) aparecem separados, NÃO inclua o subtotal "
     "Ótimo/Bom (ou Ótima/Boa); aplique a mesma regra a Ruim/Péssimo. Só use a categoria "
@@ -1070,8 +1069,6 @@ def _padronizar_cenario(cenario):
     """
     texto = str(cenario or "").strip()
     normalizado = _sem_acento(texto).lower()
-    if normalizado in {"lula x flavio", "lula x flavio bolsonaro"}:
-        return "Lula (PT) x Flávio Bolsonaro (PL)"
     # Com ou sem os partidos no PDF, os confrontos conhecidos usam exatamente o
     # mesmo rótulo. Isso evita que uma mesma disputa apareça misturada entre
     # "Lula x Michelle" e "Lula (PT) x Michelle Bolsonaro (PL)".
@@ -1333,7 +1330,6 @@ def extrair_do_pdf(pdf_bytes, extra=""):
     voto, rej, aprov = [], [], []
     for bloco in _blocos_pdf(pdf_bytes):
         texto_bloco = _texto_pdf_bytes(bloco)
-        dados = _gemini_json(bloco, extra, texto_bloco=texto_bloco)
         dados = _padronizar_dados_extraidos(_gemini_json(bloco, extra, texto_bloco=texto_bloco))
         voto += dados.get("voto_segmento", [])
         rej += dados.get("rejeicao", [])
@@ -1528,7 +1524,6 @@ def cmd_extrair():
             cargo_item = _cargo_norm(v.get("cargo") or cargo_fila)
             turno = _turno_segmento(v)
             cenario = _padronizar_cenario(v.get("cenario", ""))
-            chave = (str(registro).strip(), str(v.get("cargo") or cargo_fila).strip(),
             chave = (str(registro).strip(), cargo_item,
                      turno, cenario,
                      str(v.get("candidato", "")).strip(), str(v.get("tipo_segmento", "")).strip(),
@@ -1536,14 +1531,12 @@ def cmd_extrair():
             if chave in voto_keys:
                 continue
             voto_keys.add(chave)
-            voto_buf.append([registro, v.get("cargo") or cargo_fila, turno,
             voto_buf.append([registro, cargo_item, turno,
                              uf, inst, data_div,
                              cenario, v.get("candidato", ""),
                              v.get("tipo_segmento", ""), v.get("segmento", ""),
                              v.get("valor", "")])
         for v in rej_filtrada:
-            chave = (str(registro).strip(), str(v.get("cargo") or cargo_fila).strip(),
             cargo_item = _cargo_norm(v.get("cargo") or cargo_fila)
             chave = (str(registro).strip(), cargo_item,
                      str(v.get("candidato", "")).strip(), str(v.get("tipo_segmento", "")).strip(),
@@ -1551,7 +1544,6 @@ def cmd_extrair():
             if chave in rej_keys:
                 continue
             rej_keys.add(chave)
-            rej_buf.append([registro, v.get("cargo") or cargo_fila, uf, inst, data_div,
             rej_buf.append([registro, cargo_item, uf, inst, data_div,
                             v.get("candidato", ""), v.get("tipo_segmento", ""),
                             v.get("segmento", ""), v.get("valor", "")])
@@ -1563,7 +1555,6 @@ def cmd_extrair():
             if chave in aprov_keys:
                 continue
             aprov_keys.add(chave)
-            aprov_buf.append([registro, cargo_fila, uf, inst, data_div,
             aprov_buf.append([registro, _cargo_norm(cargo_fila), uf, inst, data_div,
                               v.get("alvo", ""), tipo_aval, v.get("resposta", ""),
                               v.get("tipo_segmento", ""), v.get("segmento", ""),
