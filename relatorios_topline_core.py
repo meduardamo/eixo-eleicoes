@@ -27,7 +27,6 @@ TIPOS_RESULTADO = ["candidato", "nao_valido"]
 
 # Marca a procedência: estes dados vêm dos PDFs dos relatórios, NÃO do PollingData.
 ORIGEM = "PDF (relatório do instituto)"
-CONFERIDA_PDF = "pdf_relatorio_instituto"
 
 # Alguns registros do PesqEle usam nomes legais ou grafias históricas. Os
 # aliases são aplicados antes de consultar a lista canônica e as fichas, para
@@ -904,7 +903,7 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
             "scenario_label": scenario_label, "descricao": descricao,
             "votos_por_entrevistado": cenario.get("votos_por_entrevistado", 1),
             "fonte_url": fonte_url_final, "fonte_url_original": fonte_url_original_final,
-            "horario_raspagem": horario_raspagem, "conferida": CONFERIDA_PDF,
+            "horario_raspagem": horario_raspagem,
             "metodologia": metodologia,
         })
 
@@ -917,7 +916,6 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
                 "scenario_label": scenario_label, "candidato": candidato, "partido": partido,
                 "candidato_partido": candidato_partido, "tipo": tipo, "percentual": percentual,
                 "fonte_url": fonte_url_final, "horario_raspagem": horario_raspagem,
-                "conferida": CONFERIDA_PDF,
             })
 
         invalido, tem_invalido = 0.0, False
