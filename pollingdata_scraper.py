@@ -46,6 +46,11 @@ PRESIDENTE_T2_URLS_DEFAULT = [
 WAIT_CSS = "div#dados-das-pesquisas"
 FORCAR_LOCALE_PLANILHA = True
 LOCALE_PLANILHA = "en_US"
+# Campo canônico de procedência. `origem` substitui a antiga coluna técnica
+# `conferida` nas matrizes PollingData.
+ORIGEM_POLLINGDATA = "PollingData (raspagem)"
+ORIGEM_POLLING_MANUAL = "polling_manual"
+ORIGEM_PDF_RELATORIO = "PDF (relatório do instituto)"
 
 CLASSIFICACAO_INSTITUTOS = {
     "Datafolha": "A+",
@@ -781,7 +786,7 @@ def scrape_novo_layout(driver, url, horario_raspagem, meta):
                 "fonte_url": url,
                 "fonte_url_original": link_fonte,
                 "horario_raspagem": horario_raspagem,
-                "conferida": "",
+                "origem": ORIGEM_POLLINGDATA,
                 "metodologia": metodologia,
             })
 
@@ -1002,7 +1007,7 @@ def scrape_antigo_layout(driver, url, horario_raspagem, meta):
             "fonte_url": url,
             "fonte_url_original": link_fonte_original,
             "horario_raspagem": horario_raspagem,
-            "conferida": "",
+            "origem": ORIGEM_POLLINGDATA,
             "metodologia": metodologia,
         })
 
@@ -1112,6 +1117,7 @@ def reordenar_metodologia_para_ultima_coluna(df: pd.DataFrame) -> pd.DataFrame:
         "percentual_media_cenarios",
         "origem_percentual_media",
         "metodologia",
+        "origem",
     ]
     cols = [c for c in df.columns if c not in cols_final]
     cols += [c for c in cols_final if c in df.columns]
@@ -1958,15 +1964,43 @@ def _registro_tse_valido(valor) -> bool:
     return s not in ("", "sem registro", "sem_registro", "semregistro", "nan", "none")
 
 
-def _eh_linha_manual(conferida_valor) -> bool:
-    return _norm_ws(conferida_valor).lower() == "manual_streamlit"
+def _tipo_origem(origem_valor) -> str:
+    """Classifica as procedências usadas nas matrizes, tolerando rótulos antigos."""
+    origem = _norm_key_text(origem_valor)
+    if "manual" in origem or "streamlit" in origem:
+        return "manual"
+    if "pdf" in origem and "relatorio" in origem:
+        return "pdf"
+    if "pollingdata" in origem:
+        return "pollingdata"
+    return ""
 
 
-def _eh_linha_oficial_pollingdata(conferida_valor) -> bool:
-    """Só o coletor do PollingData (sem marca de procedência) substitui uma
-    entrada manual equivalente. PDFs de relatório são uma terceira origem e não
-    devem acionar essa reconciliação."""
-    return _norm_ws(conferida_valor) == ""
+def _eh_linha_manual(origem_valor) -> bool:
+    return _tipo_origem(origem_valor) == "manual"
+
+
+def _eh_linha_oficial_pollingdata(origem_valor) -> bool:
+    """Somente o coletor do PollingData substitui entrada manual equivalente.
+
+    PDFs de relatório têm procedência própria e nunca acionam essa reconciliação.
+    """
+    return _tipo_origem(origem_valor) == "pollingdata"
+
+
+def _origem_migrada(origem_valor, conferida_legada="") -> str:
+    """Preserva a origem já existente ou traduz a marca legada `conferida`."""
+    origem = _norm_ws(origem_valor)
+    if origem:
+        return origem
+
+    legado = _norm_ws(conferida_legada).lower()
+    if legado == "manual_streamlit" or "manual" in legado:
+        return ORIGEM_POLLING_MANUAL
+    if "pdf" in legado or "relatorio" in _norm_key_text(legado):
+        return ORIGEM_PDF_RELATORIO
+    # Linhas antigas sem marca eram produzidas pelo scraper PollingData.
+    return ORIGEM_POLLINGDATA
 
 
 def _parse_data_yyyy_mm_dd(valor):
@@ -2051,13 +2085,13 @@ def reconciliar_manuais_com_oficiais(
     p_novo = df_p_novo.copy()
 
     for df in [p_exist, p_novo]:
-        for col in ["poll_id", "uf", "cargo", "turno", "instituto", "registro_tse", "data_campo", "conferida"]:
+        for col in ["poll_id", "uf", "cargo", "turno", "instituto", "registro_tse", "data_campo", "origem"]:
             if col not in df.columns:
                 df[col] = ""
 
-    p_exist["_is_manual"] = p_exist["conferida"].apply(_eh_linha_manual)
-    p_novo["_is_manual"] = p_novo["conferida"].apply(_eh_linha_manual)
-    p_novo["_is_official"] = p_novo["conferida"].apply(_eh_linha_oficial_pollingdata)
+    p_exist["_is_manual"] = p_exist["origem"].apply(_eh_linha_manual)
+    p_novo["_is_manual"] = p_novo["origem"].apply(_eh_linha_manual)
+    p_novo["_is_official"] = p_novo["origem"].apply(_eh_linha_oficial_pollingdata)
 
     p_manual = (
         p_exist[p_exist["_is_manual"]]
@@ -2239,6 +2273,65 @@ def append_log_resultados_manual(gc, spreadsheet_id: str, df_log: pd.DataFrame, 
     return len(df_export)
 
 
+def migrar_origem_e_remover_conferida(aba_pesquisas, aba_resultados):
+    """Migra o histórico para `origem` e remove a coluna técnica legada.
+
+    A conversão é idempotente e acontece antes de qualquer reconciliação: assim,
+    uma linha manual continua reconhecível depois que `conferida` deixa de existir.
+    """
+    df_p = carregar_df_da_aba(aba_pesquisas)
+    df_r = carregar_df_da_aba(aba_resultados)
+
+    if df_p.empty and df_r.empty:
+        return
+
+    mudou_p = False
+    if not df_p.empty:
+        origem_atual = df_p["origem"] if "origem" in df_p.columns else pd.Series("", index=df_p.index)
+        conferida_legada = df_p["conferida"] if "conferida" in df_p.columns else pd.Series("", index=df_p.index)
+        origem_nova = [
+            _origem_migrada(origem, conferida)
+            for origem, conferida in zip(origem_atual, conferida_legada)
+        ]
+        if "origem" not in df_p.columns or origem_nova != origem_atual.astype(str).tolist():
+            df_p["origem"] = origem_nova
+            mudou_p = True
+        if "conferida" in df_p.columns:
+            df_p = df_p.drop(columns=["conferida"])
+            mudou_p = True
+
+    # Resultados herdam a origem do cenário. Para registros antigos sem cenário
+    # correspondente, a única origem histórica possível era o PollingData.
+    mudou_r = False
+    if not df_r.empty:
+        origem_por_cenario = {}
+        if not df_p.empty and "scenario_id" in df_p.columns and "origem" in df_p.columns:
+            origem_por_cenario = {
+                _norm_ws(scenario_id): _norm_ws(origem)
+                for scenario_id, origem in zip(df_p["scenario_id"], df_p["origem"])
+                if _norm_ws(scenario_id) and _norm_ws(origem)
+            }
+        origem_atual = df_r["origem"] if "origem" in df_r.columns else pd.Series("", index=df_r.index)
+        scenario_ids = df_r["scenario_id"] if "scenario_id" in df_r.columns else pd.Series("", index=df_r.index)
+        origem_nova = [
+            _norm_ws(origem) or origem_por_cenario.get(_norm_ws(scenario_id), ORIGEM_POLLINGDATA)
+            for origem, scenario_id in zip(origem_atual, scenario_ids)
+        ]
+        if "origem" not in df_r.columns or origem_nova != origem_atual.astype(str).tolist():
+            df_r["origem"] = origem_nova
+            mudou_r = True
+        if "conferida" in df_r.columns:
+            df_r = df_r.drop(columns=["conferida"])
+            mudou_r = True
+
+    if mudou_p:
+        sobrescrever_aba(aba_pesquisas, df_p)
+        print("[migracao] aba 'pesquisas': origem preenchida e coluna 'conferida' removida")
+    if mudou_r:
+        sobrescrever_aba(aba_resultados, df_r)
+        print("[migracao] aba 'resultados': origem preenchida e coluna 'conferida' removida")
+
+
 def normalizar_institutos_retroativo(aba_pesquisas, aba_resultados):
     """Aplica ALIASES_INSTITUTO em entradas já gravadas. Idempotente: se a
     planilha já está normalizada, não toca em nada.
@@ -2308,10 +2401,7 @@ def reconstruir_resultados_bi(gc, sheet_id: str):
 
 
 def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame):
-    if (df_p is None or df_p.empty) and (df_r is None or df_r.empty):
-        print("[-] nada para salvar")
-        return
-
+    sem_novidades = (df_p is None or df_p.empty) and (df_r is None or df_r.empty)
     sh = gc.open_by_key(spreadsheet_id)
     if FORCAR_LOCALE_PLANILHA:
         try:
@@ -2323,17 +2413,23 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
     aba_resultados = garantir_aba(sh, "resultados", rows=20000, cols=35)
     aba_resultados_bi = garantir_aba(sh, "resultados_bi", rows=20000, cols=40)
 
+    migrar_origem_e_remover_conferida(aba_pesquisas, aba_resultados)
+
     # Passada de normalização retroativa: aplica ALIASES_INSTITUTO em entradas
     # já gravadas. Idempotente; só reescreve se algo de fato mudou.
     normalizar_institutos_retroativo(aba_pesquisas, aba_resultados)
+
+    if sem_novidades:
+        print("[-] nada novo para salvar; migração de schema concluída")
+        return
 
     # Reconciliação automática: apenas uma entrada oficial do PollingData remove
     # a duplicata manual equivalente. Um PDF de relatório tem procedência própria.
     if df_p is not None and not df_p.empty:
         df_p_chk = df_p.copy()
-        if "conferida" not in df_p_chk.columns:
-            df_p_chk["conferida"] = ""
-        tem_linha_oficial_entrante = df_p_chk["conferida"].apply(_eh_linha_oficial_pollingdata).any()
+        if "origem" not in df_p_chk.columns:
+            df_p_chk["origem"] = ORIGEM_POLLINGDATA
+        tem_linha_oficial_entrante = df_p_chk["origem"].apply(_eh_linha_oficial_pollingdata).any()
 
         if tem_linha_oficial_entrante:
             df_p_existente = carregar_df_da_aba(aba_pesquisas)
@@ -2527,7 +2623,7 @@ def main():
     if tem_t1 and spreadsheet_id:
         salvar_tudo(gc, spreadsheet_id, df_p_t1, df_r_t1)
 
-    if incluir_presidente_t2 and (not df_p_t2.empty or not df_r_t2.empty):
+    if incluir_presidente_t2:
         print("[+] Salvando 2º turno na planilha separada...")
         spreadsheet_id_t2 = obter_spreadsheet_id_t2()
         salvar_tudo(gc, spreadsheet_id_t2, df_p_t2, df_r_t2)
