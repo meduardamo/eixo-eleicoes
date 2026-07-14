@@ -263,6 +263,12 @@ METODOLOGIA_INSTITUTOS = {
 # é o nome alternativo, o valor é o nome canônico que deve aparecer na planilha
 # e ser usado para classificação/metodologia.
 ALIASES_INSTITUTO = {
+    # AtlasIntel é o instituto; eventuais veículos/parceiros não entram no
+    # nome canônico publicado.
+    "AtlasIntel/Bloomberg": "AtlasIntel",
+    "AtlasIntel/Meio Norte": "AtlasIntel",
+    "Atlas Intel/Bloomberg": "AtlasIntel",
+    "Atlas Intel/Meio Norte": "AtlasIntel",
     # Quaest em parcerias
     "Genial/Quaest": "Quaest",
     "Quaest/Genial": "Quaest",
@@ -274,6 +280,14 @@ ALIASES_INSTITUTO = {
     "Data Max": "Datamax",
     "DataMax": "Datamax",
     "data max": "Datamax",
+    # Nome legal usado em alguns registros do PesqEle; corresponde à marca Ideia.
+    "Mídia Inteligência em Pesquisa": "Ideia Inteligência",
+    "Midia Inteligencia em Pesquisa": "Ideia Inteligência",
+    "MDA Pesquisas": "MDA",
+    # Grafias históricas já presentes nas matrizes.
+    "IPESPE": "Ipespe",
+    "Ipems": "IPEMS",
+    "Instituto Opinião PI": "Instituto Opinião (PI)",
 }
 
 
@@ -281,6 +295,10 @@ def normalizar_instituto(nome) -> str:
     """Resolve um nome de instituto via tabela de aliases. Se não houver alias,
     retorna o nome original (com espaços normalizados)."""
     nome_norm = _norm_ws(nome)
+    # Mantém AtlasIntel como nome único, mesmo quando o material menciona o
+    # veículo parceiro depois de uma barra.
+    if re.fullmatch(r"atlas\s*intel(?:\s*/\s*.+)?", nome_norm, flags=re.IGNORECASE):
+        return "AtlasIntel"
     return ALIASES_INSTITUTO.get(nome_norm, nome_norm)
 
 
@@ -1881,7 +1899,9 @@ def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
         return len(df), 0
 
     colunas_novas = [c for c in df.columns if c not in header]
-    cols_final = ["percentual_media_cenarios", "origem_percentual_media", "metodologia"]
+    # Campos técnicos ao final; `origem` fica por último para que toda coluna
+    # nova de procedência seja adicionada sem deslocar os campos operacionais.
+    cols_final = ["percentual_media_cenarios", "origem_percentual_media", "metodologia", "origem"]
     header_base = [c for c in header if c not in cols_final]
     novas_base = [c for c in colunas_novas if c not in cols_final]
     header_final = header_base + novas_base
@@ -1929,6 +1949,13 @@ def _registro_tse_valido(valor) -> bool:
 
 def _eh_linha_manual(conferida_valor) -> bool:
     return _norm_ws(conferida_valor).lower() == "manual_streamlit"
+
+
+def _eh_linha_oficial_pollingdata(conferida_valor) -> bool:
+    """Só o coletor do PollingData (sem marca de procedência) substitui uma
+    entrada manual equivalente. PDFs de relatório são uma terceira origem e não
+    devem acionar essa reconciliação."""
+    return _norm_ws(conferida_valor) == ""
 
 
 def _parse_data_yyyy_mm_dd(valor):
@@ -2019,6 +2046,7 @@ def reconciliar_manuais_com_oficiais(
 
     p_exist["_is_manual"] = p_exist["conferida"].apply(_eh_linha_manual)
     p_novo["_is_manual"] = p_novo["conferida"].apply(_eh_linha_manual)
+    p_novo["_is_official"] = p_novo["conferida"].apply(_eh_linha_oficial_pollingdata)
 
     p_manual = (
         p_exist[p_exist["_is_manual"]]
@@ -2027,7 +2055,7 @@ def reconciliar_manuais_com_oficiais(
         .copy()
     )
     p_oficial = (
-        p_novo[~p_novo["_is_manual"]]
+        p_novo[p_novo["_is_official"]]
         .sort_values(by=["poll_id", "scenario_id"] if "scenario_id" in p_novo.columns else ["poll_id"])
         .drop_duplicates(subset=["poll_id"], keep="first")
         .copy()
@@ -2213,6 +2241,12 @@ def normalizar_institutos_retroativo(aba_pesquisas, aba_resultados):
         df = df.copy()
         original = df["instituto"].astype(str)
         novo = original.apply(normalizar_instituto)
+        # Exceção histórica solicitada: esta pesquisa já publicada conserva o
+        # nome que recebeu originalmente, mesmo quando a rotina retroativa é
+        # executada numa atualização futura.
+        if "registro_tse" in df.columns:
+            preservar = df["registro_tse"].astype(str).str.strip().eq("RN-06422/2026")
+            novo.loc[preservar] = original.loc[preservar]
         mudou = (original != novo)
         if not mudou.any():
             return df, 0
@@ -2282,12 +2316,13 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
     # já gravadas. Idempotente; só reescreve se algo de fato mudou.
     normalizar_institutos_retroativo(aba_pesquisas, aba_resultados)
 
-    # Reconciliação automática: quando entra dado oficial, remove duplicata manual equivalente.
+    # Reconciliação automática: apenas uma entrada oficial do PollingData remove
+    # a duplicata manual equivalente. Um PDF de relatório tem procedência própria.
     if df_p is not None and not df_p.empty:
         df_p_chk = df_p.copy()
         if "conferida" not in df_p_chk.columns:
             df_p_chk["conferida"] = ""
-        tem_linha_oficial_entrante = (~df_p_chk["conferida"].apply(_eh_linha_manual)).any()
+        tem_linha_oficial_entrante = df_p_chk["conferida"].apply(_eh_linha_oficial_pollingdata).any()
 
         if tem_linha_oficial_entrante:
             df_p_existente = carregar_df_da_aba(aba_pesquisas)
