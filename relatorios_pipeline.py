@@ -2024,7 +2024,8 @@ def cmd_topline():
             turnos_cargo = ("t1",) if cargo == "senador" else ("t1", "t2")
             for turno in turnos_cargo:
                 try:
-                    escopo = {"cargo": cargo, "turno": turno, "instituto": r.get("instituto", "")}
+                    escopo = {"cargo": cargo, "turno": turno, "instituto": r.get("instituto", ""),
+                              "registro_tse": registro_fila}
                     if cargo != "presidente":   # governador/senador são estaduais: restrição obrigatória
                         escopo["uf"] = r.get("uf", "")
                     else:   # presidente pode ser nacional ou lido dentro do estado da fila: só referência
