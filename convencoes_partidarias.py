@@ -33,6 +33,37 @@ BRT = timezone(timedelta(hours=-3))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL_CONVENCOES", "gemini-2.5-flash")
 ABA_PADRAO = "Convenções partidárias"
 
+# Uso acumulado de tokens do Gemini nesta execução (processo novo a cada rodada).
+USO_TOKENS = {"chamadas": 0, "entrada": 0, "saida": 0, "pensamento": 0}
+
+
+def _registrar_uso(resp):
+    meta = getattr(resp, "usage_metadata", None)
+    if not meta:
+        return
+    USO_TOKENS["chamadas"] += 1
+    USO_TOKENS["entrada"] += getattr(meta, "prompt_token_count", 0) or 0
+    USO_TOKENS["saida"] += getattr(meta, "candidates_token_count", 0) or 0
+    USO_TOKENS["pensamento"] += getattr(meta, "thoughts_token_count", 0) or 0
+
+
+def _custo_estimado(entrada, saida, pensamento):
+    # Faixa "flash" (~$0,30/1M tokens de entrada, ~$2,50/1M de saída; pensamento cobra
+    # na mesma tabela de saída). ATENÇÃO: este script usa Google Search grounding, que o
+    # Google cobra POR REQUISIÇÃO, à parte dos tokens. Logo, este valor é um PISO; a
+    # fatura real com busca ativada é maior. Confira o billing do Google pro valor exato.
+    return (entrada / 1_000_000 * 0.30) + ((saida + pensamento) / 1_000_000 * 2.50)
+
+
+def _resumo_uso_tokens():
+    if not USO_TOKENS["chamadas"]:
+        return
+    custo = _custo_estimado(USO_TOKENS["entrada"], USO_TOKENS["saida"], USO_TOKENS["pensamento"])
+    print(f"\nGemini (convenções): {USO_TOKENS['chamadas']} chamada(s) · "
+          f"{USO_TOKENS['entrada']:,} tokens entrada · {USO_TOKENS['saida']:,} saída · "
+          f"{USO_TOKENS['pensamento']:,} pensamento · custo estimado ${custo:.4f} "
+          f"(sem a tarifa de busca do Google)")
+
 CABECALHO_BASE = [
     "Estado",
     "Pré-candidato",
@@ -293,6 +324,7 @@ def buscar_convencao(client, row):
         contents=_prompt_busca(row),
         config=config,
     )
+    _registrar_uso(resp)
     return _extrair_json_objeto(getattr(resp, "text", "") or "")
 
 
@@ -415,6 +447,8 @@ def atualizar(max_linhas=80, force=False, dry_run=False):
     print(f"* erros técnicos: {erros}")
     if dry_run:
         print("* dry-run: nada foi gravado.")
+
+    _resumo_uso_tokens()
 
 
 def main():
