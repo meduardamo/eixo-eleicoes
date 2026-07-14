@@ -54,6 +54,8 @@ CLASSIFICACAO_INSTITUTOS = {
     "Gazeta Dados": "A+",
     "Jornal Stylo": "A+",
     "MDA": "A+",
+    # Já existe nas matrizes; ainda sem nota metodológica atribuída.
+    "Nexus": "Ainda não foi avaliado",
     "MAS Opinião": "A",
     "Badra Comunicação": "A",
     "Ibope": "A",
@@ -284,6 +286,8 @@ ALIASES_INSTITUTO = {
     "Mídia Inteligência em Pesquisa": "Ideia Inteligência",
     "Midia Inteligencia em Pesquisa": "Ideia Inteligência",
     "MDA Pesquisas": "MDA",
+    "Nexus/BTG Pactual": "Nexus",
+    "Nexus / BTG Pactual": "Nexus",
     # Grafias históricas já presentes nas matrizes.
     "IPESPE": "Ipespe",
     "Ipems": "IPEMS",
@@ -299,6 +303,8 @@ def normalizar_instituto(nome) -> str:
     # veículo parceiro depois de uma barra.
     if re.fullmatch(r"atlas\s*intel(?:\s*/\s*.+)?", nome_norm, flags=re.IGNORECASE):
         return "AtlasIntel"
+    if re.fullmatch(r"nexus(?:\s*/\s*btg(?:\s+pactual)?)?", nome_norm, flags=re.IGNORECASE):
+        return "Nexus"
     return ALIASES_INSTITUTO.get(nome_norm, nome_norm)
 
 
