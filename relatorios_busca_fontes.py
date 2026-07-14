@@ -583,6 +583,101 @@ def _extrair_json_objeto(texto):
     raise ValueError("JSON não encontrado na resposta do Gemini")
 
 
+def _campo_api(objeto, *nomes):
+    """Lê atributos do SDK ou chaves do JSON bruto.
+
+    A resposta do google-genai é um objeto Pydantic, mas testes e versões antigas
+    do SDK podem entregar dicionários com os nomes em snake_case ou camelCase.
+    """
+    for nome in nomes:
+        if isinstance(objeto, dict) and objeto.get(nome) is not None:
+            return objeto[nome]
+        valor = getattr(objeto, nome, None)
+        if valor is not None:
+            return valor
+    return None
+
+
+def _eh_redirect_grounding(url):
+    """True para a URL temporária de citação do Vertex/Google Search.
+
+    Ela não é a fonte: pode expirar e abrir 404, como acontece ao colá-la na
+    planilha. Portanto nunca pode ser escrita em ``Link do relatório``.
+    """
+    parsed = urlparse(str(url or ""))
+    host = parsed.netloc.lower()
+    path = parsed.path.lower()
+    return (host == "vertexaisearch.cloud.google.com" or
+            host.endswith(".vertexaisearch.cloud.google.com") or
+            "grounding-api-redirect" in path)
+
+
+def _eh_url_publica(url):
+    parsed = urlparse(str(url or ""))
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc) and not _eh_redirect_grounding(url)
+
+
+def _resolver_redirect_grounding(url):
+    """Tenta aproveitar um redirect ainda válido, sem aceitar a URL Vertex final."""
+    try:
+        resposta = requests.get(url, headers=STEALTH_HEADERS, timeout=15, allow_redirects=True)
+    except requests.RequestException:
+        return ""
+    destino = str(resposta.url or "").strip()
+    if _eh_url_publica(destino):
+        return destino
+    local = str(resposta.headers.get("Location") or "").strip()
+    destino = urljoin(url, local) if local else ""
+    return destino if _eh_url_publica(destino) else ""
+
+
+def _links_publicos_do_grounding(resposta):
+    """Extrai URLs da fonte nos metadados da resposta de Google Search.
+
+    O texto do modelo pode conter só a URL de citação ``grounding-api-redirect``.
+    Os grounding chunks carregam a referência da página pesquisada; aproveitamos
+    apenas os links HTTP públicos e descartamos quaisquer wrappers do Vertex.
+    """
+    links, vistos = [], set()
+    candidatos = _campo_api(resposta, "candidates") or []
+    for candidato in candidatos:
+        metadata = _campo_api(candidato, "grounding_metadata", "groundingMetadata")
+        for chunk in (_campo_api(metadata, "grounding_chunks", "groundingChunks") or []):
+            web = _campo_api(chunk, "web")
+            url = str(_campo_api(web, "uri") or "").strip()
+            if not _eh_url_publica(url) or url in vistos:
+                continue
+            vistos.add(url)
+            links.append(url)
+    return links
+
+
+def _sanear_link_grounding(resultado, resposta):
+    """Troca redirect temporário pela URL canônica ou recusa o link quebrado."""
+    resultado = dict(resultado or {})
+    link = str(resultado.get("link") or "").strip()
+    if not _eh_redirect_grounding(link):
+        return resultado
+
+    # Às vezes o token ainda está válido e o GET chega ao endereço final.
+    original = _resolver_redirect_grounding(link)
+    if not original:
+        # Caso usual: obtém a fonte pública diretamente dos metadados do grounding.
+        candidatos = _links_publicos_do_grounding(resposta)
+        if candidatos:
+            original = candidatos[0]
+    if original:
+        resultado["link"] = original
+        resultado["origem_texto"] = str(resultado.get("origem_texto") or "Capturado na Web")
+        print("  [INFO] Link temporário do Vertex substituído pela URL pública da fonte.")
+        return resultado
+
+    # É preferível procurar de novo na próxima rodada a gravar um 404 que parece fonte.
+    print("  [AVISO] Google Search retornou apenas redirect temporário do Vertex; link descartado.")
+    return {"link": "", "tipo": "nao_encontrado",
+            "origem_texto": "Google Search sem URL pública utilizável"}
+
+
 def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, data):
     prompt = f"""
     Você é um pesquisador sênior de dados eleitorais da Eixo. Localize a publicação do relatório completo de resultados da seguinte pesquisa eleitoral de 2026:
@@ -596,6 +691,7 @@ def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, d
     4. ALUCINAÇÃO DE DATA: Só aceite matérias ou relatórios que citem dados de 2026. Ignore notícias velhas de 2022 ou 2024.
     5. CARGO CERTO: A fonte precisa trazer números do cargo pedido ({cargo}). Se o mesmo registro tiver matérias separadas para Governador e Senador, retorne a matéria do cargo pedido. Não aceite uma matéria apenas de Governador para uma linha de Senador, nem o contrário.
     6. IGNORE TEASERS: Descarte matérias que dizem "vai ser divulgada", "será marcada pela divulgação", "está prevista para", "ainda vai sair" ou "foi registrada". Mesmo que citem o registro {registro}, elas não valem se não trouxerem os números da pesquisa. Só aceite fonte com resultado JÁ publicado.
+    7. URL CANÔNICA: Retorne a URL pública original da matéria/PDF no site da fonte. NUNCA retorne URLs de citação ou redirecionamento como vertexaisearch.cloud.google.com/grounding-api-redirect; elas são temporárias e dão 404 fora da sessão. Se não conseguir identificar a URL original, deixe "link" vazio.
 
     Retorne APENAS um JSON válido (sem tags markdown de bloco de código):
     {{
@@ -623,7 +719,8 @@ def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, d
     for tentativa in range(1, 4):
         try:
             res = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt, config=config)
-            return _extrair_json_objeto(getattr(res, "text", "") or "")
+            resultado = _extrair_json_objeto(getattr(res, "text", "") or "")
+            return _sanear_link_grounding(resultado, res)
         except Exception as e:
             ultimo = e
             if tentativa < 3:
@@ -1809,6 +1906,19 @@ def atualizar_planilha():
             continue
         if _cargo_norm(linha.get("cargo", "")) not in CARGOS_MONITORADOS:
             continue
+        if _eh_redirect_grounding(link_atual):
+            # Corrige legado: o workflow antigo gravou a citação temporária do
+            # Vertex como se fosse a fonte. Limpa o 404 e refaz a busca da URL
+            # canônica na mesma rodada; daí em diante _sanear_link_grounding
+            # impede que esse tipo de endereço volte à planilha.
+            print(f"  [INFO] Descartando redirect temporário do Vertex: {registro}")
+            celulas_para_atualizar.append(gspread.Cell(i, col_link, ""))
+            celulas_para_atualizar.append(gspread.Cell(
+                i, col_status,
+                _origem_com_carimbo("redirect temporário do Vertex descartado; buscando fonte original",
+                                    linha.get("data_divulgacao", "")),
+            ))
+            link_atual = ""
         if link_atual and _eh_link_drive(link_atual):
             # Já é link do Drive: só normaliza o nome (não precisa baixar/converter,
             # o arquivo já está lá). Só na primeira vez que a linha aparece com link
