@@ -559,7 +559,16 @@ def agente_buscar_link_faltante(gemini_client, registro, instituto, cargo, uf, d
       "origem_texto": "Descrição breve (ex: 'Relatório no site do instituto' ou 'Matéria G1')"
     }}
     """
-    config = types.GenerateContentConfig(temperature=0.1, tools=[types.Tool(google_search=types.GoogleSearch())])
+    config = types.GenerateContentConfig(
+        temperature=0.1,
+        tools=[types.Tool(google_search=types.GoogleSearch())],
+        # Sem timeout essa é a única chamada de rede do arquivo que pode travar
+        # indefinidamente (grounding com Google Search é mais pesado/sujeito a blip).
+        # Runs reais já ficaram 3h+ parados numa linha até o timeout de 200min do
+        # job matar o processo, porque sem timeout aqui a exceção nunca dispara
+        # e o retry abaixo nunca roda.
+        http_options=types.HttpOptions(timeout=120_000),
+    )
     ultimo = None
     # "Server disconnected without sending a response" é falha de conexão transitória
     # (não erro da API), comum em chamada com grounding (mais pesada/demorada). Sem
