@@ -20,7 +20,7 @@ from google import genai
 from google.genai import types
 
 BRT = timezone(timedelta(hours=-3))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 # Só busca fonte de pesquisa divulgada nos últimos N dias. Mais velha que isso não
 # vale mais buscar/divulgar. Ajustável por env (MAX_DIAS_BUSCA).
 MAX_DIAS_BUSCA = int(os.getenv("MAX_DIAS_BUSCA", "5"))
