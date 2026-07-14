@@ -719,7 +719,7 @@ def cmd_alerta():
 # ────────────────────────────── EXTRAÇÃO ──────────────────────────────
 
 RELATORIOS_ID = os.getenv("SPREADSHEET_ID_RELATORIOS", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 PROMPT = (
     "Você é um analista de dados de pesquisas eleitorais da Eixo. Você recebe o PDF do "
