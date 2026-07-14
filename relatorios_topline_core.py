@@ -301,10 +301,15 @@ def gerar_conteudo_gemini(contents, tentativas: int = 3, backoff: float = 1.5):
                 cfg = types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0,
-                    thinking_config=types.ThinkingConfig(thinking_budget=4000))
+                    thinking_config=types.ThinkingConfig(thinking_budget=4000),
+                    # sem timeout a chamada pode travar indefinidamente numa falha de
+                    # rede silenciosa, sem lançar exceção pro retry abaixo tratar
+                    http_options=types.HttpOptions(timeout=120_000))
                 resp = client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
             except Exception:
-                resp = client.models.generate_content(model=GEMINI_MODEL, contents=contents)
+                resp = client.models.generate_content(
+                    model=GEMINI_MODEL, contents=contents,
+                    config=types.GenerateContentConfig(http_options=types.HttpOptions(timeout=120_000)))
             if getattr(resp, "text", None):
                 _registrar_uso(resp)
                 return resp
