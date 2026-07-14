@@ -10,6 +10,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 255
     timeout-minutes: 215
 
     env:
@@ -18,6 +19,8 @@ jobs:
       GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       SPREADSHEET_ID_RELATORIOS: ${{ secrets.SPREADSHEET_ID_RELATORIOS }}
+      SPREADSHEET_ID_POLLINGDATA: ${{ secrets.SPREADSHEET_ID_POLLINGDATA }}
+      SPREADSHEET_ID_POLLINGDATA_T2: ${{ secrets.SPREADSHEET_ID_POLLINGDATA_T2 }}
 
     steps:
       - name: Checkout
@@ -38,8 +41,10 @@ jobs:
           date
           python --version
           echo "Workflow: polling-pdf-extrair-topline"
+          echo "Comandos: relatorios_pipeline.py extrair; relatorios_pipeline.py topline; relatorios_pipeline.py publicar"
+          echo "Publicação PollingData: ATIVADA, exclusivamente para linhas com liberado=TRUE"
           echo "Comandos: relatorios_pipeline.py extrair; relatorios_pipeline.py topline"
-          echo "Publicação PollingData: DESATIVADA"
+          echo "Publicação PollingData: workflow 11 separado, sem Gemini"
 
       - name: Extrair segmentos, rejeição e aprovação
         id: extrair
@@ -65,11 +70,25 @@ jobs:
           echo "::endgroup::"
           exit "$status"
 
+      - name: Publicar toplines liberadas em T1 e T2
+        id: publicar
+        continue-on-error: true
+        timeout-minutes: 45
+        run: |
+          set +e
+          echo "::group::python relatorios_pipeline.py publicar"
+          python -u relatorios_pipeline.py publicar
+          status=$?
+          echo "::endgroup::"
+          exit "$status"
+
       - name: Resultado final
         if: ${{ always() }}
         run: |
           echo "extrair: ${{ steps.extrair.outcome }}"
           echo "topline: ${{ steps.topline.outcome }}"
+          echo "publicar: ${{ steps.publicar.outcome }}"
+          if [ "${{ steps.extrair.outcome }}" != "success" ] || [ "${{ steps.topline.outcome }}" != "success" ] || [ "${{ steps.publicar.outcome }}" != "success" ]; then
           if [ "${{ steps.extrair.outcome }}" != "success" ] || [ "${{ steps.topline.outcome }}" != "success" ]; then
             exit 1
           fi
