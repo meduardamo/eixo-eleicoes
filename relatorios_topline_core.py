@@ -3,8 +3,8 @@ Extração headless do topline (voto estimulado por candidato) de PDFs de pesqui
 
 Reaproveita a lógica da página Streamlit `5_Polling_Manual.py` (gerador-de-envios),
 sem depender de Streamlit. Produz DataFrames no formato do `scraper_polling`
-(pesquisas + resultados), tagueados como manual (conferida='manual_streamlit'),
-prontos pra reconciliar com o dado oficial do PollingData quando a assinatura sair.
+(pesquisas + resultados), distinguindo relatórios de instituto de lançamentos
+feitos no Polling Manual.
 """
 
 import hashlib
@@ -27,6 +27,23 @@ TIPOS_RESULTADO = ["candidato", "nao_valido"]
 
 # Marca a procedência: estes dados vêm dos PDFs dos relatórios, NÃO do PollingData.
 ORIGEM = "PDF (relatório do instituto)"
+CONFERIDA_PDF = "pdf_relatorio_instituto"
+
+# Alguns registros do PesqEle usam nomes legais ou grafias históricas. Os
+# aliases são aplicados antes de consultar a lista canônica e as fichas, para
+# que extração e publicação usem a mesma forma das matrizes.
+ALIASES_INSTITUTO_CANONICO = {
+    "atlasintel": "AtlasIntel",
+    "atlas intel": "AtlasIntel",
+    "atlasintel bloomberg": "AtlasIntel",
+    "atlas intel bloomberg": "AtlasIntel",
+    "atlasintel meio norte": "AtlasIntel",
+    "atlas intel meio norte": "AtlasIntel",
+    "midia inteligencia em pesquisa": "Ideia Inteligência",
+    "ipespe": "Ipespe",
+    "ipems": "IPEMS",
+    "instituto opiniao pi": "Instituto Opinião (PI)",
+}
 
 
 def _slug(s: str) -> str:
@@ -392,6 +409,9 @@ def instituto_canonico(nome):
     nome = normalizar_texto_simples(nome)
     if not nome:
         return ""
+    alias = ALIASES_INSTITUTO_CANONICO.get(_norm_ascii(nome))
+    if alias:
+        return alias
     alvo = set(_tokens_inst(nome))
     melhor, tam = None, 0
     for canon in _canonico().get("institutos", []):
@@ -421,7 +441,7 @@ def ficha_instituto(nome):
     """Se o instituto casa com uma ficha conhecida, devolve o bloco de texto pro prompt
     (estrutura específica daquele instituto). Senão, ''. Casa por palavras: todas as
     palavras de 'match' precisam aparecer no nome normalizado (minúsculo, sem acento)."""
-    alvo = _norm_ascii(nome)
+    alvo = _norm_ascii(instituto_canonico(nome))
     if not alvo:
         return ""
     for f in _fichas_institutos():
@@ -724,7 +744,7 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
             "scenario_label": scenario_label, "descricao": descricao,
             "votos_por_entrevistado": cenario.get("votos_por_entrevistado", 1),
             "fonte_url": fonte_url_final, "fonte_url_original": fonte_url_original_final,
-            "horario_raspagem": horario_raspagem, "conferida": "manual_streamlit",
+            "horario_raspagem": horario_raspagem, "conferida": CONFERIDA_PDF,
             "metodologia": metodologia,
         })
 
@@ -737,6 +757,7 @@ def montar_dataframes_polling(payload: dict, fonte_url: str, fonte_url_original:
                 "scenario_label": scenario_label, "candidato": candidato, "partido": partido,
                 "candidato_partido": candidato_partido, "tipo": tipo, "percentual": percentual,
                 "fonte_url": fonte_url_final, "horario_raspagem": horario_raspagem,
+                "conferida": CONFERIDA_PDF,
             })
 
         invalido, tem_invalido = 0.0, False
