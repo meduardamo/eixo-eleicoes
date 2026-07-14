@@ -86,7 +86,7 @@ CABECALHOS = {
                           "modo", "amostra", "margem_erro",
                           "confianca", "metodologia", "poll_id", "scenario_id", "fonte_url",
                           "fonte_url_original", "conferida", "horario_raspagem",
-                          "validacao", "origem"],
+                          "validacao", "origem", "publicado", "liberado"],
     "topline_resultados": ["registro_tse", "ano", "cargo", "uf", "turno", "disputa",
                            "instituto", "classificacao_instituto", "data_campo",
                            "scenario_label", "candidato", "partido", "candidato_partido",
@@ -553,25 +553,43 @@ def _garantir_coluna(ws, header, nome):
     return novo
 
 
-def _marcar_origem(ws, label):
-    """Adiciona 'origem' como ÚLTIMA coluna (depois de metodologia) e marca as
-    linhas nossas (conferida=manual_streamlit). Não desloca coluna existente."""
-    from gspread.utils import rowcol_to_a1
+def _scenario_ids_na_aba(ws):
+    """Retorna os scenario_id já existentes sem depender de ordem ou formato da aba."""
     header = ws.row_values(1)
-    if "conferida" not in header:
-        return
-    col_o = _garantir_coluna(ws, header, "origem")
-    i_conf, i_o = header.index("conferida"), col_o - 1
+    if "scenario_id" not in header:
+        return set()
+    i_scenario = header.index("scenario_id")
     vals = ws.get_all_values()
-    if len(vals) < 2:
+    return {
+        row[i_scenario].strip()
+        for row in vals[1:]
+        if len(row) > i_scenario and row[i_scenario].strip()
+    }
+
+
+def _marcar_origem(ws, label, scenario_ids):
+    """Marca somente as linhas recém-inseridas nesta publicação.
+
+    O recorte por ``scenario_id`` impede que uma publicação de PDF reescreva a
+    origem de linhas já existentes, em especial as salvas pelo Polling Manual.
+    """
+    ids = {str(s).strip() for s in scenario_ids if str(s).strip()}
+    if not ids:
         return
-    coluna = []
-    for row in vals[1:]:
-        conf = (row[i_conf] if i_conf < len(row) else "").strip().lower()
-        atual = row[i_o] if i_o < len(row) else ""
-        coluna.append([label if conf == "manual_streamlit" else atual])
-    rng = f"{rowcol_to_a1(2, col_o)}:{rowcol_to_a1(len(vals), col_o)}"
-    ws.update(range_name=rng, values=coluna)
+    header = ws.row_values(1)
+    if "scenario_id" not in header:
+        raise ValueError("Aba de destino sem coluna scenario_id.")
+    col_o = _garantir_coluna(ws, header, "origem")
+    i_scenario, i_o = header.index("scenario_id"), col_o - 1
+    vals = ws.get_all_values()
+    updates = []
+    for linha, row in enumerate(vals[1:], start=2):
+        scenario_id = row[i_scenario].strip() if len(row) > i_scenario else ""
+        atual = row[i_o] if len(row) > i_o else ""
+        if scenario_id in ids and atual != label:
+            updates.append(gspread.Cell(linha, col_o, label))
+    if updates:
+        ws.update_cells(updates, value_input_option="RAW")
 
 
 # ─────────────────────────────── ALERTA ───────────────────────────────
@@ -2068,7 +2086,9 @@ def cmd_publicar():
     if not (T1_ID or T2_ID):
         raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
     import pandas as pd
-    from pollingdata_scraper import classificar_instituto, gs_client_from_env, salvar_tudo
+    from pollingdata_scraper import (
+        classificar_instituto, gs_client_from_env, normalizar_instituto, salvar_tudo,
+    )
     from relatorios_topline_core import ORIGEM
 
     gc = gs_client_from_env()
@@ -2086,10 +2106,9 @@ def cmd_publicar():
     col_pub = _garantir_coluna(ws_p, header_p, "publicado")
     if "publicado" not in df_p.columns:
         df_p["publicado"] = ""
-    # Gate de liberação humana: cenário com 'validacao' não vazia (soma que não fecha,
-    # bloco de PDF que falhou, percentual fora de 0-100) fica RETIDO e só publica quando
-    # alguém marca 'liberado' na aba topline_pesquisas. Evita número errado/parcial ir
-    # pro gráfico público sem revisão. Cenário limpo (validacao vazia) publica normal.
+    # Gate de liberação humana OBRIGATÓRIO: nenhum cenário extraído de PDF segue para
+    # as matrizes sem 'liberado=sim' na aba topline_pesquisas, inclusive os cenários
+    # sem aviso em 'validacao'. Isso deixa a revisão humana como etapa explícita.
     _garantir_coluna(ws_p, header_p, "liberado")
     if "liberado" not in df_p.columns:
         df_p["liberado"] = ""
@@ -2102,12 +2121,13 @@ def cmd_publicar():
         return
 
     def _preparar(df, colunas_destino):
-        # tira colunas de controle do staging: o salvar_tudo forçaria metodologia por
-        # último e jogaria colunas novas antes dela (origem entra depois, => _marcar_origem).
+        # Tira controles do staging; a origem é escrita depois de salvar, só nas
+        # linhas que esta publicação inserir de fato.
         df = df.drop(columns=[
             "publicado", "liberado", "origem", "validacao", "descricao", "votos_por_entrevistado"
         ], errors="ignore").copy()
         if "instituto" in df.columns:
+            df["instituto"] = df["instituto"].apply(normalizar_instituto)
             df["classificacao_instituto"] = df["instituto"].apply(classificar_instituto)
         if "percentual" in df.columns:
             df["percentual"] = pd.to_numeric(df["percentual"], errors="coerce")
@@ -2117,43 +2137,41 @@ def cmd_publicar():
         return df.reindex(columns=colunas_destino)
 
     publicados = []
+    novos_por_destino = {}
     for turno, sheet_id in (("t1", T1_ID), ("t2", T2_ID)):
         if not sheet_id:
             continue
         pt_all = pendentes[pendentes["turno"].astype(str).str.lower() == turno]
         if pt_all.empty:
             continue
-        if "validacao" in pt_all.columns:
-            com_aviso = pt_all["validacao"].astype(str).str.strip().ne("")
-            if "liberado" in pt_all.columns:
-                liberado = pt_all["liberado"].astype(str).str.strip().str.lower().isin(["sim", "true", "1", "x"])
-            else:
-                liberado = pd.Series(False, index=pt_all.index)
-            segurar = com_aviso & ~liberado
-            if segurar.any():
-                print(f"{turno}: {int(segurar.sum())} cenário(s) RETIDOS por validação pendente "
-                      "(marque 'liberado' na topline_pesquisas pra publicar)")
-            pt = pt_all[~segurar]
-        else:
-            pt = pt_all
+        liberado = pt_all["liberado"].astype(str).str.strip().str.lower().isin(["sim", "true", "1", "x"])
+        retidos = ~liberado
+        if retidos.any():
+            print(f"{turno}: {int(retidos.sum())} cenário(s) RETIDOS aguardando "
+                  "'liberado=sim' na topline_pesquisas")
+        pt = pt_all[liberado]
         if pt.empty:
             continue
 
         ids = set(pt["scenario_id"].astype(str))
         rt = df_r[df_r["scenario_id"].astype(str).isin(ids)]
+        sh_destino = gc.open_by_key(sheet_id)
+        ids_ja_existentes = _scenario_ids_na_aba(sh_destino.worksheet("pesquisas"))
+        ids_novos = ids - ids_ja_existentes
         salvar_tudo(gc, sheet_id, _preparar(pt, POLLING_PESQUISAS_COLS),
                     _preparar(rt, POLLING_RESULTADOS_COLS))
+        if ids_novos:
+            novos_por_destino.setdefault(sheet_id, set()).update(ids_novos)
         publicados += list(pt.index)
         print(f"{turno}: {len(pt)} cenário(s), {len(rt)} resultado(s) -> planilha de {turno}")
 
-    # origem como última coluna (após metodologia) e marca nossas linhas, sempre
-    for sheet_id in (T1_ID, T2_ID):
-        if not sheet_id:
-            continue
+    # Origem como última coluna (após metodologia), restrita às linhas inseridas
+    # nesta execução; nunca reclassifica registros manuais já existentes.
+    for sheet_id, scenario_ids in novos_por_destino.items():
         sh_t = gc.open_by_key(sheet_id)
         for tab in ("pesquisas", "resultados"):
             try:
-                _marcar_origem(sh_t.worksheet(tab), ORIGEM)
+                _marcar_origem(sh_t.worksheet(tab), ORIGEM, scenario_ids)
             except Exception as e:
                 print(f"  aviso: origem em {tab} ({sheet_id[:6]}...): {e}")
 
