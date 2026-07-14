@@ -615,6 +615,17 @@ def extrair_dados_polling_gemini(texto_fonte: str, url_original: str = "",
                  "cargos ou turnos que apareçam no material.\nSe não houver bloco que case, "
                  "retorne cenarios=[].\n\n")
 
+    # O mesmo relatório pode trazer, por exemplo, o registro estadual no TRE e o
+    # nacional no TSE. A linha da fila já separa cargo/registro; deixar isso explícito
+    # evita que o modelo trate os dois códigos como pesquisas duplicadas ou misture
+    # cenários destinados a linhas diferentes.
+    registro_fila = normalizar_texto_simples(escopo.get("registro_tse"))
+    if registro_fila:
+        bloco += (f"REGISTRO DE DESTINO DA FILA: {registro_fila}. Um mesmo PDF pode listar "
+                  "mais de um registro (por exemplo, TRE estadual e TSE nacional). Isso NÃO "
+                  "significa que você deve criar cópias nem trocar este registro pelo outro: "
+                  "extraia apenas o cargo/turno do FOCO e mantenha o registro de destino.\n\n")
+
     # uf_referencia: só contexto, NÃO é restrição (diferente de "uf" acima), e NÃO é
     # confiável sozinha. Institutos costumam registrar uma amostra estadual sob um
     # protocolo com prefixo BR-, e a fila herda essa classificação (por prefixo do
@@ -654,7 +665,8 @@ Extraia os dados estruturados para inserção em planilha.
   use o ÚLTIMO dia do período (2026-06-24), não o primeiro nem a data de divulgação. Só use
   a data de divulgação se não houver período de campo declarado. Essa é a mesma convenção
   usada no resto do sistema (extrair_ultima_data); usar outra data quebra a posição do ponto
-  na série temporal da média móvel.
+  na série temporal da média móvel. Exemplo: '01 a 05/07/2026' gera 2026-07-05, mesmo que o
+  PDF tenha sido divulgado ou extraído no dia 06.
 - cargo deve ser governador, senador ou presidente.
 - turno deve ser t1 ou t2.
 - uf deve estar em caixa alta. Para presidente nacional use BR. Para presidente medido só
@@ -671,8 +683,16 @@ Extraia os dados estruturados para inserção em planilha.
   "Porcentual" para candidatos E inválidos. Não misture "Porcentagem válida" dos
   candidatos com "Porcentual" dos inválidos. Só use "Porcentagem válida" se não houver
   nenhum item "Não válido" no cenário.
-- t1 = cenários de primeiro turno (vários candidatos testados); t2 = simulações de segundo
-  turno (confrontos diretos, tipicamente entre 2 candidatos).
+- CLASSIFICAÇÃO DE TURNO É LITERAL, NÃO POR QUANTIDADE DE NOMES. Use t2 SOMENTE quando a
+  própria pergunta, título ou cabeçalho da tabela/gráfico disser explicitamente 'segundo turno',
+  '2º turno', '2° turno' ou equivalente inequívoco. Um confronto de só dois nomes NÃO é prova
+  de segundo turno. Se ele estiver sob 'primeiro turno', 'estimulada', 'cenário N' ou sem menção
+  explícita a segundo turno, ele é t1. Nunca duplique nem promova um cenário t1 de dois nomes
+  como t2.
+- O FOCO DE TURNO acima é obrigatório: no foco t1, inclua os cenários estimulados de primeiro
+  turno, inclusive confrontos de dois nomes que não tenham menção explícita a segundo turno; no
+  foco t2, retorne cenarios=[] se o documento não trouxer uma simulação explicitamente chamada
+  de segundo turno para aquele cargo. Não use inferência eleitoral para completar confrontos.
 - Para t2, cada confronto direto deve ser um cenário separado e deve preencher 'disputa'
   no formato t2_candidato1-candidato2, em minúsculas, sem acento, usando nomes curtos,
   SEMPRE em ordem alfabética dos dois nomes (não pela ordem que aparecem no relatório)
