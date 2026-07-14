@@ -40,6 +40,9 @@ ALIASES_INSTITUTO_CANONICO = {
     "atlasintel meio norte": "AtlasIntel",
     "atlas intel meio norte": "AtlasIntel",
     "midia inteligencia em pesquisa": "Ideia Inteligência",
+    # 100 Cidades é o projeto/razão exibida no PesqEle; a pesquisa é da Futura.
+    "100 cidades": "Futura",
+    "100 cidades participacoes ltda 100 cidades": "Futura",
     "ipespe": "Ipespe",
     "ipems": "IPEMS",
     "instituto opiniao pi": "Instituto Opinião (PI)",
