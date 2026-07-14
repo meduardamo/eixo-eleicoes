@@ -567,6 +567,66 @@ def _scenario_ids_na_aba(ws):
     }
 
 
+def _texto_chave_publicacao(valor):
+    """Chave estável para comparar staging e legado sem mudar seus valores."""
+    return re.sub(r"\s+", " ", str(valor or "").strip()).casefold()
+
+
+def _chave_legado_publicacao(linha):
+    """Chave semântica de cenário usada apenas como rede de segurança do legado.
+
+    ``scenario_id`` e ``poll_id`` são as travas primárias. O histórico contém
+    alguns ids produzidos por versões antigas; por isso, para t1 com mesmo
+    Registro TSE + cargo + turno + cenário também tratamos como já publicado.
+    Em t2 a disputa é obrigatória nessa chave, para nunca confundir confrontos
+    hipotéticos diferentes do mesmo relatório.
+    """
+    registro = _texto_chave_publicacao(linha.get("registro_tse", ""))
+    cargo = _texto_chave_publicacao(linha.get("cargo", ""))
+    turno = _texto_chave_publicacao(linha.get("turno", ""))
+    cenario = _texto_chave_publicacao(linha.get("scenario_label", ""))
+    disputa = _texto_chave_publicacao(linha.get("disputa", ""))
+    if not all((registro, cargo, turno, cenario)):
+        return None
+    if turno == "t2":
+        return (registro, cargo, turno, cenario, disputa) if disputa else None
+    return (registro, cargo, turno, cenario, "")
+
+
+def _indice_publicacao_destino(ws):
+    """Indexa as chaves já existentes de uma aba ``pesquisas`` de destino."""
+    header = ws.row_values(1)
+    valores = ws.get_all_values()
+    registros = []
+    for row in valores[1:]:
+        registros.append({c: row[i] if i < len(row) else "" for i, c in enumerate(header)})
+    return {
+        "scenario_id": {
+            _texto_chave_publicacao(r.get("scenario_id")) for r in registros
+            if _texto_chave_publicacao(r.get("scenario_id"))
+        },
+        "poll_id": {
+            _texto_chave_publicacao(r.get("poll_id")) for r in registros
+            if _texto_chave_publicacao(r.get("poll_id"))
+        },
+        "legado": {k for r in registros if (k := _chave_legado_publicacao(r))},
+    }
+
+
+def _motivo_colisao_publicacao(linha, indice_destino):
+    """Retorna a trava que bloqueia um cenário já existente, ou vazio."""
+    scenario_id = _texto_chave_publicacao(linha.get("scenario_id", ""))
+    if scenario_id and scenario_id in indice_destino["scenario_id"]:
+        return "scenario_id já existe no destino"
+    poll_id = _texto_chave_publicacao(linha.get("poll_id", ""))
+    if poll_id and poll_id in indice_destino["poll_id"]:
+        return "poll_id já existe no destino"
+    chave_legado = _chave_legado_publicacao(linha)
+    if chave_legado and chave_legado in indice_destino["legado"]:
+        return "cenário legado equivalente já existe no destino"
+    return ""
+
+
 def _marcar_origem(ws, label, scenario_ids):
     """Marca somente as linhas recém-inseridas nesta publicação.
 
@@ -1774,6 +1834,7 @@ def cmd_topline():
     from relatorios_topline_core import (
         USO_TOKENS as USO_TOKENS_TOPLINE, extrair_dados_polling_gemini,
         extrair_texto_pdf_bytes, montar_dataframes_polling, ficha_instituto,
+        resolver_data_campo_deterministica,
     )
 
     sh = _sheets().open_by_key(RELATORIOS_ID)
@@ -1925,10 +1986,21 @@ def cmd_topline():
                             _norm_reg(registro_fila) not in _norm_reg(reg_pdf)):
                         _aviso(f"registro no PDF ({reg_pdf}) difere da fila")
                     payload["registro_tse"] = registro_fila or reg_pdf
-                    # sem data de campo no PDF: usa a data de divulgação da fila
-                    # (convertida de dd/mm/aaaa pra ISO, senão viraria mês/dia trocado)
-                    if not str(payload.get("data_campo", "")).strip():
-                        payload["data_campo"] = _data_iso(r.get("data_divulgacao", ""))
+                    # A data do Gemini nunca é gravada sem validação. Quando o PDF
+                    # declara o período de campo, o último dia desse período prevalece;
+                    # sem período, a divulgação vira fallback. Datas futuras ou
+                    # posteriores à divulgação retêm o cenário em vez de deslocar a série.
+                    data_campo, aviso_data = resolver_data_campo_deterministica(
+                        payload.get("data_campo", ""),
+                        texto,
+                        r.get("data_divulgacao", ""),
+                        data_referencia=datetime.now(BRT).date(),
+                    )
+                    if not data_campo:
+                        raise ValueError(aviso_data or "data_campo inválida")
+                    payload["data_campo"] = data_campo
+                    if aviso_data:
+                        _aviso(f"{cargo}/{turno}: {aviso_data}")
                     df_p, df_r = montar_dataframes_polling(
                         payload, fonte_url=link, instituto_fonte=r.get("instituto", ""))
                 except Exception as e:
@@ -2104,6 +2176,7 @@ def cmd_publicar():
 
     header_p = ws_p.row_values(1)
     col_pub = _garantir_coluna(ws_p, header_p, "publicado")
+    col_validacao = _garantir_coluna(ws_p, header_p, "validacao")
     if "publicado" not in df_p.columns:
         df_p["publicado"] = ""
     # Gate de liberação humana OBRIGATÓRIO: nenhum cenário extraído de PDF segue para
@@ -2137,6 +2210,7 @@ def cmd_publicar():
         return df.reindex(columns=colunas_destino)
 
     publicados = []
+    retidos_por_colisao = []
     novos_por_destino = {}
     for turno, sheet_id in (("t1", T1_ID), ("t2", T2_ID)):
         if not sheet_id:
@@ -2153,11 +2227,24 @@ def cmd_publicar():
         if pt.empty:
             continue
 
+        sh_destino = gc.open_by_key(sheet_id)
+        indice_destino = _indice_publicacao_destino(sh_destino.worksheet("pesquisas"))
+        motivos = pt.apply(lambda linha: _motivo_colisao_publicacao(linha, indice_destino), axis=1)
+        tem_colisao = motivos.ne("")
+        if tem_colisao.any():
+            for indice, motivo in motivos[tem_colisao].items():
+                retidos_por_colisao.append((indice, motivo))
+            print(f"{turno}: {int(tem_colisao.sum())} cenário(s) RETIDO(s): já existe(m) "
+                  "no destino (scenario_id, poll_id ou chave legado).")
+            pt = pt[~tem_colisao].copy()
+        if pt.empty:
+            continue
+
         ids = set(pt["scenario_id"].astype(str))
         rt = df_r[df_r["scenario_id"].astype(str).isin(ids)]
-        sh_destino = gc.open_by_key(sheet_id)
-        ids_ja_existentes = _scenario_ids_na_aba(sh_destino.worksheet("pesquisas"))
-        ids_novos = ids - ids_ja_existentes
+        # Após a trava acima, todos estes ids são novos no destino; manter os
+        # valores originais aqui é importante para _marcar_origem encontrá-los.
+        ids_novos = ids
         salvar_tudo(gc, sheet_id, _preparar(pt, POLLING_PESQUISAS_COLS),
                     _preparar(rt, POLLING_RESULTADOS_COLS))
         if ids_novos:
@@ -2178,7 +2265,17 @@ def cmd_publicar():
     if publicados:   # índice 0-based do df = linha (i+2) na planilha
         ws_p.update_cells([gspread.Cell(i + 2, col_pub, "sim") for i in publicados],
                           value_input_option="RAW")
-    print(f"\n{len(publicados)} cenário(s) publicado(s).")
+    if retidos_por_colisao:
+        updates_validacao = []
+        for indice, motivo in retidos_por_colisao:
+            anterior = str(df_p.at[indice, "validacao"]).strip() if "validacao" in df_p.columns else ""
+            nota = f"não publicado: {motivo}"
+            if nota not in anterior:
+                nota = f"{anterior}; {nota}".strip("; ")
+            updates_validacao.append(gspread.Cell(indice + 2, col_validacao, nota[:300]))
+        ws_p.update_cells(updates_validacao, value_input_option="RAW")
+    print(f"\n{len(publicados)} cenário(s) publicado(s); "
+          f"{len(retidos_por_colisao)} retido(s) por colisão.")
 
 
 def cmd_rebuild_bi():
