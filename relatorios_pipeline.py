@@ -72,6 +72,16 @@ for chave, rotulo in RELATORIOS_COLUNAS:
     for alias in ALIASES_RELATORIOS.get(rotulo, []):
         REL_KEY[alias] = chave
 
+# Não é uma extração concluída: é uma sinalização operacional visível de que o
+# relatório exige lançamento pelo Polling Manual por não haver ficha cadastrada.
+STATUS_TOPLINE_MANUAL = "⚠️ REGISTRE NO POLLING MANUAL"
+POLLING_MANUAL_URL = "https://eixoestrategiapolitica.streamlit.app/Polling_Manual"
+
+
+def _link_status_topline_manual() -> str:
+    """Fórmula pt-BR: o status visível também leva direto ao lançamento manual."""
+    return f'=HYPERLINK("{POLLING_MANUAL_URL}";"{STATUS_TOPLINE_MANUAL}")'
+
 CABECALHOS = {
     "relatorios": CABECALHO_RELATORIOS,
     "voto_segmento": ["registro", "cargo", "turno", "uf", "instituto", "data_divulgacao",
@@ -509,6 +519,14 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         "relatório": (0.82, 0.93, 0.82),   # verde claro
         "notícia": (1.0, 0.90, 0.80),      # laranja claro
         "N/A": (0.90, 0.90, 0.90),         # cinza claro
+    })
+    _colorir_por_valor(ws, _rel_display("topline_extraido"), header, ate_linha, {
+        "sim": (0.82, 0.93, 0.82),
+        STATUS_TOPLINE_MANUAL: (1.0, 0.82, 0.68),  # laranja: ação manual necessária
+    })
+    _colorir_por_valor(ws, _rel_display("segmentos_extraido"), header, ate_linha, {
+        "sim": (0.82, 0.93, 0.82),
+        "não": (0.96, 0.80, 0.80),  # vermelho pastel: relatório sem quebra de segmento
     })
 
 
@@ -1547,6 +1565,10 @@ def cmd_extrair():
 
     ci_ext = _garantir_coluna_relatorios(fila, header, "segmentos_extraido")
     ci_data = _garantir_coluna_relatorios(fila, header, "segmentos_data_extracao")
+    _colorir_por_valor(fila, _rel_display("segmentos_extraido"), header, _ultima_linha_com_registro(fila), {
+        "sim": (0.82, 0.93, 0.82),
+        "não": (0.96, 0.80, 0.80),
+    })
 
     linhas = _rel_records(fila)
     ok_regs, err_regs = [], []
@@ -1696,8 +1718,8 @@ def cmd_extrair():
             tem_quebra = termos_batidos >= 2
             if not tem_quebra:
                 updates.extend([gspread.Cell(i, col_err, "sem quebra por segmento (só resultado geral; topline cobre)"),
-                                gspread.Cell(i, ci_ext, "sim"), gspread.Cell(i, ci_data, agora)])
-                print(f"linha {i} ({registro} / {cargo_fila}): sem quebra por segmento, marcado como feito", flush=True)
+                                gspread.Cell(i, ci_ext, "não"), gspread.Cell(i, ci_data, agora)])
+                print(f"linha {i} ({registro} / {cargo_fila}): sem quebra por segmento, marcado como não", flush=True)
             else:
                 msg = f"nenhum dado encontrado para o cargo da linha ({cargo_fila})"
                 updates.extend([gspread.Cell(i, col_err, msg), gspread.Cell(i, col_ten, tentativas + 1)])
@@ -1956,6 +1978,10 @@ def cmd_topline():
     col_data = _garantir_coluna_relatorios(fila, header, "topline_data_extracao")
     col_erro = _garantir_coluna_relatorios(fila, header, "topline_erro")
     col_tent = _garantir_coluna_relatorios(fila, header, "topline_tentativas")
+    _colorir_por_valor(fila, _rel_display("topline_extraido"), header, _ultima_linha_com_registro(fila), {
+        "sim": (0.82, 0.93, 0.82),
+        STATUS_TOPLINE_MANUAL: (1.0, 0.82, 0.68),
+    })
 
     linhas = _rel_records(fila)
     todos_p, todos_r = [], []
@@ -2004,7 +2030,9 @@ def cmd_topline():
         _gravar(todos_p, "topline_pesquisas", ["scenario_id"])
         _gravar(todos_r, "topline_resultados", ["scenario_id", "candidato_partido", "tipo"])
         if updates:
-            fila.update_cells(updates, value_input_option="RAW")
+            # O aviso de lançamento manual é uma fórmula HYPERLINK; USER_ENTERED
+            # preserva o link sem mudar os demais textos e datas do lote.
+            fila.update_cells(updates, value_input_option="USER_ENTERED")
         todos_p.clear(); todos_r.clear(); updates.clear()
         _contador["n"] = 0
 
@@ -2020,7 +2048,9 @@ def cmd_topline():
             _flush_topline("parcial")
         link = str(r.get("link", "")).strip()
         registro_fila = str(r.get("registro", "")).strip()
-        if not link or not _verdadeiro(r.get("conferido")) or _verdadeiro(r.get(FLAG_TOPLINE)):
+        if (not link or not _verdadeiro(r.get("conferido"))
+                or _verdadeiro(r.get(FLAG_TOPLINE))
+                or str(r.get(FLAG_TOPLINE, "")).strip() == STATUS_TOPLINE_MANUAL):
             continue
         # Topline automático só p/ RELATÓRIO de instituto COM FICHA. Notícia/N/A/em branco
         # e relatório sem ficha vão pro polling_manual (gerador-de-envios). Segmento/
@@ -2030,9 +2060,11 @@ def cmd_topline():
             continue   # notícia / N/A / em branco: topline manual
         if not ficha_instituto(r.get("instituto", "")).strip():
             # RELATÓRIO de instituto SEM ficha: topline não automatiza. Sinaliza UMA vez
-            # no 'topline_erro' pra equipe filtrar e fazer no polling manual.
-            if "sem ficha" not in str(r.get("topline_erro", "")).lower():
-                updates.append(gspread.Cell(i, col_erro, "relatório de instituto sem ficha; registre manualmente"))
+            # diretamente em 'Topline extraída?', para a ação manual ficar visível.
+            updates.extend([
+                gspread.Cell(i, col_flag, _link_status_topline_manual()),
+                gspread.Cell(i, col_erro, ""),
+            ])
             continue
         tentativas = _int0(r.get("topline_tentativas"))
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
