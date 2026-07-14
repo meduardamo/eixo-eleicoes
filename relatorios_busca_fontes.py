@@ -1841,12 +1841,33 @@ def _dias_desde_divulgacao(data_divulgacao):
 def _origem_com_carimbo(origem, data_divulgacao=""):
     origem = str(origem or "").strip() or "Capturado na Web"
     agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
+    # Fora da janela de busca, o motivo e a data de divulgação já aparecem em
+    # colunas próprias. Aqui basta registrar quando a fila foi avaliada.
+    origem_normalizada = unicodedata.normalize("NFKD", origem).encode("ascii", "ignore").decode().lower()
+    if "divulgada ha mais de" in origem_normalizada and "dias" in origem_normalizada:
+        return f"puxado em {agora}"
     partes = [origem, f"puxado em {agora}"]
     data_prevista = _data_iso_origem(data_divulgacao)
     hoje = datetime.now(BRT).strftime("%Y-%m-%d")
-    if data_prevista and data_prevista != hoje:
+    # "verificar fonte" é só uma pendência de busca; a data já aparece na
+    # coluna de divulgação e não precisa se repetir nesse campo.
+    if data_prevista and data_prevista != hoje and "verificar fonte" not in origem_normalizada:
         partes.append(f"divulgação prevista {data_prevista}")
     return " | ".join(partes)
+
+
+def _eh_aviso_fora_da_janela(valor):
+    texto = unicodedata.normalize("NFKD", str(valor or "")).encode("ascii", "ignore").decode().lower()
+    return "divulgada ha mais de" in texto and "dias" in texto
+
+
+def _somente_carimbo_puxada(origem):
+    """Conserva o horário original de busca, sem repetir o aviso nem a data."""
+    origem = str(origem or "")
+    encontrado = re.search(r"puxado em\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})", origem, flags=re.I)
+    if encontrado:
+        return f"puxado em {encontrado.group(1)}"
+    return f"puxado em {datetime.now(BRT).strftime('%Y-%m-%d %H:%M')}"
 
 
 def atualizar_planilha():
@@ -1919,6 +1940,15 @@ def atualizar_planilha():
                                     linha.get("data_divulgacao", "")),
             ))
             link_atual = ""
+        if _eh_aviso_fora_da_janela(link_atual):
+            # O aviso e a data de divulgação ficam no próprio campo de link e
+            # na coluna ao lado. Em origem, deixar apenas quando a fila foi
+            # puxada, sem regravar o horário a cada rodada.
+            origem_atual = str(linha.get(COL_ORIGEM_LINK, "")).strip()
+            origem_limpa = _somente_carimbo_puxada(origem_atual)
+            if origem_atual != origem_limpa:
+                celulas_para_atualizar.append(gspread.Cell(i, col_status, origem_limpa))
+            continue
         if link_atual and _eh_link_drive(link_atual):
             # Já é link do Drive: só normaliza o nome (não precisa baixar/converter,
             # o arquivo já está lá). Só na primeira vez que a linha aparece com link
