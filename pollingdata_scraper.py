@@ -56,6 +56,7 @@ CLASSIFICACAO_INSTITUTOS = {
     "MDA": "A+",
     # Já existe nas matrizes; ainda sem nota metodológica atribuída.
     "Nexus": "Ainda não foi avaliado",
+    "GERP": "Ainda não foi avaliado",
     "MAS Opinião": "A",
     "Badra Comunicação": "A",
     "Ibope": "A",
@@ -247,7 +248,7 @@ METODOLOGIA_INSTITUTOS = {
     "Access": "Pesquisa baseada em análise de dados secundários e revisão bibliográfica.",
     "Brasmarket": "Pesquisa quantitativa, com foco em opinião pública e intenção de voto.",
     "FSB Pesquisa": "Pesquisa quantitativa, com entrevistas telefônicas e aplicação de questionário estruturado para aferição de intenção de voto.",
-    "Gerp": "Pesquisa quantitativa, com aplicação de questionário em formato espontâneo (sem apresentação de lista de candidatos).",
+    "GERP": "Pesquisa quantitativa, com aplicação de questionário em formato espontâneo (sem apresentação de lista de candidatos).",
     "Ideia Big Data": "Pesquisa mista, com abordagens qualitativa, quantitativa e análise combinada quali-quanti.",
     "Ipec (antigo Ibope)": "Pesquisa quantitativa, com entrevistas presenciais face a face e aplicação de questionário estruturado, por amostragem com base em dados do IBGE para representatividade geográfica e socioeconômica. Amostra típica: 2.000 entrevistas em levantamentos nacionais.",
     "Sensus": "Pesquisa quantitativa, com entrevistas presenciais face a face.",
@@ -278,6 +279,8 @@ ALIASES_INSTITUTO = {
     # GERP — METODOLOGIA_INSTITUTOS já usa caixa alta
     "Gerp": "GERP",
     "gerp": "GERP",
+    "Grupo GERP": "GERP",
+    "Grupo Gerp": "GERP",
     # Datamax — maioria dos registros sem espaço
     "Data Max": "Datamax",
     "DataMax": "Datamax",
@@ -305,6 +308,8 @@ def normalizar_instituto(nome) -> str:
         return "AtlasIntel"
     if re.fullmatch(r"nexus(?:\s*/\s*btg(?:\s+pactual)?)?", nome_norm, flags=re.IGNORECASE):
         return "Nexus"
+    if re.fullmatch(r"(?:grupo\s+)?gerp", nome_norm, flags=re.IGNORECASE):
+        return "GERP"
     return ALIASES_INSTITUTO.get(nome_norm, nome_norm)
 
 
