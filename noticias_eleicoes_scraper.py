@@ -171,6 +171,8 @@ def classificar_com_gemini(titulo, trecho=""):
         '  "uf": "Sigla do estado (ex: SP, RJ, MG) ou null se cargo federal ou não identificado",\n'
         '  "partido": "Sigla do partido ou federação (ex: PT, PL, MDB, FE BRASIL) ou null se não mencionado",\n'
         '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | cobertura geral | não relacionado | indefinido",\n'
+        '  "convencao": true ou false — true SOMENTE se a notícia trata diretamente de uma convenção partidária '
+        "(data, realização, resultado ou decisão tomada em convenção). Independente do status da candidatura.\n"
         '  "confianca": "alto | médio | baixo"\n'
         "}\n\n"
         "Regras de preenchimento:\n"
@@ -187,6 +189,9 @@ def classificar_com_gemini(titulo, trecho=""):
         "- status='indefinido': é sobre candidatura, mas a manchete é ambígua ou falta informação\n"
         "- Notícia de política internacional só NÃO é 'não relacionado' se citar explicitamente um político, "
         "partido ou estado brasileiro (nesse caso, classifique normalmente pelos outros campos)\n"
+        "- convencao é independente de status: uma notícia pode ser status='confirmado' e convencao=true "
+        "(candidatura saiu de uma convenção) ou status='cobertura geral' e convencao=true (cobertura do evento "
+        "em si, sem falar do status de ninguém)\n"
         "- confianca='alto': candidato, cargo e UF estão todos explícitos no texto\n"
         "- confianca='médio': algum campo foi inferido com boa certeza pelo contexto\n"
         "- confianca='baixo': muita ambiguidade ou faltam dois ou mais campos principais\n"
@@ -197,7 +202,11 @@ def classificar_com_gemini(titulo, trecho=""):
     resp = _gemini_client().models.generate_content(model=GEMINI_MODEL, contents=prompt)
     texto = (getattr(resp, "text", "") or "").strip()
     texto = texto.replace("```json", "").replace("```", "").strip()
-    return json.loads(texto)
+    dados = json.loads(texto)
+    # normaliza pra string: bool False vira "" com o _safe() de salvar_no_sheets
+    # (False é falsy em Python), o que confundiria "não" com "não preenchido"
+    dados["convencao"] = "sim" if dados.get("convencao") is True else "não"
+    return dados
 
 
 def classificar_noticias(noticias):
@@ -217,7 +226,7 @@ def classificar_noticias(noticias):
 
 
 COLUNAS_PLANILHA = [
-    "candidato", "cargo", "uf", "partido", "status", "confianca",
+    "candidato", "cargo", "uf", "partido", "status", "convencao", "confianca",
     "titulo", "fonte", "data", "link", "busca",
 ]
 
@@ -326,10 +335,12 @@ def reclassificar_pendentes(aba):
     if "titulo" not in headers or "status" not in headers:
         return
     i_titulo, i_status = headers.index("titulo"), headers.index("status")
-    cols = [c for c in ("candidato", "cargo", "uf", "partido", "status", "confianca")
+    cols = [c for c in ("candidato", "cargo", "uf", "partido", "status", "convencao", "confianca")
             if c in headers]
-    idxs = [headers.index(c) for c in cols]
-    ini, fim = chr(65 + min(idxs)), chr(65 + max(idxs))
+    # célula por célula, não um range candidato→confiança: se "convencao" for
+    # adicionada fora da ordem (ex.: no fim da planilha, depois de titulo/fonte/
+    # data/link/busca), um range contíguo escreveria por cima dessas colunas.
+    col_letra = {c: chr(65 + headers.index(c)) for c in cols}
 
     updates = []
     for r, row in enumerate(vals[1:], start=2):
@@ -341,11 +352,12 @@ def reclassificar_pendentes(aba):
             except Exception as e:
                 print(f"  erro ao reclassificar linha {r}: {e}")
                 continue
-            updates.append({"range": f"{ini}{r}:{fim}{r}",
-                            "values": [[_safe(cl.get(c)) for c in cols]]})
+            for c in cols:
+                updates.append({"range": f"{col_letra[c]}{r}",
+                                "values": [[_safe(cl.get(c))]]})
     if updates:
         aba.batch_update(updates, value_input_option="USER_ENTERED")
-        print(f"{len(updates)} linhas reclassificadas.")
+        print(f"{len(updates)} campos reclassificados.")
 
 
 def salvar_no_sheets(noticias):
