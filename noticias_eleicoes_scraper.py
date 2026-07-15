@@ -22,6 +22,39 @@ from newspaper import Article
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+# Uso acumulado de tokens do Gemini nesta execução (processo novo a cada rodada
+# do workflow, então não precisa resetar entre chamadas).
+USO_TOKENS = {"chamadas": 0, "entrada": 0, "saida": 0, "pensamento": 0}
+
+
+def _registrar_uso(resp):
+    meta = getattr(resp, "usage_metadata", None)
+    if not meta:
+        return
+    USO_TOKENS["chamadas"] += 1
+    USO_TOKENS["entrada"] += getattr(meta, "prompt_token_count", 0) or 0
+    USO_TOKENS["saida"] += getattr(meta, "candidates_token_count", 0) or 0
+    USO_TOKENS["pensamento"] += getattr(meta, "thoughts_token_count", 0) or 0
+
+
+def _custo_estimado(entrada, saida, pensamento):
+    # preço aproximado da faixa "flash" (~$0,30/1M tokens de entrada, ~$2,50/1M de
+    # saída, saída e pensamento cobram na mesma tabela). Ajuste se trocar de modelo
+    # (GEMINI_MODEL) ou se o preço mudar. Estimativa, não fatura oficial; confira o
+    # console de billing do Google pro valor exato.
+    return (entrada / 1_000_000 * 0.30) + ((saida + pensamento) / 1_000_000 * 2.50)
+
+
+def _resumo_uso_tokens(rotulo, uso):
+    if not uso["chamadas"]:
+        return
+    custo = _custo_estimado(uso["entrada"], uso["saida"], uso["pensamento"])
+    print(f"\nGemini ({rotulo}): {uso['chamadas']} chamada(s) · "
+          f"{uso['entrada']:,} tokens entrada · {uso['saida']:,} saída · "
+          f"{uso['pensamento']:,} pensamento · custo estimado ${custo:.4f}")
+
+
 SHEET_ID  = os.getenv("SPREADSHEET_ID_TSE", "1Vo-2oa11JpPaYC051Z0UYNR1yJZdhYW4RJeylHfX-bA")
 SHEET_ABA = "noticias"
 
@@ -257,6 +290,7 @@ def classificar_com_gemini(titulo, trecho=""):
         f"{contexto}"
     )
     resp = _gemini_client().models.generate_content(model=GEMINI_MODEL, contents=prompt)
+    _registrar_uso(resp)
     texto = (getattr(resp, "text", "") or "").strip()
     texto = texto.replace("```json", "").replace("```", "").strip()
     dados = json.loads(texto)
@@ -510,3 +544,5 @@ if __name__ == '__main__':
 
     # reclassifica linhas cuja classificação foi apagada à mão (status vazio)
     reclassificar_pendentes(_sheets_aba())
+
+    _resumo_uso_tokens("notícias", USO_TOKENS)
