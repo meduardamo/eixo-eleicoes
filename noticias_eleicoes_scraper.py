@@ -15,6 +15,8 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 import requests
+from googlenewsdecoder import gnewsdecoder
+from newspaper import Article
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -156,24 +158,32 @@ def coletar(cargos=('presidente', 'governador', 'senador'), pausa=1.0):
     return resultado
 
 
-def _extrair_texto_pagina(url: str, limite: int = 4000) -> str:
-    """Busca a página da notícia e devolve o texto visível, sem tags.
-    Sem isso, só a manchete do RSS estaria disponível pro Gemini classificar
-    e resumir — o que deixa candidato/cargo/uf/resumo mais rasos e sujeitos a
-    erro. Falha (paywall, bloqueio, timeout) só volta string vazia; quem
-    chama cai de volta pra classificar só pela manchete."""
-    import re
+def _extrair_texto_pagina(url: str, limite: int = 6000) -> str:
+    """Devolve o texto completo do artigo por trás do link do Google Notícias.
+
+    O <link> do RSS (news.google.com/rss/articles/...) não é o artigo: é uma
+    página de redirecionamento via JavaScript. Um navegador executa o JS e
+    cai no site real; um requests.get() direto só pega a casca do Google,
+    sem o texto da notícia. Por isso decodifica pra URL real (gnewsdecoder,
+    mesmo truque usado pra esse tipo de link) antes de extrair — mesmo padrão
+    do repo googlenews, usando newspaper3k pra extração (mais robusto que
+    tirar tag na unha, lida melhor com a variedade de sites de notícia).
+
+    Falha em qualquer etapa (decodificação, paywall, bloqueio, timeout) só
+    volta string vazia; quem chama cai de volta pra classificar só pela
+    manchete."""
     if not url or not url.startswith("http"):
         return ""
     try:
-        r = requests.get(url, headers=HEADERS, timeout=12)
-        r.raise_for_status()
-        html = r.text
-        html = re.sub(r"(?is)<(script|style|nav|header|footer|aside|form)[^>]*>.*?</\1>", " ", html)
-        texto = re.sub(r"(?s)<[^>]+>", " ", html)
-        texto = re.sub(r"&nbsp;|&amp;|&#\d+;|&\w+;", " ", texto)
-        texto = re.sub(r"\s+", " ", texto).strip()
-        return texto[:limite]
+        decoded = gnewsdecoder(url, interval=1)
+        url_real = decoded.get("decoded_url") if decoded.get("status") else url
+    except Exception:
+        url_real = url
+    try:
+        art = Article(url_real, language="pt")
+        art.download()
+        art.parse()
+        return (art.text or "").strip()[:limite]
     except Exception:
         return ""
 
@@ -195,9 +205,6 @@ def classificar_com_gemini(titulo, trecho=""):
         '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | cobertura geral | não relacionado | indefinido",\n'
         '  "convencao": true ou false — true SOMENTE se a notícia trata diretamente de uma convenção partidária '
         "(data, realização, resultado ou decisão tomada em convenção). Independente do status da candidatura.\n"
-        '  "resumo": "resumo factual da notícia em até 2 frases (PT-BR), sem opinião nem floreio. Baseie-se no '
-        "trecho do artigo se houver — é mais completo que a manchete. Sem trecho, resuma só a manchete e não "
-        'invente detalhes que não estão nela.",\n'
         '  "confianca": "alto | médio | baixo"\n'
         "}\n\n"
         "Regras de preenchimento:\n"
@@ -240,6 +247,7 @@ def classificar_noticias(noticias):
     for i, n in enumerate(noticias, 1):
         try:
             trecho = _extrair_texto_pagina(n.get("link", ""))
+            n["texto_completo"] = trecho
             n.update(classificar_com_gemini(n["titulo"], trecho))
             # site regional: a UF é conhecida, preenche se o Gemini não achou
             if not n.get("uf") and n.get("uf_regional"):
@@ -253,7 +261,7 @@ def classificar_noticias(noticias):
 
 COLUNAS_PLANILHA = [
     "candidato", "cargo", "uf", "partido", "status", "convencao", "resumo", "confianca",
-    "titulo", "fonte", "data", "link", "busca",
+    "titulo", "fonte", "data", "link", "busca", "texto_completo",
 ]
 
 
@@ -362,9 +370,12 @@ def reclassificar_pendentes(aba):
         return
     i_titulo, i_status = headers.index("titulo"), headers.index("status")
     i_link = headers.index("link") if "link" in headers else None
-    cols = [c for c in ("candidato", "cargo", "uf", "partido", "status", "convencao", "resumo", "confianca")
+    # "resumo" fica de fora: não é gerado aqui, é o alerta que alguém gerou e
+    # decidiu salvar no painel. Reclassificar não pode sobrescrever isso.
+    cols = [c for c in ("candidato", "cargo", "uf", "partido", "status", "convencao",
+                        "confianca", "texto_completo")
             if c in headers]
-    # célula por célula, não um range candidato→confiança: se "convencao"/"resumo"
+    # célula por célula, não um range candidato→confiança: se as colunas novas
     # forem adicionadas fora da ordem (ex.: no fim da planilha, depois de titulo/
     # fonte/data/link/busca), um range contíguo escreveria por cima dessas colunas.
     col_letra = {c: chr(65 + headers.index(c)) for c in cols}
@@ -378,6 +389,7 @@ def reclassificar_pendentes(aba):
             try:
                 trecho = _extrair_texto_pagina(link)
                 cl = classificar_com_gemini(titulo, trecho)
+                cl["texto_completo"] = trecho
             except Exception as e:
                 print(f"  erro ao reclassificar linha {r}: {e}")
                 continue

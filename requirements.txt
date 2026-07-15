@@ -14,3 +14,6 @@ google-genai
 pypdf
 pymupdf
 brevo-python==1.1.2
+newspaper3k==0.2.8
+lxml[html_clean]==5.2.2
+googlenewsdecoder
