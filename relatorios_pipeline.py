@@ -1161,6 +1161,18 @@ def _texto_pdf_bytes(pdf_bytes, max_paginas=None):
         return ""
 
 
+def _sufixo_registro(registro_norm):
+    """Número + ano, sem o prefixo de UF (últimos 9 chars: 5 dígitos + 2026).
+
+    Pesquisa presidencial fatiada por estado às vezes é registrada só sob o
+    protocolo estadual (ex.: GO-02402/2026), mesmo quando a fila guarda o
+    registro com prefixo BR- e o mesmo número de sequência (BR-02402/2026).
+    Todo prefixo de UF (inclusive BR) tem 2 letras, então os últimos 9
+    caracteres isolam número+ano de forma confiável.
+    """
+    return registro_norm[-9:] if len(registro_norm) >= 9 else registro_norm
+
+
 def _validar_registro_pdf(pdf_bytes, registro):
     """Retorna mensagem de erro se o PDF cita registros TSE e nenhum é o da fila."""
     registro_norm = _norm_registro(registro)
@@ -1168,10 +1180,13 @@ def _validar_registro_pdf(pdf_bytes, registro):
         return ""
     texto = _texto_pdf_bytes(pdf_bytes, max_paginas=30)
     encontrados = _registros_tse_texto(texto)
-    if encontrados and registro_norm not in encontrados:
-        regs = ", ".join(sorted(encontrados))
-        return f"registro da fila não aparece no PDF; registros encontrados: {regs}"
-    return ""
+    if not encontrados or registro_norm in encontrados:
+        return ""
+    sufixo = _sufixo_registro(registro_norm)
+    if any(_sufixo_registro(e) == sufixo for e in encontrados):
+        return ""
+    regs = ", ".join(sorted(encontrados))
+    return f"registro da fila não aparece no PDF; registros encontrados: {regs}"
 
 
 def _extrair_json_objeto(texto):
