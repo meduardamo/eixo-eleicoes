@@ -2148,7 +2148,10 @@ def cmd_topline():
             _falha(i, registro_fila, tentativas, f"baixar/ler PDF: {e}")
             continue
         registros_pdf = _registros_tse_texto(texto)
-        if registros_pdf and _norm_registro(registro_fila) not in registros_pdf:
+        registro_fila_norm = _norm_registro(registro_fila)
+        sufixo_fila = _sufixo_registro(registro_fila_norm)
+        if (registros_pdf and registro_fila_norm not in registros_pdf
+                and not any(_sufixo_registro(r) == sufixo_fila for r in registros_pdf)):
             regs = ", ".join(sorted(registros_pdf))
             _falha(i, registro_fila, tentativas,
                    f"registro da fila não aparece no PDF; registros encontrados: {regs}")
