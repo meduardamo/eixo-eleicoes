@@ -2094,16 +2094,12 @@ def cmd_topline():
                 or _verdadeiro(r.get(FLAG_TOPLINE))
                 or str(r.get(FLAG_TOPLINE, "")).strip() == STATUS_TOPLINE_MANUAL):
             continue
-        # Topline automático só p/ RELATÓRIO de instituto COM FICHA. Notícia/N/A/em branco
-        # e relatório sem ficha vão pro polling_manual (gerador-de-envios). Segmento/
-        # rejeição/aprovação NÃO têm gate (rodam em qualquer PDF conferido, no cmd_extrair).
         # Topline automático só p/ RELATÓRIO de instituto COM FICHA. Notícia vai
         # para o Polling Manual; N/A/em branco significa que não foi localizado
         # relatório e não entra em nenhuma fila. Segmento/rejeição/aprovação NÃO
         # têm gate (rodam em qualquer PDF conferido, no cmd_extrair).
         tipo = _sem_acento(r.get("tipo_fonte")).strip().lower()
         if not tipo.startswith("relat"):
-            continue   # notícia / N/A / em branco: topline manual
             if tipo.startswith("not"):
                 # Notícia conferida: há números disponíveis, mas sem a ficha de
                 # relatório necessária para extração automática confiável.
@@ -2390,6 +2386,7 @@ def cmd_publicar():
     pendentes = df_p[~feito]
     if pendentes.empty:
         print("Tudo já publicado.")
+        cmd_rebuild_bi()
         return
 
     def _preparar(df, colunas_destino):
@@ -2401,8 +2398,14 @@ def cmd_publicar():
         if "instituto" in df.columns:
             df["instituto"] = df["instituto"].apply(normalizar_instituto)
             df["classificacao_instituto"] = df["instituto"].apply(classificar_instituto)
-        if "percentual" in df.columns:
-            df["percentual"] = pd.to_numeric(df["percentual"], errors="coerce")
+        # Envia métricas como números reais para as matrizes. As abas de origem
+        # podem exibir vírgula ou ponto decimal; transformar explicitamente evita
+        # que 45,9/45.9 seja gravado como 459 em uma publicação futura.
+        for coluna in ("percentual", "margem_erro", "confianca", "amostra", "ano"):
+            if coluna in df.columns:
+                bruto = df[coluna].astype(str).str.strip().str.replace("%", "", regex=False)
+                bruto = bruto.str.replace(",", ".", regex=False)
+                df[coluna] = pd.to_numeric(bruto, errors="coerce")
         for coluna in colunas_destino:
             if coluna not in df.columns:
                 df[coluna] = ""
