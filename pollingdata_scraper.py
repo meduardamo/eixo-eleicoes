@@ -1371,8 +1371,13 @@ def sobrescrever_aba(aba, df: pd.DataFrame):
         print(f"  [rewrite] aba '{aba.title}' limpa e mantido apenas header")
         return
 
+    # Mantém números como números no payload da API. Converter o DataFrame inteiro
+    # para texto faz com que decimais possam perder o separador em regravações.
     df_export = df.astype(object).where(pd.notna(df), "")
-    aba.update([df.columns.tolist()] + df_export.astype(str).values.tolist())
+    aba.update(
+        [df.columns.tolist()] + df_export.values.tolist(),
+        value_input_option="RAW",
+    )
     print(f"  [rewrite] aba '{aba.title}' regravada com {len(df)} linhas × {n_cols_schema} colunas")
 
 
@@ -1904,7 +1909,8 @@ def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
 
     if _aba_vazia(values):
         aba.clear()
-        aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
+        df_export = df.astype(object).where(pd.notna(df), "")
+        aba.update([df.columns.tolist()] + df_export.values.tolist(), value_input_option="RAW")
         print(f"  [aba vazia] {len(df)} linhas gravadas")
         return len(df), 0
 
@@ -1912,7 +1918,8 @@ def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
     if key_col not in header:
         print(f"  [aviso] chave '{key_col}' ausente no header. Reescrevendo aba.")
         aba.clear()
-        aba.update([df.columns.tolist()] + df.fillna("").astype(str).values.tolist())
+        df_export = df.astype(object).where(pd.notna(df), "")
+        aba.update([df.columns.tolist()] + df_export.values.tolist(), value_input_option="RAW")
         return len(df), 0
 
     colunas_novas = [c for c in df.columns if c not in header]
@@ -1942,7 +1949,10 @@ def dedup_e_salvar(aba, df: pd.DataFrame, key_col: str):
         return 0, len(existing)
 
     df_add = df_add.reindex(columns=header_final, fill_value="")
-    aba.insert_rows(df_add.fillna("").astype(str).values.tolist(), row=2)
+    # Não serializar números como strings: 45.9 deve chegar como número 45.9,
+    # nunca como texto que uma planilha possa reinterpretar como 459.
+    df_export = df_add.astype(object).where(pd.notna(df_add), "")
+    aba.insert_rows(df_export.values.tolist(), row=2, value_input_option="RAW")
 
     print(f"  [insert] {len(df_add)} nova(s) | {len(existing)} já existiam")
     return len(df_add), len(existing)
@@ -2387,7 +2397,29 @@ def reconstruir_resultados_bi(gc, sheet_id: str):
     sem raspar o site de novo. Usado por `relatorios_pipeline.py rebuild_bi` pra aplicar
     correções de agregação/média móvel no histórico já coletado, sem esperar
     a próxima rodada de raspagem."""
-    sh = gc.open_by_key(sheet_id)
+    # A API do Google Sheets ocasionalmente devolve 500 ao abrir planilhas
+    # grandes. É uma falha transitória: tentar novamente evita que um rebuild
+    # manual falhe antes mesmo de ler os resultados já existentes.
+    sh = None
+    ultimo_erro = None
+    for tentativa in range(1, 4):
+        try:
+            sh = gc.open_by_key(sheet_id)
+            break
+        except gspread.exceptions.APIError as erro:
+            ultimo_erro = erro
+            if tentativa == 3:
+                raise
+            espera = tentativa * 5
+            print(
+                f"  [rebuild] API do Sheets indisponível (tentativa {tentativa}/3); "
+                f"tentando de novo em {espera}s"
+            )
+            time.sleep(espera)
+
+    if sh is None:
+        raise ultimo_erro
+
     aba_resultados = garantir_aba(sh, "resultados", rows=20000, cols=35)
     aba_resultados_bi = garantir_aba(sh, "resultados_bi", rows=20000, cols=40)
 
