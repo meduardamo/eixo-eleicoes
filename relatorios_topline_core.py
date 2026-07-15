@@ -685,12 +685,14 @@ Extraia os dados estruturados para inserção em planilha.
   "Porcentual" para candidatos E inválidos. Não misture "Porcentagem válida" dos
   candidatos com "Porcentual" dos inválidos. Só use "Porcentagem válida" se não houver
   nenhum item "Não válido" no cenário.
-- CLASSIFICAÇÃO DE TURNO É LITERAL, NÃO POR QUANTIDADE DE NOMES. Use t2 SOMENTE quando a
-  própria pergunta, título ou cabeçalho da tabela/gráfico disser explicitamente 'segundo turno',
-  '2º turno', '2° turno' ou equivalente inequívoco. Um confronto de só dois nomes NÃO é prova
-  de segundo turno. Se ele estiver sob 'primeiro turno', 'estimulada', 'cenário N' ou sem menção
-  explícita a segundo turno, ele é t1. Nunca duplique nem promova um cenário t1 de dois nomes
-  como t2.
+- CLASSIFICAÇÃO DE TURNO: use t2 quando a própria pergunta, título ou cabeçalho da
+  tabela/gráfico disser explicitamente 'segundo turno', '2º turno', '2° turno' ou equivalente
+  inequívoco. Além disso, EXCLUSIVAMENTE para presidente e governador (únicos cargos com 2º
+  turno de verdade no sistema eleitoral brasileiro), uma tabela estimulada com EXATAMENTE dois
+  nomes de candidato (mais NH/BR/NULO e NS/NR, sem nenhum outro candidato) é t2 mesmo sem menção
+  explícita — é a forma mais comum de reportar simulação de 2º turno. NÃO aplique essa contagem
+  para senador (nunca tem 2º turno, ver regra própria abaixo) nem para uma tabela de
+  rejeição/aprovação/comparação entre dois nomes que não seja pergunta de intenção de voto.
 - O FOCO DE TURNO acima é obrigatório: no foco t1, inclua os cenários estimulados de primeiro
   turno, inclusive confrontos de dois nomes que não tenham menção explícita a segundo turno; no
   foco t2, retorne cenarios=[] se o documento não trouxer uma simulação explicitamente chamada
