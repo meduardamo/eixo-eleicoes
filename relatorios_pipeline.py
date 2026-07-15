@@ -320,10 +320,28 @@ def _ultima_linha_com_dados(ws):
     return ultima
 
 
+def _row_count_atual(ws):
+    """Linhas da grade direto da API, sem confiar no cache local do gspread.
+
+    ws.row_count é lido de ws._properties, setado na hora que o Worksheet foi
+    aberto (ou na última chamada de resize()/add_rows() NESSE MESMO objeto).
+    Se outra chamada de API mudou a grade nesse meio-tempo (ex.: append_rows
+    expande a grade sozinho além do que add_rows pediu), o cache local fica
+    errado e deleteDimension recebe um endIndex que não bate mais com a
+    grade real — foi o que gerou 'Cannot delete a row that doesn't exist'."""
+    meta = ws.spreadsheet.fetch_sheet_metadata()
+    for sheet in meta.get("sheets", []):
+        props = sheet.get("properties", {})
+        if props.get("sheetId") == ws.id:
+            return props.get("gridProperties", {}).get("rowCount", ws.row_count)
+    return ws.row_count
+
+
 def _encolher_linhas_vazias(ws):
     """Remove somente as linhas vazias que sobram abaixo dos dados."""
     ultima = _ultima_linha_com_dados(ws)
-    if ws.row_count <= ultima:
+    total_atual = _row_count_atual(ws)
+    if total_atual <= ultima:
         return
     try:
         ws.spreadsheet.batch_update({
@@ -333,7 +351,7 @@ def _encolher_linhas_vazias(ws):
                         "sheetId": ws.id,
                         "dimension": "ROWS",
                         "startIndex": ultima,
-                        "endIndex": ws.row_count,
+                        "endIndex": total_atual,
                     }
                 }
             }]
