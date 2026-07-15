@@ -170,7 +170,7 @@ def classificar_com_gemini(titulo, trecho=""):
         '  "cargo": "governador | senador | presidente | vice-governador | outro | null",\n'
         '  "uf": "Sigla do estado (ex: SP, RJ, MG) ou null se cargo federal ou não identificado",\n'
         '  "partido": "Sigla do partido ou federação (ex: PT, PL, MDB, FE BRASIL) ou null se não mencionado",\n'
-        '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | não relacionado | indefinido",\n'
+        '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | cobertura geral | não relacionado | indefinido",\n'
         '  "confianca": "alto | médio | baixo"\n'
         "}\n\n"
         "Regras de preenchimento:\n"
@@ -178,8 +178,15 @@ def classificar_com_gemini(titulo, trecho=""):
         "- status='pré-candidato': intenção declarada publicamente, sem oficialização ainda\n"
         "- status='em disputa': partido ou coligação ainda decide entre dois ou mais nomes\n"
         "- status='renúncia' ou 'desistência': candidato que retirou ou perdeu a candidatura\n"
-        "- status='não relacionado': a notícia não trata de candidatura, pré-candidatura ou convenção (declaração, agenda, pesquisa, outro assunto)\n"
+        "- status='cobertura geral': cita um político, partido ou estado brasileiro e tem a ver com política/eleições "
+        "do Brasil, mas não trata do status da candidatura em si (ex.: declaração, agenda de campanha, resultado de "
+        "pesquisa, repercussão de um fato político)\n"
+        "- status='não relacionado': NÃO cita nenhum político, partido ou estado brasileiro, ou trata de assunto sem "
+        "ligação com política brasileira (ex.: notícia de política internacional — Trump, eleições de outro país — "
+        "que não menciona nenhum político/partido/estado do Brasil)\n"
         "- status='indefinido': é sobre candidatura, mas a manchete é ambígua ou falta informação\n"
+        "- Notícia de política internacional só NÃO é 'não relacionado' se citar explicitamente um político, "
+        "partido ou estado brasileiro (nesse caso, classifique normalmente pelos outros campos)\n"
         "- confianca='alto': candidato, cargo e UF estão todos explícitos no texto\n"
         "- confianca='médio': algum campo foi inferido com boa certeza pelo contexto\n"
         "- confianca='baixo': muita ambiguidade ou faltam dois ou mais campos principais\n"
