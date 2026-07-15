@@ -8,6 +8,7 @@ Fonte: Google Notícias (RSS). A classificação fica por conta do Gemini (ver T
 
 import json
 import os
+import re
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -188,6 +189,30 @@ def _extrair_texto_pagina(url: str, limite: int = 6000) -> str:
         return ""
 
 
+# Variações de texto livre que o Gemini gera pra federação/partido, canonicalizadas
+# pra sigla oficial em maiúsculas com "/" entre siglas (ex: PSOL/REDE, UNIÃO/PP).
+# Ver normalize_partido() no painel (pages/5_Notícias.py) pro mesmo mapeamento,
+# aplicado também nos dados antigos que já estão na planilha.
+_PARTIDO_ALIAS = {
+    "UNIAO": "UNIÃO",
+    "UNIÃO BRASIL": "UNIÃO", "UNIAO BRASIL": "UNIÃO",
+    "UNIÃO PROGRESSISTA": "UNIÃO/PP", "UNIAO PROGRESSISTA": "UNIÃO/PP",
+    "UNIÃO/PROGRESSISTA": "UNIÃO/PP", "UNIAO/PROGRESSISTA": "UNIÃO/PP",
+    "FEDERAÇÃO": "", "FEDERACAO": "",
+}
+_PARTIDO_VAZIO = {"", "NAN", "NONE", "NULL"}
+
+
+def normalize_partido(raw) -> str:
+    v = str(raw or "").strip()
+    if not v:
+        return ""
+    key = re.sub(r"\s*[-/]\s*", "/", v.upper())
+    if key in _PARTIDO_VAZIO:
+        return ""
+    return _PARTIDO_ALIAS.get(key, key)
+
+
 def classificar_com_gemini(titulo, trecho=""):
     """Lê a manchete (e trecho do artigo) e extrai os campos estruturados (JSON) via Gemini."""
     contexto = f"Manchete: {titulo}"
@@ -198,10 +223,10 @@ def classificar_com_gemini(titulo, trecho=""):
         "Você é um analista eleitoral especializado nas eleições brasileiras de 2026.\n"
         "Analise o conteúdo abaixo e extraia as informações em JSON com exatamente estes campos:\n\n"
         "{\n"
-        '  "candidato": "Nome, apelido ou sobrenome da pessoa como aparece no texto (ex: \'Tarcísio\', \'Lula\', \'Romeu Zema\'). Use null SOMENTE se nenhum nome próprio de pessoa aparecer",\n'
+        '  "candidato": "Nome, apelido ou sobrenome de UMA ÚNICA pessoa, como aparece no texto (ex: \'Tarcísio\', \'Lula\', \'Romeu Zema\'). Se a notícia citar vários políticos, escolha só o mais central ao tema da manchete — nunca liste mais de um nome no campo. Use null se nenhum nome próprio de político aparecer",\n'
         '  "cargo": "governador | senador | presidente | vice-governador | outro | null",\n'
         '  "uf": "Sigla do estado (ex: SP, RJ, MG) ou null se cargo federal ou não identificado",\n'
-        '  "partido": "Sigla do partido ou federação (ex: PT, PL, MDB, FE BRASIL) ou null se não mencionado",\n'
+        '  "partido": "Sigla oficial do partido em maiúsculas (ex: PT, PL, MDB). Se for federação, siglas separadas por \'/\' (ex: PSOL/REDE, UNIÃO/PP). null se não mencionado",\n'
         '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | cobertura geral | não relacionado | indefinido",\n'
         '  "convencao": true ou false — true SOMENTE se a notícia trata diretamente de uma convenção partidária '
         "(data, realização, resultado ou decisão tomada em convenção). Independente do status da candidatura.\n"
@@ -235,6 +260,12 @@ def classificar_com_gemini(titulo, trecho=""):
     texto = (getattr(resp, "text", "") or "").strip()
     texto = texto.replace("```json", "").replace("```", "").strip()
     dados = json.loads(texto)
+    # o Gemini às vezes desobedece a instrução e devolve a string "null" em vez
+    # do null de JSON de verdade — isso vazava pra planilha como texto "null"
+    for campo, valor in list(dados.items()):
+        if isinstance(valor, str) and valor.strip().lower() in ("null", "none", "n/a"):
+            dados[campo] = None
+    dados["partido"] = normalize_partido(dados.get("partido"))
     # normaliza pra string: bool False vira "" com o _safe() de salvar_no_sheets
     # (False é falsy em Python), o que confundiria "não" com "não preenchido"
     dados["convencao"] = "sim" if dados.get("convencao") is True else "não"
@@ -358,10 +389,21 @@ def _safe(v):
     return ("'" + s) if s[:1] in ("=", "+", "-", "@") else s
 
 
+LOTE_RECLASSIFICACAO = 25  # linhas por batch_update
+
+
 def reclassificar_pendentes(aba):
     """Reclassifica no Gemini as linhas com a coluna 'status' vazia (ex.: você
     apagou a classificação à mão pra refazer). Atualiza só as colunas de
-    classificação, mantendo a notícia."""
+    classificação, mantendo a notícia.
+
+    Salva em lotes de LOTE_RECLASSIFICACAO linhas em vez de um único
+    batch_update no final: com milhares de linhas pendentes (cada uma custa
+    um download de artigo + uma chamada ao Gemini), o job pode ser cancelado
+    pelo timeout do runner antes de terminar. Sem salvar incrementalmente,
+    isso jogava fora todo o progresso já feito, porque a lista de updates só
+    ia pro Sheets no final do loop inteiro.
+    """
     vals = aba.get_all_values()
     if len(vals) < 2:
         return
@@ -380,25 +422,38 @@ def reclassificar_pendentes(aba):
     # fonte/data/link/busca), um range contíguo escreveria por cima dessas colunas.
     col_letra = {c: chr(65 + headers.index(c)) for c in cols}
 
-    updates = []
-    for r, row in enumerate(vals[1:], start=2):
-        titulo = row[i_titulo] if i_titulo < len(row) else ""
-        status = row[i_status] if i_status < len(row) else ""
-        link = row[i_link] if (i_link is not None and i_link < len(row)) else ""
-        if titulo and not status.strip():
-            try:
-                trecho = _extrair_texto_pagina(link)
-                cl = classificar_com_gemini(titulo, trecho)
-                cl["texto_completo"] = trecho
-            except Exception as e:
-                print(f"  erro ao reclassificar linha {r}: {e}")
-                continue
-            for c in cols:
-                updates.append({"range": f"{col_letra[c]}{r}",
-                                "values": [[_safe(cl.get(c))]]})
+    pendentes = [
+        (r, row[i_titulo], row[i_link] if (i_link is not None and i_link < len(row)) else "")
+        for r, row in enumerate(vals[1:], start=2)
+        if (row[i_titulo] if i_titulo < len(row) else "")
+        and not (row[i_status] if i_status < len(row) else "").strip()
+    ]
+    if not pendentes:
+        return
+    print(f"{len(pendentes)} linhas pendentes de reclassificação.")
+
+    updates, linhas_no_lote, total = [], 0, 0
+    for i, (r, titulo, link) in enumerate(pendentes, 1):
+        try:
+            trecho = _extrair_texto_pagina(link)
+            cl = classificar_com_gemini(titulo, trecho)
+            cl["texto_completo"] = trecho
+        except Exception as e:
+            print(f"  erro ao reclassificar linha {r}: {e}")
+            continue
+        for c in cols:
+            updates.append({"range": f"{col_letra[c]}{r}",
+                            "values": [[_safe(cl.get(c))]]})
+        linhas_no_lote += 1
+        if linhas_no_lote >= LOTE_RECLASSIFICACAO:
+            aba.batch_update(updates, value_input_option="USER_ENTERED")
+            total += linhas_no_lote
+            updates, linhas_no_lote = [], 0
+            print(f"[{i}/{len(pendentes)}] reclassificadas... ({total} salvas)")
     if updates:
         aba.batch_update(updates, value_input_option="USER_ENTERED")
-        print(f"{len(updates)} campos reclassificados.")
+        total += linhas_no_lote
+    print(f"{total} linhas reclassificadas.")
 
 
 def salvar_no_sheets(noticias):
