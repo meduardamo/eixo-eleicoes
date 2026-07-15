@@ -2386,7 +2386,6 @@ def cmd_publicar():
     pendentes = df_p[~feito]
     if pendentes.empty:
         print("Tudo já publicado.")
-        cmd_rebuild_bi()
         return
 
     def _preparar(df, colunas_destino):
