@@ -1685,7 +1685,13 @@ def cmd_extrair():
 
     for i, r in enumerate(linhas, start=2):   # linha 1 = cabeçalho
         link = str(r.get("link", "")).strip()
-        if not link or not _verdadeiro(r.get("conferido")) or _verdadeiro(r.get("segmentos_extraido")):
+        # segmentos_extraido="não" é uma conclusão válida (relatório só tem
+        # RESULTADO GERAL, sem quebra por segmento) — não é falha pra tentar de
+        # novo. _verdadeiro() só reconhece "sim"/"true"/etc, então "não" não
+        # batia aqui e a linha reprocessava (baixa PDF + chama Gemini) todo run,
+        # pra sempre, sem nem cair no limite de 3 tentativas (que também não é
+        # incrementado nesse caminho). Qualquer valor não-vazio == já processado.
+        if not link or not _verdadeiro(r.get("conferido")) or str(r.get("segmentos_extraido", "")).strip():
             continue
         tentativas = _int0(r.get("segmentos_tentativas"))
         if tentativas >= 3:   # desiste após 3 falhas; limpe a coluna pra tentar de novo
