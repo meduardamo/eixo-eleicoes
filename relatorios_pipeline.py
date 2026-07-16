@@ -1443,6 +1443,48 @@ def _padronizar_resposta(resposta):
     return rotulos.get(_chave_padronizacao(texto), texto)
 
 
+def _resposta_aprovacao_valida(tipo_avaliacao, resposta):
+    """Defesa contra bloco temático/reativo vazando pra aprovacao.
+
+    O prompt (regras 8b/9) só permite dois vocabulários de resposta em
+    aprovacao: aprova_desaprova (Aprova/Desaprova/Não sabe) e nota_gestao
+    (Ótimo/Bom/Regular/Ruim/Péssimo ou consolidado). Uma pergunta temática que
+    não tem onde encaixar (ex.: "já viu notícias negativas/positivas sobre o
+    governo? Sim/Não") pode vazar com tipo_avaliacao forçado num desses dois
+    mesmo a resposta não batendo o vocabulário - e como o aviso de soma agrupa
+    só por (alvo, tipo_avaliacao, tipo_segmento, segmento), sem olhar a
+    resposta, essas linhas se somam junto com a pergunta de verdade da mesma
+    chave (achado em BR-07181/2026, Quaest: "Sim"/"Não"/"Mais positivas" do
+    bloco de notícias vazou como aprova_desaprova em cima da aprovação real,
+    dobrando a soma de ~100% pra quase 200% em vários segmentos).
+    """
+    r = _sem_acento(resposta).strip().lower()
+    if any(t in r for t in ("nao sabe", "ns/nr", "ns nr", "nao opinou", "nao respond")):
+        return True
+    tipo = _sem_acento(tipo_avaliacao).strip().lower()
+    if tipo == "aprova_desaprova":
+        return "aprov" in r
+    if tipo == "nota_gestao":
+        return any(t in r for t in ("otim", "bom", "boa", "regular", "ruim", "pessim", "positiv", "negativ"))
+    return True   # tipo_avaliacao fora do esperado: a validação de tipo_avaliacao cuida disso
+
+
+def _filtrar_respostas_aprovacao_invalidas(itens):
+    validos, descartados = [], []
+    for item in itens:
+        if _resposta_aprovacao_valida(item.get("tipo_avaliacao", ""), item.get("resposta", "")):
+            validos.append(item)
+        else:
+            descartados.append(item)
+    if descartados:
+        exemplos = "; ".join(
+            f"{d.get('alvo','')}/{d.get('tipo_avaliacao','')}: '{d.get('resposta','')}'"
+            for d in descartados[:4])
+        print(f"    [aprovacao] {len(descartados)} linha(s) com resposta fora do vocabulário "
+              f"esperado, descartadas: {exemplos}", flush=True)
+    return validos
+
+
 def _remover_subtotais_avaliacao(itens):
     """Remove totais derivados quando as categorias componentes já foram extraídas.
 
@@ -1616,6 +1658,7 @@ def extrair_do_pdf(pdf_bytes, extra=""):
         voto += dados.get("voto_segmento", [])
         rej += dados.get("rejeicao", [])
         aprov += dados.get("aprovacao", [])
+    aprov = _filtrar_respostas_aprovacao_invalidas(aprov)
     aprov = _remover_subtotais_avaliacao(aprov)
     voto = _dedup(voto, ["cargo", "turno", "cenario", "candidato", "tipo_segmento", "segmento"])
     rej = _dedup(rej, ["cargo", "candidato", "tipo_segmento", "segmento"])
