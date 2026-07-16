@@ -1519,18 +1519,54 @@ def _remover_subtotais_avaliacao(itens):
     return [item for idx, item in enumerate(itens) if idx not in descartar]
 
 
-def _padronizar_dados_extraidos(dados):
+def _candidatos_canonicos_mapa(cargo, uf):
+    from relatorios_topline_core import _referencia
+    cands, _ = _referencia(cargo, uf)
+    return {_chave_padronizacao(c): c for c in cands}
+
+
+def _canonizar_candidato(candidato, cargo, uf):
+    """Encaixa o candidato no nome canônico (canonico.json) quando a grafia
+    bater de perto, mas não for idêntica.
+
+    Achado com AM-03497/2026 (governador AM): um bloco do PDF leu "Isael
+    Munduruku (Rede)" (faltando o 'm') e outro leu certo "Ismael Munduruku
+    (Rede)" - como o dedup usa o texto exato, as duas grafias sobreviveram
+    como candidatos "diferentes" e a soma do segmento passou de 100% pra
+    ~114%. difflib compara em cima do texto já normalizado (sem acento/caixa,
+    via _chave_padronizacao) e só aceita bater com um candidato canônico
+    quando a razão de similaridade é bem alta (>=0.90), pra não confundir
+    dois nomes parecidos que sejam pessoas de verdade (conferido contra o
+    próprio canonico.json: pares reais como "Sandro Gama"/"Sergio Gama" (PB)
+    e "Helder Barbalho"/"Jader Barbalho" (PA) ficam em 0.86-0.87, abaixo do
+    corte; o typo real "Isael"/"Ismael" Munduruku fica em 0.97, acima)."""
+    if not candidato or not cargo or not uf:
+        return candidato
+    mapa = _candidatos_canonicos_mapa(cargo, uf)
+    if not mapa:
+        return candidato
+    chave = _chave_padronizacao(candidato)
+    if chave in mapa:
+        return mapa[chave]
+    import difflib
+    proximos = difflib.get_close_matches(chave, mapa.keys(), n=1, cutoff=0.90)
+    return mapa[proximos[0]] if proximos else candidato
+
+
+def _padronizar_dados_extraidos(dados, uf=""):
     """Normaliza antes da deduplicação e de qualquer escrita nas abas."""
     for item in dados.get("voto_segmento", []):
         item["cargo"] = _cargo_norm(item.get("cargo", ""))
         item["turno"] = _turno_segmento(item)
         item["cenario"] = _padronizar_cenario(item.get("cenario", ""))
-        item["candidato"] = _padronizar_candidato(item.get("candidato", ""))
+        item["candidato"] = _canonizar_candidato(
+            _padronizar_candidato(item.get("candidato", "")), item["cargo"], uf)
         item["tipo_segmento"] = _sem_acento(_texto_limpo(item.get("tipo_segmento", ""))).lower()
         item["segmento"] = _padronizar_segmento(item.get("segmento", ""))
     for item in dados.get("rejeicao", []):
         item["cargo"] = _cargo_norm(item.get("cargo", ""))
-        item["candidato"] = _padronizar_candidato(item.get("candidato", ""))
+        item["candidato"] = _canonizar_candidato(
+            _padronizar_candidato(item.get("candidato", "")), item["cargo"], uf)
         item["tipo_segmento"] = _sem_acento(_texto_limpo(item.get("tipo_segmento", ""))).lower()
         item["segmento"] = _padronizar_segmento(item.get("segmento", ""))
     for item in dados.get("aprovacao", []):
@@ -1639,22 +1675,27 @@ def _gemini_json(pdf_bytes, extra="", texto_bloco=""):
 
 
 def _dedup(itens, chaves):
+    # Chave em cima de _chave_padronizacao (sem acento/caixa/pontuação), não do
+    # texto cru: dois blocos do mesmo PDF podem grafar o mesmo candidato/rótulo
+    # com uma diferença de acentuação (ex.: "D'Ávila" x "D'ávila") e o texto
+    # exato deixava as duas linhas passarem como "diferentes", dobrando a soma
+    # do segmento (achado em RS-02458/2026, Manuela D'Ávila contada 2x).
     vistos, saida = set(), []
     for it in itens:
-        k = tuple(str(it.get(c, "")).strip() for c in chaves)
+        k = tuple(_chave_padronizacao(it.get(c, "")) for c in chaves)
         if k not in vistos:
             vistos.add(k)
             saida.append(it)
     return saida
 
 
-def extrair_do_pdf(pdf_bytes, extra=""):
+def extrair_do_pdf(pdf_bytes, extra="", uf=""):
     """Extrai bloco a bloco (para caber no limite de tokens e melhorar a
     precisão) e junta os resultados, removendo duplicatas entre blocos."""
     voto, rej, aprov = [], [], []
     for bloco in _blocos_pdf(pdf_bytes):
         texto_bloco = _texto_pdf_bytes(bloco)
-        dados = _padronizar_dados_extraidos(_gemini_json(bloco, extra, texto_bloco=texto_bloco))
+        dados = _padronizar_dados_extraidos(_gemini_json(bloco, extra, texto_bloco=texto_bloco), uf=uf)
         voto += dados.get("voto_segmento", [])
         rej += dados.get("rejeicao", [])
         aprov += dados.get("aprovacao", [])
@@ -1780,7 +1821,7 @@ def cmd_extrair():
                 raise RuntimeError(erro_registro)
             print(f"linha {i} ({r.get('registro')} / {r.get('cargo')}): PDF baixado ({len(pdf)} bytes), enviando ao Gemini...", flush=True)
             extra = ficha_instituto(r.get("instituto", "")) + _bloco_canonico(r.get("uf"), r.get("cargo"))
-            dados = extrair_do_pdf(pdf, extra=extra)
+            dados = extrair_do_pdf(pdf, extra=extra, uf=r.get("uf", ""))
         except Exception as e:
             msg = str(e)
             updates.extend([gspread.Cell(i, col_err, msg[:300]),
