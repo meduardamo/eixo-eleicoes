@@ -1562,6 +1562,37 @@ def _canonizar_candidato(candidato, cargo, uf):
     return mapa[proximos[0]] if proximos else candidato
 
 
+CARGOS_MONITORADOS = ("presidente", "governador", "senador")
+
+
+def _corrigir_cargo_por_candidato(candidato, cargo_atual, uf):
+    """Corrige o cargo de um item quando o candidato claramente pertence a
+    OUTRO cargo, não ao que o modelo rotulou.
+
+    Achado com AM-03497/2026 (relatório único cobrindo governador + senador
+    do Amazonas): candidatos SÓ de governador (Maria do Carmo Seffair,
+    Roberto Cidade, David Almeida - nenhum na lista canônica de senador)
+    vieram rotulados cargo='senador' em alguns itens de voto_segmento, e
+    como o filtro de cargo (_item_casa_cargo) confia nesse rótulo, eles
+    entravam junto com os candidatos de senador de verdade, inflando a soma
+    de cada segmento demográfico de ~100% pra ~149%. Só corrige quando o
+    candidato NÃO bate com a lista canônica do cargo atual mas bate
+    exatamente com a de outro cargo monitorado (mesma UF) - candidato fora
+    de canonico.json nos dois (ou em nenhum) fica como está, pra não mexer
+    em corrida sem lista canônica cadastrada."""
+    if not candidato or not cargo_atual or not uf:
+        return cargo_atual
+    chave = _chave_padronizacao(candidato)
+    if chave in _candidatos_canonicos_mapa(cargo_atual, uf):
+        return cargo_atual
+    for outro in CARGOS_MONITORADOS:
+        if outro == cargo_atual:
+            continue
+        if chave in _candidatos_canonicos_mapa(outro, uf):
+            return outro
+    return cargo_atual
+
+
 def _padronizar_dados_extraidos(dados, uf=""):
     """Normaliza antes da deduplicação e de qualquer escrita nas abas."""
     for item in dados.get("voto_segmento", []):
@@ -1570,12 +1601,14 @@ def _padronizar_dados_extraidos(dados, uf=""):
         item["cenario"] = _padronizar_cenario(item.get("cenario", ""))
         item["candidato"] = _canonizar_candidato(
             _padronizar_candidato(item.get("candidato", "")), item["cargo"], uf)
+        item["cargo"] = _corrigir_cargo_por_candidato(item["candidato"], item["cargo"], uf)
         item["tipo_segmento"] = _sem_acento(_texto_limpo(item.get("tipo_segmento", ""))).lower()
         item["segmento"] = _padronizar_segmento(item.get("segmento", ""))
     for item in dados.get("rejeicao", []):
         item["cargo"] = _cargo_norm(item.get("cargo", ""))
         item["candidato"] = _canonizar_candidato(
             _padronizar_candidato(item.get("candidato", "")), item["cargo"], uf)
+        item["cargo"] = _corrigir_cargo_por_candidato(item["candidato"], item["cargo"], uf)
         item["tipo_segmento"] = _sem_acento(_texto_limpo(item.get("tipo_segmento", ""))).lower()
         item["segmento"] = _padronizar_segmento(item.get("segmento", ""))
     for item in dados.get("aprovacao", []):
