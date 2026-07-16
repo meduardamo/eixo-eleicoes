@@ -65,7 +65,7 @@ DRIVE_ID = '0AH-94UFLKIFPUk9PVA'
 PASTA_PRESIDENCIAVEIS = '1apgniY4undEtkqjDYOEdf1aoMU7HDfOh'
 PASTA_GOV_SEN = '1MmeVz63PG9imU_oDqk7thw5gHha0xAWa'
 
-# colunas da fila compartilhada com relatorios_pipeline.py
+# colunas da fila compartilhada com relatorios_extracao_segmentos.py
 COL_ORIGEM_LINK = "origem_link"
 COL_NIVEL_CONFERENCIA = "nivel_conferencia"
 COL_CONFERIDO = "conferido"
@@ -1488,7 +1488,7 @@ def atualizar_planilha():
         celulas_para_atualizar.clear()
 
     # PROCESSAR LINHAS SEM LINK: busca e salva o PDF de cada pesquisa que já está
-    # na fila (adicionada pelo relatorios_pipeline.py). Não adiciona linha nenhuma.
+    # na fila (adicionada pelo relatorios_extracao_segmentos.py). Não adiciona linha nenhuma.
     print(f"\n--- Buscando PDFs das pesquisas na fila ({len(dados)} linhas analisadas) ---")
     for i, linha in enumerate(dados, start=2):  # +2: sheets começa em 1 e tem cabeçalho
         if len(celulas_para_atualizar) >= LOTE_CELULAS:
@@ -1644,7 +1644,7 @@ def atualizar_planilha():
 
     _gravar_celulas_pendentes("fim da execução")
 
-    # A fila de relatorios é populada só pelo relatorios_pipeline.py (a partir do PesqEle do
+    # A fila de relatorios é populada só pelo relatorios_extracao_segmentos.py (a partir do PesqEle do
     # TSE, fonte oficial). O atualiza_relatorios NÃO adiciona linhas: só preenche o
     # link das que já existem. Antes havia uma "Fase 2" que buscava pesquisas novas
     # na web e anexava linhas, mas isso duplicava (UF em sigla vs por extenso) e

@@ -295,7 +295,7 @@ def resolver_data_campo_deterministica(
     # Data futura/pós-divulgação NUNCA pode ser gravada, mas o cenário em si não é
     # lixo só porque o modelo (ou o regex de período do PDF) leu a data errada -
     # o resultado do voto continua válido. Antes isso devolvia "" e o chamador
-    # descartava o cenário inteiro (raise ValueError em relatorios_pipeline.py),
+    # descartava o cenário inteiro (raise ValueError em relatorios_extracao_topline_aposentado.py),
     # apesar do texto do aviso dizer "cenário retido" (retido = mantido, não
     # descartado). Corrigido: cai pra data de divulgação (sempre <= hoje, por
     # definição já aconteceu) em vez de jogar o cenário fora. Achado com

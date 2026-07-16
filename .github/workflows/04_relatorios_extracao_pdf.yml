@@ -1,4 +1,4 @@
-name: 04 - Extrai PDF
+name: 04 - Extrai PDF (segmentos)
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 215
+    timeout-minutes: 120
 
     env:
       TZ: "America/Recife"
@@ -38,39 +38,9 @@ jobs:
         run: |
           date
           python --version
-          echo "Workflow: polling-pdf-extrair-topline"
-          echo "Comandos: relatorios_pipeline.py extrair; relatorios_pipeline.py topline"
-          echo "Publicação PollingData: workflow 11 separado, sem Gemini"
+          echo "Workflow: relatorios-extracao-segmentos"
+          echo "Comando: relatorios_extracao_segmentos.py extrair"
+          echo "Topline foi aposentado (16/07/2026) - cadastro manual via Polling Manual"
 
       - name: Extrair segmentos, rejeição e aprovação
-        id: extrair
-        continue-on-error: true
-        timeout-minutes: 100
-        run: |
-          set +e
-          echo "::group::python relatorios_pipeline.py extrair"
-          python -u relatorios_pipeline.py extrair
-          status=$?
-          echo "::endgroup::"
-          exit "$status"
-
-      - name: Extrair topline
-        id: topline
-        continue-on-error: true
-        timeout-minutes: 100
-        run: |
-          set +e
-          echo "::group::python relatorios_pipeline.py topline"
-          python -u relatorios_pipeline.py topline
-          status=$?
-          echo "::endgroup::"
-          exit "$status"
-
-      - name: Resultado final
-        if: ${{ always() }}
-        run: |
-          echo "extrair: ${{ steps.extrair.outcome }}"
-          echo "topline: ${{ steps.topline.outcome }}"
-          if [ "${{ steps.extrair.outcome }}" != "success" ] || [ "${{ steps.topline.outcome }}" != "success" ]; then
-            exit 1
-          fi
+        run: python -u relatorios_extracao_segmentos.py extrair

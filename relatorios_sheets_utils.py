@@ -1,6 +1,6 @@
 """
-Helpers de manutenção de planilha compartilhados entre relatorios_pipeline.py
-(workflow 04, extrai segmentos/topline dos PDFs) e relatorios_busca_fontes.py
+Helpers de manutenção de planilha compartilhados entre relatorios_extracao_segmentos.py
+(workflow 04, extrai segmentos/rejeição/aprovação dos PDFs) e relatorios_busca_fontes.py
 (workflow 03, busca o link do relatório faltante).
 
 Os dois arquivos leem e escrevem na MESMA aba 'relatorios', e por muito tempo
@@ -17,12 +17,15 @@ uso como parâmetro explícito em vez de mexer numa variável global do módulo.
 """
 
 import json
+import os
 import re
 import time
 import unicodedata
 from datetime import timedelta, timezone
 
 import gspread
+import requests
+from google.oauth2.service_account import Credentials
 
 RELATORIOS_COLUNAS = [
     ("registro", "Registro TSE"),
@@ -51,7 +54,7 @@ CABECALHO_RELATORIOS = [rotulo for _, rotulo in RELATORIOS_COLUNAS]
 # segmentos/rejeição/aprovação) foi desativada em 16/07/2026 - o cadastro de
 # topline passou a ser 100% manual via Polling Manual (gerador-de-envios).
 # Segmentos/rejeição/aprovação continuam extraídos automaticamente
-# (relatorios_pipeline.py extrair, workflow 04), sem mudança. "Topline
+# (relatorios_extracao_segmentos.py extrair, workflow 04), sem mudança. "Topline
 # extraída?" mudou de sentido: não indica mais se o Gemini extraiu do PDF,
 # indica se o registro+cargo já está na Matriz T1/T2
 # (marcar_topline_extraida_manual, no Polling Manual, vira "sim" quando ela
@@ -644,3 +647,313 @@ def _resumo_uso_tokens(rotulo, uso):
     print(f"\nGemini ({rotulo}): {uso['chamadas']} chamada(s) · "
           f"{uso['entrada']:,} tokens entrada · {uso['saida']:,} saída · "
           f"{uso['pensamento']:,} pensamento · custo estimado ${custo:.4f}")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Helpers de baixo nível compartilhados entre relatorios_extracao_segmentos.py
+# (ativo) e relatorios_extracao_topline_aposentado.py (aposentado) - download
+# de PDF, fatiamento em blocos, validação de registro TSE no texto, acesso a
+# credenciais/planilha. Nada aqui referencia PROMPT/GEMINI_MODEL/USO_TOKENS
+# porque cada um dos dois pipelines usa seu próprio prompt e contabiliza seu
+# próprio custo de Gemini separadamente (ver docstring do topo do arquivo).
+# ─────────────────────────────────────────────────────────────────────────
+
+HEADERS = {"User-Agent": "Mozilla/5.0"}
+
+
+def _creds_info():
+    raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+    return json.loads(raw) if raw else json.load(open("credentials.json", encoding="utf-8"))
+
+
+def _sheets():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    return gspread.authorize(Credentials.from_service_account_info(_creds_info(), scopes=scopes))
+
+
+def _rel_row(valores, header):
+    return [valores.get(_rel_key(c), valores.get(c, "")) for c in header]
+
+
+def _normalizar_cabecalho(ws, cabecalho, remover_sobras=False):
+    """Garante a ordem canônica sem perder dados de colunas já existentes."""
+    valores = ws.get_all_values()
+    if not valores:
+        ws.update(range_name="A1", values=[cabecalho])
+        # sem dados ainda: o checkbox nasce junto com as pesquisas (no atualiza_relatorios)
+        return cabecalho[:]
+
+    atual = valores[0]
+    aliases_antigos = {a for aliases in ALIASES_RELATORIOS.values() for a in aliases}
+    aliases_antigos.update(REL_COL.keys())
+    extras = [c for c in atual if c and c not in cabecalho and c not in aliases_antigos]
+    alvo = cabecalho + extras
+    if atual == alvo:
+        return atual
+
+    idx = {nome: pos for pos, nome in enumerate(atual) if nome}
+
+    def _valor(row, coluna):
+        candidatos = [coluna] + ALIASES_RELATORIOS.get(coluna, [])
+        for c in candidatos:
+            pos = idx.get(c)
+            if pos is not None and pos < len(row) and row[pos] != "":
+                return row[pos]
+        return ""
+
+    novos = [alvo]
+    for row in valores[1:]:
+        novos.append([_valor(row, c) for c in alvo])
+
+    if ws.col_count < len(alvo):
+        ws.add_cols(len(alvo) - ws.col_count)
+    ws.update(range_name="A1", values=novos, value_input_option="RAW")
+    # coluna conferido recém-criada: aplica o checkbox só nas linhas que já têm pesquisa
+    if _rel_display("conferido") in alvo and _rel_display("conferido") not in idx:
+        _ativar_checkbox(ws, _rel_display("conferido"), alvo, ate_linha=len(valores))
+    if remover_sobras:
+        _remover_colunas_sobrando(ws, len(alvo))
+    return alvo
+
+
+def _verdadeiro(v):
+    return str(v).strip().lower() in ("sim", "true", "verdadeiro", "1", "x")
+
+
+def _int0(v):
+    """Inteiro tolerante: '', texto ou lixo viram 0 (célula editada à mão não derruba o run)."""
+    try:
+        return int(float(str(v).strip() or 0))
+    except Exception:
+        return 0
+
+
+def _data_iso(valor):
+    """'01/07/2026' (padrão BR, dia primeiro) ou '2026-07-01' -> '2026-07-01'."""
+    s = str(valor or "").strip()
+    m = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", s)
+    if m:
+        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+    return s[:10]
+
+
+def _drive_id(link):
+    import re
+    m = re.search(r"/d/([A-Za-z0-9_-]+)", link) or re.search(r"[?&]id=([A-Za-z0-9_-]+)", link)
+    return m.group(1) if m else None
+
+
+def _pdf_cache_path(link):
+    """Caminho de cache pro PDF do link, num diretório temporário estável do runner.
+    Serve pra baixar UMA vez por link e reusar entre cmd_extrair e cmd_topline (mesmo
+    job) e entre tentativas, em vez de rebaixar o mesmo PDF várias vezes."""
+    import hashlib, tempfile
+    if not link:
+        return None
+    d = os.path.join(tempfile.gettempdir(), "eixo_pdf_cache")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        return None
+    h = hashlib.sha1(str(link).encode("utf-8", "ignore")).hexdigest()[:20]
+    return os.path.join(d, f"{h}.pdf")
+
+
+def _baixar_pdf(link):
+    """Baixa o PDF do link (com cache em disco pra não rebaixar o mesmo arquivo).
+    Se for link do Google Drive, usa a API do Drive com a conta de serviço (a pasta
+    precisa estar compartilhada com ela). Senão, download direto."""
+    cache = _pdf_cache_path(link)
+    if cache and os.path.exists(cache) and os.path.getsize(cache) > 1000:
+        with open(cache, "rb") as f:
+            return f.read()
+    conteudo = _baixar_pdf_raw(link)
+    if cache and conteudo:
+        try:
+            with open(cache, "wb") as f:
+                f.write(conteudo)
+        except OSError:
+            pass
+    return conteudo
+
+
+def _baixar_pdf_raw(link):
+    fid = _drive_id(link)
+    if not fid:
+        return requests.get(link, headers=HEADERS, timeout=60).content
+    from google.auth.transport.requests import Request
+    creds = Credentials.from_service_account_info(
+        _creds_info(), scopes=["https://www.googleapis.com/auth/drive.readonly"])
+    creds.refresh(Request())
+    r = requests.get(
+        f"https://www.googleapis.com/drive/v3/files/{fid}",
+        params={"alt": "media", "supportsAllDrives": "true"},
+        headers={"Authorization": f"Bearer {creds.token}"}, timeout=120)
+    r.raise_for_status()
+    if r.content[:4] != b"%PDF":
+        raise RuntimeError("conteúdo não é PDF (a conta de serviço tem acesso ao arquivo?)")
+    return r.content
+
+
+PAGINAS_POR_BLOCO = 5
+
+
+def _norm_registro(valor):
+    return re.sub(r"[^A-Z0-9]", "", str(valor or "").upper())
+
+
+def _registros_tse_texto(texto):
+    return {_norm_registro(m.group(0)) for m in REGISTRO_TSE_RE.finditer(texto or "")}
+
+
+def _texto_pdf_bytes(pdf_bytes, max_paginas=None):
+    """Texto do PDF para validação e fallback. Vazio em PDF só imagem."""
+    try:
+        import fitz  # PyMuPDF
+        partes = []
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            total = doc.page_count if max_paginas is None else min(doc.page_count, max_paginas)
+            for i in range(total):
+                raw = doc.load_page(i).get_text("text") or ""
+                raw = raw.replace("-\n", "").replace("\n", " ")
+                raw = re.sub(r"\s{2,}", " ", raw).strip()
+                if raw:
+                    partes.append(raw)
+        return "\n".join(partes)
+    except Exception:
+        return ""
+
+
+def _sufixo_registro(registro_norm):
+    """Número + ano, sem o prefixo de UF (últimos 9 chars: 5 dígitos + 2026).
+
+    Pesquisa presidencial fatiada por estado às vezes é registrada só sob o
+    protocolo estadual (ex.: GO-02402/2026), mesmo quando a fila guarda o
+    registro com prefixo BR- e o mesmo número de sequência (BR-02402/2026).
+    Todo prefixo de UF (inclusive BR) tem 2 letras, então os últimos 9
+    caracteres isolam número+ano de forma confiável.
+    """
+    return registro_norm[-9:] if len(registro_norm) >= 9 else registro_norm
+
+
+def _validar_registro_pdf(pdf_bytes, registro):
+    """Retorna mensagem de erro se o PDF cita registros TSE e nenhum é o da fila."""
+    registro_norm = _norm_registro(registro)
+    if not registro_norm:
+        return ""
+    texto = _texto_pdf_bytes(pdf_bytes, max_paginas=30)
+    encontrados = _registros_tse_texto(texto)
+    if not encontrados or registro_norm in encontrados:
+        return ""
+    sufixo = _sufixo_registro(registro_norm)
+    if any(_sufixo_registro(e) == sufixo for e in encontrados):
+        return ""
+    regs = ", ".join(sorted(encontrados))
+    return f"registro da fila não aparece no PDF; registros encontrados: {regs}"
+
+
+LIMITE_BYTES_BLOCO = 15_000_000   # a API do Gemini rejeita requisição inline grande demais
+
+
+def _blocos_pdf(pdf_bytes, tamanho=PAGINAS_POR_BLOCO):
+    """Fatia o PDF em blocos de páginas. Cada página é um slide autocontido,
+    então a tabela nunca se parte entre blocos. Reduz o tamanho do bloco quando o PDF
+    tem poucas páginas mas é gigante em bytes (scan em resolução muito alta, ex.: 17
+    páginas / 85MB): um bloco de 5 páginas nesse caso ainda estoura o limite de
+    requisição inline do Gemini (400 INVALID_ARGUMENT), mesmo já sendo "só um bloco"."""
+    import io
+    from pypdf import PdfReader, PdfWriter
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    n = len(reader.pages)
+    if n:
+        bytes_por_pagina = len(pdf_bytes) / n
+        if bytes_por_pagina > 0:
+            tamanho = max(1, min(tamanho, int(LIMITE_BYTES_BLOCO // bytes_por_pagina)))
+    for ini in range(0, n, tamanho):
+        writer = PdfWriter()
+        for i in range(ini, min(ini + tamanho, n)):
+            writer.add_page(reader.pages[i])
+        buf = io.BytesIO()
+        writer.write(buf)
+        yield buf.getvalue()
+
+
+def _aba(sh, nome, cabecalhos, manutencao=True):
+    """Garante a aba e o cabeçalho. Cria a aba se não existir; escreve o
+    cabeçalho se a primeira linha estiver vazia. Não mexe em dados existentes.
+
+    ``cabecalhos`` é o dict {nome_aba: [colunas]} do chamador - cada um dos
+    dois pipelines (segmentos ativo, topline aposentado) só conhece as abas
+    que usa, então não dá pra fixar um dict global aqui.
+
+    manutencao=False pula a manutenção pesada da aba 'relatorios' (split de
+    linhas multicargo + reset das validações + remoção de colunas sobrando).
+    Comandos que só LEEM a fila (extrair, topline) passam False pra não refazer,
+    a cada invocação, um trabalho de planilha que só precisa rodar quando linhas
+    novas entram (isso acontece no passo que adiciona pesquisas e no busca_fontes)."""
+    header = cabecalhos[nome]
+    try:
+        ws = sh.worksheet(nome)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sh.add_worksheet(title=nome, rows=1, cols=len(header))
+    if not ws.row_values(1):
+        ws.update(range_name="A1", values=[header])
+    elif nome == "relatorios":
+        header = _normalizar_cabecalho(ws, header, remover_sobras=manutencao)
+        if manutencao:
+            _separar_linhas_multicargo(ws, header)
+            _resetar_validacoes_relatorios(ws, header, _ultima_linha_com_registro(ws))
+    elif nome in ("topline_pesquisas", "topline_resultados"):
+        _normalizar_cabecalho(ws, header)
+        _migrar_topline_sem_conferida(ws)
+    return ws
+
+
+# palavras que indicam o cargo no corpo do texto (matérias de site costumam falar
+# "vaga ao Senado"/"disputa pelo Senado" em vez de "senador" literalmente) - usado
+# tanto por relatorios_extracao_segmentos.py (checar se um relatório sem segmentos
+# no cargo da linha realmente não tem quebra demográfica) quanto por
+# relatorios_extracao_topline_aposentado.py (achar a seção do cargo num PDF grande).
+PALAVRAS_CARGO = {
+    "presidente": ["presiden"],
+    "governador": ["governad", "governo do estado"],
+    "senador": ["senador", "senado"],
+}
+
+
+def _blocos_ativos_cargo(pdf, cargo):
+    """Gera (bloco_bytes, texto_bloco) só dos blocos de 5 páginas que pertencem à
+    seção do cargo pedido. Um PDF grande organiza os cargos em seções contínuas, mas
+    nem toda página de uma seção repete a palavra do cargo (tabela/gráfico sem
+    legenda, rodapé de página sem relação, bloco intermediário sem título). Fica ativo
+    a partir do bloco onde o cargo pedido aparece, e continua ativo enquanto os blocos
+    seguintes não mencionarem OUTRO cargo monitorado; só desativa quando um outro
+    cargo assume claramente a seção. Bloco inicial começa ativo (cobre PDF que já abre
+    no cargo certo)."""
+    from relatorios_topline_core import extrair_texto_pdf_bytes
+    palavras_alvo = PALAVRAS_CARGO.get(str(cargo or "").lower(), [str(cargo or "").lower()])
+    outros_cargos = [p for c, ps in PALAVRAS_CARGO.items() if c != cargo for p in ps]
+    ativo = True
+    for bloco in _blocos_pdf(pdf, tamanho=5):
+        try:
+            txt_bloco = extrair_texto_pdf_bytes(bloco)
+        except Exception:
+            txt_bloco = ""
+        low_bloco = txt_bloco.lower()
+        if any(p in low_bloco for p in palavras_alvo):
+            ativo = True
+        elif any(p in low_bloco for p in outros_cargos):
+            ativo = False
+        # bloco sem nenhuma palavra de cargo (imagem, rodapé, texto neutro): mantém o
+        # estado do bloco anterior, não desativa nem ativa.
+        if ativo:
+            yield bloco, txt_bloco
+
+
+def _n_paginas_pdf(pdf_bytes):
+    try:
+        import io
+        from pypdf import PdfReader
+        return len(PdfReader(io.BytesIO(pdf_bytes)).pages)
+    except Exception:
+        return 0

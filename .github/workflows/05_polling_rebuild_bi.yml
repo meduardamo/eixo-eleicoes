@@ -30,4 +30,4 @@ jobs:
           pip install -r requirements.txt
 
       - name: Reconstruir resultados_bi
-        run: python -u relatorios_pipeline.py rebuild_bi
+        run: python -u relatorios_extracao_segmentos.py rebuild_bi
