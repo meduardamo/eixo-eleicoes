@@ -90,7 +90,7 @@ BRT = timezone(timedelta(hours=-3))
 
 REGISTRO_TSE_RE = re.compile(
     r"\b(?:BR|AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)"
-    r"[\s-]*\d{5}/2026\b",
+    r"[\s-]*\d{5}[/-]2026\b",
     flags=re.I,
 )
 

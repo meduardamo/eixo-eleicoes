@@ -230,7 +230,7 @@ def extrair_data_campo_pdf(texto_pdf: str) -> str:
     # ou em gráficos comparativos não é confundido com data de campo.
     contextos = re.findall(
         r"(?:coleta\s+de\s+dados|periodo\s+de\s+campo|trabalho\s+de\s+campo|"
-        r"entrevistas?\s+(?:foram\s+)?realizadas?)[^.]{0,360}",
+        r"data\s+de\s+campo|entrevistas?\s+(?:foram\s+)?realizadas?)[^.]{0,360}",
         texto,
     )
     if not contextos:
@@ -238,16 +238,17 @@ def extrair_data_campo_pdf(texto_pdf: str) -> str:
 
     meses = "|".join(MESES_PT)
     padroes = [
-        # "27 e 30 de junho de 2026" ou "27 a 30 de junho de 2026".
+        # "27 e 30 de junho de 2026" ou "27 a 30 de junho 2026" (o "de" antes do
+        # ano é opcional - alguns institutos, ex. Real Time Mídia, omitem).
         re.compile(
             rf"\b(?P<inicio>\d{{1,2}})\s*(?:a|ate|e|-)\s*(?P<fim>\d{{1,2}})\s+"
-            rf"de\s+(?P<mes>{meses})\s+de\s+(?P<ano>20\d{{2}})\b"
+            rf"de\s+(?P<mes>{meses})\s+(?:de\s+)?(?P<ano>20\d{{2}})\b"
         ),
         # "29 de junho e 01 de julho de 2026".
         re.compile(
             rf"\b(?P<inicio>\d{{1,2}})\s+de\s+(?P<mes_inicio>{meses})\s*"
             rf"(?:a|ate|e|-)\s*(?P<fim>\d{{1,2}})\s+de\s+(?P<mes>{meses})\s+"
-            rf"de\s+(?P<ano>20\d{{2}})\b"
+            rf"(?:de\s+)?(?P<ano>20\d{{2}})\b"
         ),
         # "27/06/2026 a 30/06/2026" ou "27 a 30/06/2026".
         re.compile(
