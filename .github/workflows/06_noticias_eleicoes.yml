@@ -2,8 +2,11 @@ name: 06 - Notícias eleições
 
 on:
   schedule:
-    # Uma rodada após a extração matinal, para limitar chamadas ao Gemini.
-    - cron: '15 15 * * *'  # 12:15 BRT (UTC-3)
+    # GitHub Actions usa UTC; Brasil/Recife = UTC-3. Minuto fora do :00 porque
+    # o :00 é quando o GitHub Actions mais enfileira e atrasa a rodada agendada.
+    - cron: '15 9 * * *'   # 06:15 BRT
+    - cron: '15 14 * * *'  # 11:15 BRT
+    - cron: '15 18 * * *'  # 15:15 BRT
   workflow_dispatch:        # permite rodar manualmente pelo GitHub
 
 jobs:
