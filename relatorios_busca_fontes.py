@@ -82,6 +82,7 @@ PASTA_GOV_SEN = '1MmeVz63PG9imU_oDqk7thw5gHha0xAWa'
 COL_ORIGEM_LINK = "origem_link"
 COL_NIVEL_CONFERENCIA = "nivel_conferencia"
 COL_CONFERIDO = "conferido"
+STATUS_TOPLINE_MANUAL = "⚠️ REGISTRE NO POLLING MANUAL"
 RELATORIOS_COLUNAS = [
     ("registro", "Registro TSE"),
     ("cargo", "Cargo"),
@@ -202,6 +203,46 @@ def _rel_records(ws):
     return [_rel_record(r) for r in ws.get_all_records()]
 
 
+def _colorir_cabecalhos_relatorios(ws, header):
+    """Dá leitura visual imediata aos três blocos operacionais da fila.
+
+    Cópia de relatorios_pipeline.py (arquivos duplicam esse helper) - faltava
+    aqui, então a manutenção da fila rodada por este arquivo (workflow 03)
+    nunca coloria os blocos, só a de relatorios_pipeline.py (workflow 04)."""
+    grupos = [
+        (["registro", "cargo", "uf", "instituto", "data_divulgacao"],
+         (0.85, 0.90, 0.95)),
+        (["link", "origem_link", "nivel_conferencia", "tipo_fonte", "conferido"],
+         (0.88, 0.94, 0.86)),
+        (["segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas"],
+         (0.82, 0.91, 0.97)),
+        (["topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas"],
+         (0.89, 0.84, 0.95)),
+    ]
+    requests = []
+    for chaves, (r, g, b) in grupos:
+        indices = [header.index(_rel_display(chave)) for chave in chaves if _rel_display(chave) in header]
+        if not indices:
+            continue
+        requests.append({"repeatCell": {
+            "range": {
+                "sheetId": ws.id,
+                "startRowIndex": 0,
+                "endRowIndex": 1,
+                "startColumnIndex": min(indices),
+                "endColumnIndex": max(indices) + 1,
+            },
+            "cell": {"userEnteredFormat": {"backgroundColor": {"red": r, "green": g, "blue": b}}},
+            "fields": "userEnteredFormat.backgroundColor",
+        }})
+    if not requests:
+        return
+    try:
+        ws.spreadsheet.batch_update({"requests": requests})
+    except Exception as e:
+        print(f"[AVISO] não deu pra colorir cabeçalhos da aba relatorios: {e}")
+
+
 def _garantir_coluna_relatorios(ws, header, nome):
     display = _rel_display(nome)
     for candidato in [display, nome] + ALIASES_RELATORIOS.get(display, []):
@@ -257,6 +298,15 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         "notícia": (1.0, 0.90, 0.80),
         "N/A": (0.90, 0.90, 0.90),
     })
+    _colorir_por_valor(ws, _rel_display("topline_extraido"), header, ate_linha, {
+        "sim": (0.82, 0.93, 0.82),
+        STATUS_TOPLINE_MANUAL: (1.0, 0.82, 0.68),
+    })
+    _colorir_por_valor(ws, _rel_display("segmentos_extraido"), header, ate_linha, {
+        "sim": (0.82, 0.93, 0.82),
+        "não": (0.96, 0.80, 0.80),
+    })
+    _colorir_cabecalhos_relatorios(ws, header)
 
 
 def _garantir_coluna(ws, header, nome):
