@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # GitHub Actions usa UTC; Brasil/Recife = UTC-3.
+    - cron: '0 11 * * *'   # 08:00 Brasil
     - cron: '0 1 * * *'    # 22:00 Brasil
 
 jobs:
