@@ -525,9 +525,10 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
             print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
     CINZA_NA = (0.85, 0.85, 0.85)  # cinza único pra todo "não se aplica" (N/A, fora_da_janela, imagem)
     # Conferido?: virou lista suspensa (era checkbox) pra caber um terceiro estado -
-    # N/A pra linha que não tem nem fonte pra conferir (Tipo=N/A), sem forçar
-    # sim/não onde não faz sentido nenhum dos dois.
-    _ativar_dropdown(ws, col_conferido, header, ate_linha, ["sim", "não", "N/A"])
+    # N/A pra linha que não tem nem fonte pra conferir (Tipo=N/A/fora_da_janela).
+    # Sem "não": ou já foi conferida (sim), ou não se aplica (N/A), ou ainda não
+    # foi revisada (em branco) - não existe um "não" permanente aqui.
+    _ativar_dropdown(ws, col_conferido, header, ate_linha, ["sim", "N/A"])
     _colorir_por_valor(ws, col_conferido, header, ate_linha, {
         "sim": (0.82, 0.93, 0.82),
         "N/A": CINZA_NA,
@@ -541,6 +542,7 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     _colorir_por_valor(ws, _rel_display("topline_extraido"), header, ate_linha, {
         "sim": (0.82, 0.93, 0.82),
         STATUS_TOPLINE_MANUAL: (1.0, 0.82, 0.68),  # laranja: ação manual necessária
+        "N/A": CINZA_NA,
     })
     # Segmentos extraídos?: "sim"/"não" são as duas conclusões que o pipeline grava;
     # N/A cobre a linha sem fonte nenhuma pra extrair (mesmo caso do Conferido?).
@@ -740,7 +742,7 @@ def _normalizar_cabecalho(ws, cabecalho, remover_sobras=False):
     ws.update(range_name="A1", values=novos, value_input_option="RAW")
     # coluna conferido recém-criada: aplica a lista suspensa só nas linhas que já têm pesquisa
     if _rel_display("conferido") in alvo and _rel_display("conferido") not in idx:
-        _ativar_dropdown(ws, _rel_display("conferido"), alvo, len(valores), ["sim", "não", "N/A"])
+        _ativar_dropdown(ws, _rel_display("conferido"), alvo, len(valores), ["sim", "N/A"])
     if remover_sobras:
         _remover_colunas_sobrando(ws, len(alvo))
     return alvo

@@ -155,7 +155,7 @@ def _normalizar_cabecalho_relatorios(ws):
     ws.update(range_name="A1", values=novos, value_input_option="RAW")
     # coluna conferido recém-criada: aplica a lista suspensa só nas linhas que já têm pesquisa
     if _rel_display(COL_CONFERIDO) in alvo and _rel_display(COL_CONFERIDO) not in idx:
-        _ativar_dropdown(ws, _rel_display(COL_CONFERIDO), alvo, len(valores), ["sim", "não", "N/A"])
+        _ativar_dropdown(ws, _rel_display(COL_CONFERIDO), alvo, len(valores), ["sim", "N/A"])
     _remover_colunas_sobrando(ws, len(alvo))
     return alvo
 
@@ -1459,6 +1459,9 @@ def atualizar_planilha():
     col_link = _garantir_coluna_relatorios(ws, header, "link")
     col_status = _garantir_coluna_relatorios(ws, header, COL_ORIGEM_LINK)
     col_nivel = _garantir_coluna_relatorios(ws, header, COL_NIVEL_CONFERENCIA)
+    col_conferido = _garantir_coluna_relatorios(ws, header, COL_CONFERIDO)
+    col_segmentos = _garantir_coluna_relatorios(ws, header, "segmentos_extraido")
+    col_topline = _garantir_coluna_relatorios(ws, header, "topline_extraido")
     _separar_linhas_multicargo(ws, header)
     _resetar_validacoes_relatorios(ws, header, _ultima_linha_com_registro(ws))
 
@@ -1567,6 +1570,17 @@ def atualizar_planilha():
                     ))
                     if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
                         celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "fora_da_janela"))
+                    # Fora da janela = nunca vai ter fonte, então nada na linha
+                    # depende dela vai acontecer: Conferido?, Segmentos extraídos?
+                    # e Intenção de voto cadastrada? viram N/A junto, em vez de
+                    # ficar em branco (ou pendurando o aviso de Polling Manual)
+                    # esperando pra sempre uma revisão/extração que não vai rolar.
+                    if not str(linha.get(COL_CONFERIDO, "")).strip():
+                        celulas_para_atualizar.append(gspread.Cell(i, col_conferido, "N/A"))
+                    if not str(linha.get("segmentos_extraido", "")).strip():
+                        celulas_para_atualizar.append(gspread.Cell(i, col_segmentos, "N/A"))
+                    if not str(linha.get("topline_extraido", "")).strip():
+                        celulas_para_atualizar.append(gspread.Cell(i, col_topline, "N/A"))
                 continue
 
             print(f"Buscando: {registro} / {linha.get('cargo', '')}...")
