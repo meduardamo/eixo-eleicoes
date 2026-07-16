@@ -710,11 +710,30 @@ Extraia os dados estruturados para inserção em planilha.
   turno, inclusive confrontos de dois nomes que não tenham menção explícita a segundo turno; no
   foco t2, retorne cenarios=[] se o documento não trouxer uma simulação explicitamente chamada
   de segundo turno para aquele cargo. Não use inferência eleitoral para completar confrontos.
+- PROIBIDO INVENTAR CENÁRIO OU CONFRONTO: cada cenário/confronto que você devolver tem que
+  corresponder a UMA tabela ou gráfico específico e localizável no material, com todo
+  candidato e todo percentual lidos DAQUELE gráfico - nunca complete, deduza ou "lembre" de
+  outro cenário a partir de conhecimento geral sobre política brasileira (nomes de eleições
+  passadas, pesquisas de outros institutos, senso comum sobre quem tende a enfrentar quem).
+  Se o material só trouxer 1 confronto de 2º turno pro cargo, devolva 1 cenário - NUNCA
+  multiplique isso em vários confrontos hipotéticos contra outros nomes só porque são
+  presidenciáveis conhecidos. Isso já causou erro grave e confirmado: um relatório com um
+  único confronto real "Lula x Flávio Bolsonaro" (24%/67%) gerou também confrontos
+  fictícios contra Ciro Gomes, Fernando Haddad, Simone Tebet e outros nomes que SEQUER
+  APARECEM no documento - o elenco inteiro da eleição de 2022, vindo da memória do
+  modelo, não do PDF.
+- ARMADILHA "BOLSONARO": Jair Bolsonaro está INELEGÍVEL para 2026 (condenado, banido até
+  2030) e não é candidato em nenhuma pesquisa deste ciclo. Se o material mencionar um
+  "Bolsonaro" candidato de verdade, quase sempre é Flávio Bolsonaro ou Michelle Bolsonaro
+  (nunca Jair) - confira o nome completo na tabela/gráfico da pergunta de voto antes de
+  gravar, nunca assuma "Bolsonaro" = Jair Bolsonaro. Uma matéria sobre um desentendimento
+  familiar entre Flávio e Michelle Bolsonaro (ex.: "vídeo pedindo desculpas") é conteúdo
+  temático/reativo, NÃO é pergunta de voto - não vira cenário nem confronto de jeito nenhum.
 - Para t2, cada confronto direto deve ser um cenário separado e deve preencher 'disputa'
   no formato t2_candidato1-candidato2, em minúsculas, sem acento, usando nomes curtos,
   SEMPRE em ordem alfabética dos dois nomes (não pela ordem que aparecem no relatório)
-  (ex.: t2_flavio-lula, t2_lula-zema, t2_bolsonaro-lula). Isso é obrigatório: o mesmo
-  confronto relatado como "Lula x Bolsonaro" ou "Bolsonaro x Lula" tem que gerar a
+  (ex.: t2_flavio-lula, t2_lula-zema, t2_caiado-lula). Isso é obrigatório: o mesmo
+  confronto relatado como "Lula x Flávio" ou "Flávio x Lula" tem que gerar a
   MESMA disputa, senão o gráfico de segundo turno quebra em duas séries.
 - tipo deve ser candidato ou nao_valido.
 - PADRONIZAÇÃO DE NOMES: se o candidato corresponder a um da lista canônica acima, use o nome
