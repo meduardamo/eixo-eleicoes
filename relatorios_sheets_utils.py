@@ -39,16 +39,25 @@ RELATORIOS_COLUNAS = [
     ("segmentos_data_extracao", "Data da extração de segmentos"),
     ("segmentos_erro", "Erro na extração de segmentos"),
     ("segmentos_tentativas", "Tentativas de segmentos"),
-    ("topline_extraido", "Topline extraída?"),
-    ("topline_data_extracao", "Data da extração de topline"),
-    ("topline_erro", "Erro na extração de topline"),
-    ("topline_tentativas", "Tentativas de topline"),
+    ("topline_extraido", "Intenção de voto cadastrada?"),
+    ("topline_data_extracao", "Data do registro manual"),
 ]
 
 REL_COL = dict(RELATORIOS_COLUNAS)
 
 CABECALHO_RELATORIOS = [rotulo for _, rotulo in RELATORIOS_COLUNAS]
 
+# A extração automática de TOPLINE (só a parte de topline, não a de
+# segmentos/rejeição/aprovação) foi desativada em 16/07/2026 - o cadastro de
+# topline passou a ser 100% manual via Polling Manual (gerador-de-envios).
+# Segmentos/rejeição/aprovação continuam extraídos automaticamente
+# (relatorios_pipeline.py extrair, workflow 04), sem mudança. "Topline
+# extraída?" mudou de sentido: não indica mais se o Gemini extraiu do PDF,
+# indica se o registro+cargo já está na Matriz T1/T2
+# (marcar_topline_extraida_manual, no Polling Manual, vira "sim" quando ela
+# salva por lá). O alias legado "Data da extração de topline" continua
+# mapeado aqui só pra não perder dado de linha antiga que ainda não passou
+# pela migração de cabeçalho.
 ALIASES_RELATORIOS = {
     "Registro TSE": ["registro", "registro_tse"],
     "Cargo": ["cargo"],
@@ -64,10 +73,8 @@ ALIASES_RELATORIOS = {
     "Data da extração de segmentos": ["segmentos_data_extracao", "data_extracao"],
     "Erro na extração de segmentos": ["segmentos_erro", "extracao_erro"],
     "Tentativas de segmentos": ["segmentos_tentativas", "extracao_tentativas"],
-    "Topline extraída?": ["topline_extraido"],
-    "Data da extração de topline": ["topline_data_extracao"],
-    "Erro na extração de topline": ["topline_erro"],
-    "Tentativas de topline": ["topline_tentativas"],
+    "Intenção de voto cadastrada?": ["topline_extraido", "Topline extraída?"],
+    "Data do registro manual": ["topline_data_extracao", "Data da extração de topline"],
 }
 
 REL_KEY = {rotulo: chave for chave, rotulo in RELATORIOS_COLUNAS}
@@ -77,6 +84,15 @@ for chave, rotulo in RELATORIOS_COLUNAS:
         REL_KEY[alias] = chave
 
 STATUS_TOPLINE_MANUAL = "⚠️ REGISTRE NO POLLING MANUAL"
+
+POLLING_MANUAL_URL = "https://eixoestrategiapolitica.streamlit.app/Polling_Manual"
+
+
+def link_status_topline_manual() -> str:
+    """Fórmula HYPERLINK clicável pro estado 'ainda não cadastrado na Matriz
+    T1/T2' de 'Topline extraída?' - usada tanto pra linha nova na fila quanto
+    pra linha recém-separada de um registro multicargo."""
+    return f'=HYPERLINK("{POLLING_MANUAL_URL}";"{STATUS_TOPLINE_MANUAL}")'
 
 CARGOS_MONITORADOS = ("presidente", "governador", "senador")
 
@@ -433,8 +449,8 @@ def _colorir_cabecalhos_relatorios(ws, header):
         # Resultado da extração demográfica: azul claro.
         (["segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas"],
          (0.82, 0.91, 0.97)),
-        # Resultado da extração de topline: roxo claro.
-        (["topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas"],
+        # Registro de topline (agora manual, via Polling Manual): roxo claro.
+        (["topline_extraido", "topline_data_extracao"],
          (0.89, 0.84, 0.95)),
     ]
     requests = []
@@ -518,6 +534,11 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         "sim": (0.82, 0.93, 0.82),
         "não": (0.96, 0.80, 0.80),  # vermelho pastel: relatório sem quebra de segmento
     })
+    _colorir_por_valor(ws, _rel_display("nivel_conferencia"), header, ate_linha, {
+        # cinza: pesquisa fora da janela de busca (MAX_DIAS_BUSCA), não vale
+        # mais tentar achar o relatório - só visível, sem ação pendente real.
+        "fora_da_janela": (0.85, 0.85, 0.85),
+    })
     _colorir_cabecalhos_relatorios(ws, header)
 
 
@@ -525,7 +546,7 @@ def _limpar_status_extracao(row):
     for coluna in (
         "link", "nivel_conferencia", "conferido",
         "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
-        "topline_extraido", "topline_data_extracao", "topline_erro", "topline_tentativas",
+        "topline_extraido", "topline_data_extracao",
     ):
         row[_rel_display(coluna)] = ""
         row[coluna] = ""
