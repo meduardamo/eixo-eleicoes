@@ -338,26 +338,54 @@ def _row_count_atual(ws):
 
 
 def _encolher_linhas_vazias(ws):
-    """Remove somente as linhas vazias que sobram abaixo dos dados."""
+    """Remove somente as linhas vazias que sobram abaixo dos dados.
+
+    Roda logo depois de add_rows()+append_rows(). add_rows(N) às vezes
+    expande a grade em blocos maiores que N por conta própria, e um fetch de
+    metadata (_row_count_atual) imediatamente depois pode devolver um
+    total_atual desatualizado (ainda não propagado), igual a 'ultima' - o
+    early-return antigo confiava nessa ÚNICA leitura e pulava a limpeza
+    achando que não sobrava nada. A linha extra fica com a validação de
+    checkbox aplicada (herdada da coluna 'liberado'), então o Sheets ainda
+    conta ela como "usada" pro auto-append da PRÓXIMA rodada - o resultado é
+    um buraco permanente entre o fim de uma execução do workflow e o começo
+    da seguinte (achado em topline_pesquisas: linhas 83-107 e 133-158, cada
+    uma bem na fronteira entre duas rodadas em dias diferentes). Por isso
+    confere de novo, com uma pequena pausa, antes de desistir.
+    """
+    import time
     ultima = _ultima_linha_com_dados(ws)
     total_atual = _row_count_atual(ws)
     if total_atual <= ultima:
-        return
-    try:
-        ws.spreadsheet.batch_update({
-            "requests": [{
-                "deleteDimension": {
-                    "range": {
-                        "sheetId": ws.id,
-                        "dimension": "ROWS",
-                        "startIndex": ultima,
-                        "endIndex": total_atual,
+        time.sleep(1.5)
+        total_atual = _row_count_atual(ws)
+        if total_atual <= ultima:
+            return
+    for tentativa in range(2):
+        try:
+            ws.spreadsheet.batch_update({
+                "requests": [{
+                    "deleteDimension": {
+                        "range": {
+                            "sheetId": ws.id,
+                            "dimension": "ROWS",
+                            "startIndex": ultima,
+                            "endIndex": total_atual,
+                        }
                     }
-                }
-            }]
-        })
-    except Exception as e:
-        print(f"[AVISO] não deu pra remover linhas vazias da aba '{ws.title}': {e}")
+                }]
+            })
+            return
+        except Exception as e:
+            if tentativa == 1:
+                print(f"[AVISO] não deu pra remover linhas vazias da aba '{ws.title}': {e}")
+                return
+            # endIndex pode ter ficado desatualizado NO SENTIDO CONTRÁRIO
+            # (grade real menor que o total_atual lido) - relê e tenta de novo.
+            time.sleep(1.5)
+            total_atual = _row_count_atual(ws)
+            if total_atual <= ultima:
+                return
 
 
 def _append_rows_compacto(ws, linhas, value_input_option="RAW"):

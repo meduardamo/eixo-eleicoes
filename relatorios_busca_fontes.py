@@ -420,26 +420,60 @@ def _ultima_linha_com_dados(ws):
     return ultima
 
 
+def _row_count_atual(ws):
+    """Linhas da grade direto da API, sem confiar no cache local do gspread
+    (ws.row_count só reflete o resize()/add_rows() feito NESTE objeto; um
+    append_rows que expande a grade sozinho por conta própria não atualiza
+    esse cache)."""
+    meta = ws.spreadsheet.fetch_sheet_metadata()
+    for sheet in meta.get("sheets", []):
+        props = sheet.get("properties", {})
+        if props.get("sheetId") == ws.id:
+            return props.get("gridProperties", {}).get("rowCount", ws.row_count)
+    return ws.row_count
+
+
 def _encolher_linhas_vazias(ws):
-    """Apaga apenas o bloco vazio abaixo da última linha usada."""
+    """Apaga apenas o bloco vazio abaixo da última linha usada.
+
+    Cópia de relatorios_pipeline.py, mesma lógica (arquivos duplicam esse
+    helper). Confere o tamanho da grade duas vezes, com uma pausa entre as
+    leituras: um fetch de metadata logo após add_rows()+append_rows() pode
+    devolver um total ainda não propagado (Sheets expande a grade em blocos
+    maiores que o pedido), fazendo a limpeza ser pulada por engano e deixando
+    um bloco de linha "vazia" (mas com validação de checkbox aplicada, então
+    o Sheets conta como usada) que vira buraco permanente no meio da aba na
+    fronteira com a próxima rodada do workflow."""
     ultima = _ultima_linha_com_dados(ws)
-    if ws.row_count <= ultima:
-        return
-    try:
-        ws.spreadsheet.batch_update({
-            "requests": [{
-                "deleteDimension": {
-                    "range": {
-                        "sheetId": ws.id,
-                        "dimension": "ROWS",
-                        "startIndex": ultima,
-                        "endIndex": ws.row_count,
+    total_atual = _row_count_atual(ws)
+    if total_atual <= ultima:
+        time.sleep(1.5)
+        total_atual = _row_count_atual(ws)
+        if total_atual <= ultima:
+            return
+    for tentativa in range(2):
+        try:
+            ws.spreadsheet.batch_update({
+                "requests": [{
+                    "deleteDimension": {
+                        "range": {
+                            "sheetId": ws.id,
+                            "dimension": "ROWS",
+                            "startIndex": ultima,
+                            "endIndex": total_atual,
+                        }
                     }
-                }
-            }]
-        })
-    except Exception as e:
-        print(f"[AVISO] não deu pra remover linhas vazias da aba '{ws.title}': {e}")
+                }]
+            })
+            return
+        except Exception as e:
+            if tentativa == 1:
+                print(f"[AVISO] não deu pra remover linhas vazias da aba '{ws.title}': {e}")
+                return
+            time.sleep(1.5)
+            total_atual = _row_count_atual(ws)
+            if total_atual <= ultima:
+                return
 
 
 def _append_rows_compacto(ws, linhas, value_input_option="RAW"):
