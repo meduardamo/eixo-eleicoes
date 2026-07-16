@@ -494,7 +494,8 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     col_conferido = _rel_display("conferido")
     # colunas com validação PRÓPRIA que não podem ser limpas junto (senão o checkbox do
     # Conferido? e a lista suspensa do Tipo somem a cada rodada de manutenção).
-    protegidas = sorted({header.index(_rel_display(n)) for n in ("conferido", "tipo_fonte")
+    protegidas = sorted({header.index(_rel_display(n)) for n in
+                         ("conferido", "tipo_fonte", "nivel_conferencia", "segmentos_extraido")
                          if _rel_display(n) in header})
     faixas, ini = [], 0
     for pc in protegidas:
@@ -533,11 +534,32 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         "sim": (0.82, 0.93, 0.82),
         STATUS_TOPLINE_MANUAL: (1.0, 0.82, 0.68),  # laranja: ação manual necessária
     })
+    # Segmentos extraídos?: dropdown com as duas conclusões válidas - "sim"/"não"
+    # são gravados pelo pipeline, mas o dropdown também deixa corrigir na mão sem
+    # digitar errado (evita "Sim"/"SIM"/"nao" fora do padrão que o código espera).
+    _ativar_dropdown(ws, _rel_display("segmentos_extraido"), header, ate_linha, ["sim", "não"])
     _colorir_por_valor(ws, _rel_display("segmentos_extraido"), header, ate_linha, {
         "sim": (0.82, 0.93, 0.82),
         "não": (0.96, 0.80, 0.80),  # vermelho pastel: relatório sem quebra de segmento
     })
+    # Nível de conferência: todo valor que o busca_fontes grava (ver nota das
+    # colunas em relatorios/relatorios_busca_fontes.py) - dropdown pra revisão
+    # manual não digitar fora do vocabulário que o código espera.
+    _ativar_dropdown(ws, _rel_display("nivel_conferencia"), header, ate_linha, [
+        "ok", "nao", "provavel", "teaser", "paywall", "bloqueado",
+        "erro_chrome", "erro_tecnico", "imagem", "fora_da_janela", "link_existente",
+    ])
     _colorir_por_valor(ws, _rel_display("nivel_conferencia"), header, ate_linha, {
+        "ok": (0.82, 0.93, 0.82),             # verde: fonte confirmada
+        "link_existente": (0.88, 0.95, 0.88),  # verde claro: link já veio pronto
+        "nao": (0.96, 0.80, 0.80),             # vermelho pastel: ainda não confirmada
+        "provavel": (1.0, 0.95, 0.70),         # amarelo: confirmação fraca
+        "teaser": (0.85, 0.90, 0.95),          # azul acinzentado: só anuncia divulgação futura
+        "paywall": (1.0, 0.87, 0.70),          # laranja: bloqueado por paywall
+        "bloqueado": (0.95, 0.75, 0.75),       # vermelho mais forte: acesso bloqueado
+        "erro_chrome": (0.95, 0.75, 0.75),
+        "erro_tecnico": (0.95, 0.75, 0.75),
+        "imagem": (0.90, 0.90, 0.90),          # cinza: não dá pra conferir por texto
         # cinza: pesquisa fora da janela de busca (MAX_DIAS_BUSCA), não vale
         # mais tentar achar o relatório - só visível, sem ação pendente real.
         "fora_da_janela": (0.85, 0.85, 0.85),
