@@ -878,6 +878,62 @@ def _blocos_pdf(pdf_bytes, tamanho=PAGINAS_POR_BLOCO):
         yield buf.getvalue()
 
 
+def _migrar_topline_sem_conferida(ws):
+    """Transfere a marca legada para `origem` e remove `conferida` do staging.
+
+    A exclusão usa a API estrutural do Sheets, preservando as validações e a
+    formatação das demais colunas, inclusive o checkbox `liberado`. Usada só
+    pelas abas topline_pesquisas/topline_resultados (via _aba), então só
+    entra em jogo se relatorios_extracao_topline_aposentado.py for reativado.
+    """
+    valores = ws.get_all_values()
+    if not valores or "conferida" not in valores[0]:
+        return
+
+    header = valores[0]
+    if "origem" not in header:
+        _garantir_coluna(ws, header, "origem")
+        valores = ws.get_all_values()
+        header = valores[0]
+
+    i_conferida = header.index("conferida")
+    i_origem = header.index("origem")
+    atualizacoes = []
+    for linha, row in enumerate(valores[1:], start=2):
+        origem = row[i_origem].strip() if len(row) > i_origem else ""
+        legado = row[i_conferida].strip().lower() if len(row) > i_conferida else ""
+        if origem:
+            continue
+        if "manual" in legado:
+            origem = "polling_manual"
+        elif legado:
+            origem = "PDF (relatório do instituto)"
+        else:
+            # Esta aba recebe exclusivamente a extração de relatórios.
+            origem = "PDF (relatório do instituto)"
+        atualizacoes.append(gspread.Cell(linha, i_origem + 1, origem))
+
+    if atualizacoes:
+        ws.update_cells(atualizacoes, value_input_option="RAW")
+
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": i_conferida,
+                        "endIndex": i_conferida + 1,
+                    }
+                }
+            }]
+        })
+        print(f"[migracao] {ws.title}: coluna 'conferida' removida")
+    except Exception as e:
+        print(f"[AVISO] não foi possível remover 'conferida' de {ws.title}: {e}")
+
+
 def _aba(sh, nome, cabecalhos, manutencao=True):
     """Garante a aba e o cabeçalho. Cria a aba se não existir; escreve o
     cabeçalho se a primeira linha estiver vazia. Não mexe em dados existentes.
@@ -930,7 +986,7 @@ def _blocos_ativos_cargo(pdf, cargo):
     seguintes não mencionarem OUTRO cargo monitorado; só desativa quando um outro
     cargo assume claramente a seção. Bloco inicial começa ativo (cobre PDF que já abre
     no cargo certo)."""
-    from relatorios_topline_core import extrair_texto_pdf_bytes
+    from compartilhado.relatorios_topline_core import extrair_texto_pdf_bytes
     palavras_alvo = PALAVRAS_CARGO.get(str(cargo or "").lower(), [str(cargo or "").lower()])
     outros_cargos = [p for c, ps in PALAVRAS_CARGO.items() if c != cargo for p in ps]
     ativo = True

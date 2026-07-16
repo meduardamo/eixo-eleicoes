@@ -43,4 +43,4 @@ jobs:
           echo "Topline foi aposentado (16/07/2026) - cadastro manual via Polling Manual"
 
       - name: Extrair segmentos, rejeição e aprovação
-        run: python -u relatorios_extracao_segmentos.py extrair
+        run: python -u -m relatorios.relatorios_extracao_segmentos extrair

@@ -63,4 +63,4 @@ jobs:
           if [ "$CONVENCOES_FORCE" = "true" ]; then
             ARGS+=(--force)
           fi
-          python -u convencoes_partidarias.py "${ARGS[@]}"
+          python -u -m outros.convencoes_partidarias "${ARGS[@]}"

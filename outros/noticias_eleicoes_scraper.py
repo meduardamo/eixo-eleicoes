@@ -98,8 +98,7 @@ def _gemini_client():
             pass
     if not key:
         try:
-            _dir = os.path.dirname(os.path.abspath(__file__))
-            cred_path = os.path.join(_dir, "credentials.json")
+            cred_path = "credentials.json"
             with open(cred_path, encoding="utf-8") as f:
                 key = json.load(f).get("genai_api_key", "")
         except Exception:
@@ -337,8 +336,7 @@ def _gc():
     if creds_json:
         info = {k: v for k, v in json.loads(creds_json).items() if k in _SA_FIELDS}
     else:
-        _dir = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(_dir, "credentials.json"), encoding="utf-8") as f:
+        with open("credentials.json", encoding="utf-8") as f:
             info = {k: v for k, v in json.load(f).items() if k in _SA_FIELDS}
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     return gspread.authorize(Credentials.from_service_account_info(info, scopes=scopes))

@@ -29,4 +29,4 @@ jobs:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           SPREADSHEET_ID_TSE: ${{ secrets.SPREADSHEET_ID_TSE }}
           SPREADSHEET_ID_SITES: ${{ secrets.SPREADSHEET_ID_SITES }}
-        run: python -u noticias_eleicoes_scraper.py
+        run: python -u -m outros.noticias_eleicoes_scraper

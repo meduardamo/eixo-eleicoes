@@ -19,7 +19,7 @@ from google.auth.transport.requests import Request
 from google import genai
 from google.genai import types
 
-from relatorios_sheets_utils import (
+from compartilhado.relatorios_sheets_utils import (
     ALIASES_RELATORIOS, BRT, CABECALHO_RELATORIOS, CARGOS_MONITORADOS, CARGO_ROTULO,
     REGISTRO_TSE_RE, RELATORIOS_COLUNAS, REL_COL, REL_KEY, STATUS_TOPLINE_MANUAL,
     _append_rows_compacto, _ativar_checkbox, _ativar_dropdown, _cargo_norm,

@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install gspread google-auth brevo-python==1.1.2
-      - run: python relatorios_extracao_segmentos.py alerta
+      - run: python -m relatorios.relatorios_extracao_segmentos alerta
         env:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}

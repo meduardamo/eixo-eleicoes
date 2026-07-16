@@ -13,8 +13,8 @@ ainda bate com o que este arquivo espera - ele foi escrito pro schema de
 antes da aposentadoria (sem coluna de erro/tentativas de topline).
 
 Uso (manual, sem workflow):
-  python relatorios_extracao_topline_aposentado.py topline    # extrai topline dos relatórios
-  python relatorios_extracao_topline_aposentado.py publicar   # publica toplines liberadas nas matrizes T1/T2
+  python -m relatorios.relatorios_extracao_topline_aposentado topline    # extrai topline dos relatórios
+  python -m relatorios.relatorios_extracao_topline_aposentado publicar   # publica toplines liberadas nas matrizes T1/T2
 
 Secrets: GOOGLE_CREDENTIALS_JSON, GEMINI_API_KEY, SPREADSHEET_ID_RELATORIOS,
 SPREADSHEET_ID_POLLINGDATA, SPREADSHEET_ID_POLLINGDATA_T2.
@@ -28,7 +28,7 @@ from datetime import datetime
 
 import gspread
 
-from relatorios_sheets_utils import (
+from compartilhado.relatorios_sheets_utils import (
     BRT, CABECALHO_RELATORIOS, CARGOS_MONITORADOS, CARGO_ROTULO, STATUS_TOPLINE_MANUAL,
     _aba, _append_rows_compacto, _ativar_checkbox, _baixar_pdf, _blocos_ativos_cargo,
     _blocos_pdf, _cargo_norm, _cargos_monitorados, _colorir_por_valor, _creds_info,
@@ -70,60 +70,6 @@ POLLING_RESULTADOS_COLS = [
     "scenario_label", "candidato", "partido", "candidato_partido", "tipo",
     "percentual", "fonte_url", "horario_raspagem", "origem",
 ]
-
-
-def _migrar_topline_sem_conferida(ws):
-    """Transfere a marca legada para `origem` e remove `conferida` do staging.
-
-    A exclusão usa a API estrutural do Sheets, preservando as validações e a
-    formatação das demais colunas, inclusive o checkbox `liberado`.
-    """
-    valores = ws.get_all_values()
-    if not valores or "conferida" not in valores[0]:
-        return
-
-    header = valores[0]
-    if "origem" not in header:
-        _garantir_coluna(ws, header, "origem")
-        valores = ws.get_all_values()
-        header = valores[0]
-
-    i_conferida = header.index("conferida")
-    i_origem = header.index("origem")
-    atualizacoes = []
-    for linha, row in enumerate(valores[1:], start=2):
-        origem = row[i_origem].strip() if len(row) > i_origem else ""
-        legado = row[i_conferida].strip().lower() if len(row) > i_conferida else ""
-        if origem:
-            continue
-        if "manual" in legado:
-            origem = "polling_manual"
-        elif legado:
-            origem = "PDF (relatório do instituto)"
-        else:
-            # Esta aba recebe exclusivamente a extração de relatórios.
-            origem = "PDF (relatório do instituto)"
-        atualizacoes.append(gspread.Cell(linha, i_origem + 1, origem))
-
-    if atualizacoes:
-        ws.update_cells(atualizacoes, value_input_option="RAW")
-
-    try:
-        ws.spreadsheet.batch_update({
-            "requests": [{
-                "deleteDimension": {
-                    "range": {
-                        "sheetId": ws.id,
-                        "dimension": "COLUMNS",
-                        "startIndex": i_conferida,
-                        "endIndex": i_conferida + 1,
-                    }
-                }
-            }]
-        })
-        print(f"[migracao] {ws.title}: coluna 'conferida' removida")
-    except Exception as e:
-        print(f"[AVISO] não foi possível remover 'conferida' de {ws.title}: {e}")
 
 
 def _scenario_ids_na_aba(ws):
@@ -265,7 +211,7 @@ def _extrair_topline_pdf(pdf, texto, link, escopo, cargo):
     de sempre). PDF grande: lê em blocos de 5 páginas e junta os cenários, senão o
     modelo perde o cargo que está no fim do PDF (ex.: VOX senador na pág 49, Meio/Ideia
     92 páginas). Pré-filtra blocos pelo texto do cabeçalho pra economizar chamada."""
-    from relatorios_topline_core import classificar_tipo_resultado, extrair_dados_polling_gemini
+    from compartilhado.relatorios_topline_core import classificar_tipo_resultado, extrair_dados_polling_gemini
     if _n_paginas_pdf(pdf) <= 10:
         return extrair_dados_polling_gemini(texto, url_original=link, escopo=escopo, pdf_bytes=pdf)
 
@@ -347,7 +293,7 @@ def cmd_topline():
     if not RELATORIOS_ID:
         raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
     import pandas as pd
-    from relatorios_topline_core import (
+    from compartilhado.relatorios_topline_core import (
         USO_TOKENS as USO_TOKENS_TOPLINE, extrair_dados_polling_gemini,
         extrair_texto_pdf_bytes, montar_dataframes_polling, ficha_instituto,
         resolver_data_campo_deterministica,
@@ -708,10 +654,10 @@ def cmd_publicar():
     if not (T1_ID or T2_ID):
         raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
     import pandas as pd
-    from pollingdata_scraper import (
+    from compartilhado.pollingdata_scraper import (
         classificar_instituto, gs_client_from_env, normalizar_instituto, salvar_tudo,
     )
-    from relatorios_topline_core import ORIGEM
+    from compartilhado.relatorios_topline_core import ORIGEM
 
     gc = gs_client_from_env()
     sh = gc.open_by_key(RELATORIOS_ID)
@@ -845,4 +791,4 @@ if __name__ == "__main__":
     elif cmd == "publicar":
         cmd_publicar()
     else:
-        print("uso: python relatorios_extracao_topline_aposentado.py [topline|publicar]")
+        print("uso: python -m relatorios.relatorios_extracao_topline_aposentado [topline|publicar]")

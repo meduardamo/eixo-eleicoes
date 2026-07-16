@@ -52,4 +52,4 @@ jobs:
           echo "Workflow: atualiza-relatorios"
 
       - name: Executar busca e upload
-        run: python -u relatorios_busca_fontes.py
+        run: python -u -m relatorios.relatorios_busca_fontes

@@ -518,7 +518,7 @@ _CANONICO = None
 def _canonico() -> dict:
     global _CANONICO
     if _CANONICO is None:
-        caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "canonico.json")
+        caminho = "canonico.json"  # sempre relativo à raiz do repo (cwd do workflow)
         try:
             with open(caminho, encoding="utf-8") as f:
                 _CANONICO = json.load(f)
@@ -582,7 +582,7 @@ def _fichas_institutos():
     global _FICHAS
     if _FICHAS is None:
         try:
-            caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "institutos_fichas.json")
+            caminho = "institutos_fichas.json"  # sempre relativo à raiz do repo (cwd do workflow)
             with open(caminho, encoding="utf-8") as f:
                 _FICHAS = json.load(f).get("institutos", [])
         except Exception:

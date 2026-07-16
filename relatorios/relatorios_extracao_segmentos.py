@@ -9,10 +9,10 @@ Cadastro de topline agora é 100% manual, via Polling Manual
 automática, sem mudança nenhuma de comportamento.
 
 Uso:
-  python relatorios_extracao_segmentos.py alerta      # email com as pesquisas que divulgam hoje (PesqEle)
-  python relatorios_extracao_segmentos.py extrair     # extrai voto por segmento, rejeição e aprovação dos relatórios
-  python relatorios_extracao_segmentos.py rebuild_bi  # reconstrói resultados_bi nas planilhas PollingData
-  python relatorios_extracao_segmentos.py canonico    # regenera canonico.json a partir de T1/T2
+  python -m relatorios.relatorios_extracao_segmentos alerta      # email com as pesquisas que divulgam hoje (PesqEle)
+  python -m relatorios.relatorios_extracao_segmentos extrair     # extrai voto por segmento, rejeição e aprovação dos relatórios
+  python -m relatorios.relatorios_extracao_segmentos rebuild_bi  # reconstrói resultados_bi nas planilhas PollingData
+  python -m relatorios.relatorios_extracao_segmentos canonico    # regenera canonico.json a partir de T1/T2
 
 Secrets: GOOGLE_CREDENTIALS_JSON, GEMINI_API_KEY, BREVO_API_KEY, EMAIL,
 DESTINATARIOS, SPREADSHEET_ID (PesqEle), SPREADSHEET_ID_RELATORIOS.
@@ -26,7 +26,7 @@ from datetime import datetime
 
 import gspread
 
-from relatorios_sheets_utils import (
+from compartilhado.relatorios_sheets_utils import (
     ALIASES_RELATORIOS, BRT, CABECALHO_RELATORIOS, CARGOS_MONITORADOS, CARGO_ROTULO,
     REGISTRO_TSE_RE, RELATORIOS_COLUNAS, REL_COL, REL_KEY, STATUS_TOPLINE_MANUAL,
     _aba, _append_rows_compacto, _ativar_checkbox, _ativar_dropdown, _baixar_pdf,
@@ -609,7 +609,7 @@ def _remover_subtotais_avaliacao(itens):
 
 
 def _candidatos_canonicos_mapa(cargo, uf):
-    from relatorios_topline_core import _referencia
+    from compartilhado.relatorios_topline_core import _referencia
     cands, _ = _referencia(cargo, uf)
     return {_chave_padronizacao(c): c for c in cands}
 
@@ -774,7 +774,7 @@ def extrair_do_pdf(pdf_bytes, extra="", uf=""):
 def cmd_extrair():
     if not RELATORIOS_ID:
         raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
-    from relatorios_topline_core import _referencia, ficha_instituto, instituto_canonico, sigla_uf
+    from compartilhado.relatorios_topline_core import _referencia, ficha_instituto, instituto_canonico, sigla_uf
 
     sh = _sheets().open_by_key(RELATORIOS_ID)
     fila = _aba(sh, "relatorios", CABECALHOS, manutencao=False)
@@ -928,7 +928,7 @@ def cmd_extrair():
             # pode ter quebra pra Governador e não pra Senador, e olhar o PDF inteiro
             # faria a checagem "ver" a quebra do Governador e gerar erro falso pro
             # Senador (aconteceu com RO-07927: IHPEC tem quebra só pra Governador).
-            from relatorios_topline_core import extrair_texto_pdf_bytes
+            from compartilhado.relatorios_topline_core import extrair_texto_pdf_bytes
             if _n_paginas_pdf(pdf) <= 10:
                 try:
                     txt_pdf = extrair_texto_pdf_bytes(pdf).lower()
@@ -1033,7 +1033,7 @@ T2_ID = os.getenv("SPREADSHEET_ID_POLLINGDATA_T2", "")
 def cmd_rebuild_bi():
     if not (T1_ID or T2_ID):
         raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
-    from pollingdata_scraper import gs_client_from_env, reconstruir_resultados_bi
+    from compartilhado.pollingdata_scraper import gs_client_from_env, reconstruir_resultados_bi
 
     gc = gs_client_from_env()
     for turno, sheet_id in (("t1", T1_ID), ("t2", T2_ID)):
@@ -1048,7 +1048,7 @@ def cmd_canonico():
     Rodar localmente quando surgirem candidatos/institutos novos; commitar o arquivo."""
     if not (T1_ID or T2_ID):
         raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
-    from pollingdata_scraper import gs_client_from_env
+    from compartilhado.pollingdata_scraper import gs_client_from_env
 
     gc = gs_client_from_env()
     institutos, pres = set(), set()
@@ -1080,7 +1080,7 @@ def cmd_canonico():
         "governador": {uf: sorted(v) for uf, v in sorted(gov.items())},
         "senador": {uf: sorted(v) for uf, v in sorted(sen.items())},
     }
-    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "canonico.json")
+    caminho = "canonico.json"  # sempre relativo à raiz do repo (cwd do workflow)
     with open(caminho, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
     print(f"canonico.json atualizado: {len(data['institutos'])} institutos, "
@@ -1102,4 +1102,4 @@ if __name__ == "__main__":
     elif cmd == "canonico":
         cmd_canonico()
     else:
-        print("uso: python relatorios_extracao_segmentos.py [alerta|extrair|rebuild_bi|canonico]")
+        print("uso: python -m relatorios.relatorios_extracao_segmentos [alerta|extrair|rebuild_bi|canonico]")
