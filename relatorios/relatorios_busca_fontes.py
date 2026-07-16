@@ -1457,6 +1457,7 @@ def atualizar_planilha():
 
     header = _normalizar_cabecalho_relatorios(ws)
     col_link = _garantir_coluna_relatorios(ws, header, "link")
+    col_url_original = _garantir_coluna_relatorios(ws, header, "url_original")
     col_status = _garantir_coluna_relatorios(ws, header, COL_ORIGEM_LINK)
     col_nivel = _garantir_coluna_relatorios(ws, header, COL_NIVEL_CONFERENCIA)
     col_conferido = _garantir_coluna_relatorios(ws, header, COL_CONFERIDO)
@@ -1603,6 +1604,13 @@ def atualizar_planilha():
                 pendentes_finais.append(f"{registro} - Nenhum relatório ou matéria encontrada na web hoje.")
                 continue
             origem_texto = resultado.get("origem_texto", "Capturado na Web")
+
+        # Link na internet = a URL real da fonte, pra abrir depois (mesmo que
+        # apodreça um dia). "PDF salvo no Drive" (col_link) vira o link do Drive
+        # quando dá certo baixar/converter - fica com o PDF de verdade, que o
+        # cmd_extrair de segmentos precisa, mas sozinho não dá pra abrir a
+        # matéria original nem confirmar de onde veio.
+        celulas_para_atualizar.append(gspread.Cell(i, col_url_original, link_fonte))
 
         if _fonte_video(link_fonte):
             pendentes_finais.append(f"{registro} - Fonte é vídeo ({link_fonte}); sem relatório legível, deixado pendente.")

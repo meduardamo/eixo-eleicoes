@@ -33,7 +33,8 @@ RELATORIOS_COLUNAS = [
     ("uf", "UF"),
     ("instituto", "Instituto"),
     ("data_divulgacao", "Data de divulgação"),
-    ("link", "Link do relatório"),
+    ("url_original", "Link na internet"),
+    ("link", "PDF salvo no Drive"),
     ("origem_link", "Origem do link"),
     ("nivel_conferencia", "Nível de conferência"),
     ("tipo_fonte", "Tipo"),
@@ -67,7 +68,8 @@ ALIASES_RELATORIOS = {
     "UF": ["uf"],
     "Instituto": ["instituto"],
     "Data de divulgação": ["data_divulgacao", "data_divulgacao_pesqele"],
-    "Link do relatório": ["link"],
+    "Link na internet": ["url_original"],
+    "PDF salvo no Drive": ["link", "Link do relatório"],
     "Origem do link": ["origem_link", "origem_busca"],
     "Nível de conferência": ["nivel_conferencia"],
     "Tipo": ["tipo_fonte", "tipo", "tipo_de_fonte"],
@@ -447,7 +449,7 @@ def _colorir_cabecalhos_relatorios(ws, header):
         (["registro", "cargo", "uf", "instituto", "data_divulgacao"],
          (0.85, 0.90, 0.95)),
         # Fonte e revisão humana: verde muito claro.
-        (["link", "origem_link", "nivel_conferencia", "tipo_fonte", "conferido"],
+        (["url_original", "link", "origem_link", "nivel_conferencia", "tipo_fonte", "conferido"],
          (0.88, 0.94, 0.86)),
         # Resultado da extração demográfica: azul claro.
         (["segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas"],
