@@ -2241,6 +2241,20 @@ def cmd_topline():
                         _aviso(f"{cargo}/{turno}: {aviso_data}")
                     df_p, df_r = montar_dataframes_polling(
                         payload, fonte_url=link, instituto_fonte=r.get("instituto", ""))
+                    # dedup ANTES de qualquer checagem de soma: o dedup de _gravar (mesmas
+                    # chaves) só roda no flush do lote, no fim do processamento da linha, e
+                    # até lá o mesmo cenário real pode ter entrado mais de uma vez em df_r
+                    # (blocos diferentes do PDF capturando o mesmo confronto sem que o dedup
+                    # de _extrair_topline_pdf pegasse - rótulo/precisão do número variando
+                    # entre leituras). Sem isso, a soma calculada aqui conta as duplicatas e
+                    # gera "conferir: soma 300%/600%" pra dado que, já deduplicado, soma 100%
+                    # certinho (achado no BR-05628/2026, Boas Ideias, presidente/t2: 13
+                    # cenário(s) extraídos pra só 6 confrontos reais).
+                    if not df_r.empty:
+                        df_r = df_r.drop_duplicates(
+                            subset=["scenario_id", "candidato_partido", "tipo"], keep="first")
+                    if not df_p.empty:
+                        df_p = df_p.drop_duplicates(subset=["scenario_id"], keep="first")
                 except Exception as e:
                     print(f"linha {i} ({registro_fila}) [{cargo}/{turno}]: erro na extração: {e}")
                     houve_erro = True

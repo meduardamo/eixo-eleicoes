@@ -291,12 +291,25 @@ def resolver_data_campo_deterministica(
     data = data_pdf or data_modelo_iso or data_divulgacao_iso
     if not data:
         return "", "data_campo ausente ou inválida; cenário retido"
+    # Data futura/pós-divulgação NUNCA pode ser gravada, mas o cenário em si não é
+    # lixo só porque o modelo (ou o regex de período do PDF) leu a data errada -
+    # o resultado do voto continua válido. Antes isso devolvia "" e o chamador
+    # descartava o cenário inteiro (raise ValueError em relatorios_pipeline.py),
+    # apesar do texto do aviso dizer "cenário retido" (retido = mantido, não
+    # descartado). Corrigido: cai pra data de divulgação (sempre <= hoje, por
+    # definição já aconteceu) em vez de jogar o cenário fora. Achado com
+    # BR-07181/2026 (Quaest) zerando topline inteiro 2 rodadas seguidas por causa
+    # disso (data_campo lida como 2026-07-31, futura).
     if data_referencia_iso and data > data_referencia_iso:
-        return "", f"data_campo {data} é futura; cenário retido"
+        if data_divulgacao_iso and data_divulgacao_iso <= data_referencia_iso:
+            return data_divulgacao_iso, (
+                f"data_campo {data} é futura; usada divulgação: {data_divulgacao_iso}"
+            )
+        return "", f"data_campo {data} é futura; cenário descartado (sem divulgação válida como alternativa)"
     if data_divulgacao_iso and data > data_divulgacao_iso:
-        return "", (
+        return data_divulgacao_iso, (
             f"data_campo {data} é posterior à divulgação {data_divulgacao_iso}; "
-            "cenário retido"
+            f"usada divulgação: {data_divulgacao_iso}"
         )
     if data_pdf and data_pdf != data_modelo_iso:
         return data_pdf, f"data_campo corrigida pelo período do PDF: {data_pdf}"
