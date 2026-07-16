@@ -535,7 +535,7 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     })
     _ativar_dropdown(ws, _rel_display("tipo_fonte"), header, ate_linha, ["relatório", "notícia", "N/A"])
     _colorir_por_valor(ws, _rel_display("tipo_fonte"), header, ate_linha, {
-        "relatório": (0.82, 0.93, 0.82),   # verde claro
+        "relatório": (0.89, 0.84, 0.95),   # roxo claro
         "notícia": (1.0, 0.90, 0.80),      # laranja claro
         "N/A": CINZA_NA,
     })
