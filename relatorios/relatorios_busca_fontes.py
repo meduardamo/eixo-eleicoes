@@ -153,9 +153,9 @@ def _normalizar_cabecalho_relatorios(ws):
     if ws.col_count < len(alvo):
         ws.add_cols(len(alvo) - ws.col_count)
     ws.update(range_name="A1", values=novos, value_input_option="RAW")
-    # coluna conferido recém-criada: aplica o checkbox só nas linhas que já têm pesquisa
+    # coluna conferido recém-criada: aplica a lista suspensa só nas linhas que já têm pesquisa
     if _rel_display(COL_CONFERIDO) in alvo and _rel_display(COL_CONFERIDO) not in idx:
-        _ativar_checkbox(ws, _rel_display(COL_CONFERIDO), alvo, ate_linha=len(valores))
+        _ativar_dropdown(ws, _rel_display(COL_CONFERIDO), alvo, len(valores), ["sim", "não", "N/A"])
     _remover_colunas_sobrando(ws, len(alvo))
     return alvo
 

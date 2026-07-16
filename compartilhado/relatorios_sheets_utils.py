@@ -523,24 +523,32 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
             })
         except Exception as e:
             print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
-    _ativar_checkbox(ws, col_conferido, header, ate_linha)
+    CINZA_NA = (0.85, 0.85, 0.85)  # cinza único pra todo "não se aplica" (N/A, fora_da_janela, imagem)
+    # Conferido?: virou lista suspensa (era checkbox) pra caber um terceiro estado -
+    # N/A pra linha que não tem nem fonte pra conferir (Tipo=N/A), sem forçar
+    # sim/não onde não faz sentido nenhum dos dois.
+    _ativar_dropdown(ws, col_conferido, header, ate_linha, ["sim", "não", "N/A"])
+    _colorir_por_valor(ws, col_conferido, header, ate_linha, {
+        "sim": (0.82, 0.93, 0.82),
+        "N/A": CINZA_NA,
+    })
     _ativar_dropdown(ws, _rel_display("tipo_fonte"), header, ate_linha, ["relatório", "notícia", "N/A"])
     _colorir_por_valor(ws, _rel_display("tipo_fonte"), header, ate_linha, {
         "relatório": (0.82, 0.93, 0.82),   # verde claro
         "notícia": (1.0, 0.90, 0.80),      # laranja claro
-        "N/A": (0.90, 0.90, 0.90),         # cinza claro
+        "N/A": CINZA_NA,
     })
     _colorir_por_valor(ws, _rel_display("topline_extraido"), header, ate_linha, {
         "sim": (0.82, 0.93, 0.82),
         STATUS_TOPLINE_MANUAL: (1.0, 0.82, 0.68),  # laranja: ação manual necessária
     })
-    # Segmentos extraídos?: dropdown com as duas conclusões válidas - "sim"/"não"
-    # são gravados pelo pipeline, mas o dropdown também deixa corrigir na mão sem
-    # digitar errado (evita "Sim"/"SIM"/"nao" fora do padrão que o código espera).
-    _ativar_dropdown(ws, _rel_display("segmentos_extraido"), header, ate_linha, ["sim", "não"])
+    # Segmentos extraídos?: "sim"/"não" são as duas conclusões que o pipeline grava;
+    # N/A cobre a linha sem fonte nenhuma pra extrair (mesmo caso do Conferido?).
+    _ativar_dropdown(ws, _rel_display("segmentos_extraido"), header, ate_linha, ["sim", "não", "N/A"])
     _colorir_por_valor(ws, _rel_display("segmentos_extraido"), header, ate_linha, {
         "sim": (0.82, 0.93, 0.82),
         "não": (0.96, 0.80, 0.80),  # vermelho pastel: relatório sem quebra de segmento
+        "N/A": CINZA_NA,
     })
     # Nível de conferência: todo valor que o busca_fontes grava (ver nota das
     # colunas em relatorios/relatorios_busca_fontes.py) - dropdown pra revisão
@@ -559,10 +567,10 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         "bloqueado": (0.95, 0.75, 0.75),       # vermelho mais forte: acesso bloqueado
         "erro_chrome": (0.95, 0.75, 0.75),
         "erro_tecnico": (0.95, 0.75, 0.75),
-        "imagem": (0.90, 0.90, 0.90),          # cinza: não dá pra conferir por texto
-        # cinza: pesquisa fora da janela de busca (MAX_DIAS_BUSCA), não vale
-        # mais tentar achar o relatório - só visível, sem ação pendente real.
-        "fora_da_janela": (0.85, 0.85, 0.85),
+        "imagem": CINZA_NA,                    # não dá pra conferir por texto
+        # fora_da_janela: pesquisa divulgada há mais de MAX_DIAS_BUSCA dias, não
+        # vale mais tentar achar o relatório - só visível, sem ação pendente real.
+        "fora_da_janela": CINZA_NA,
     })
     _colorir_cabecalhos_relatorios(ws, header)
 
@@ -730,9 +738,9 @@ def _normalizar_cabecalho(ws, cabecalho, remover_sobras=False):
     if ws.col_count < len(alvo):
         ws.add_cols(len(alvo) - ws.col_count)
     ws.update(range_name="A1", values=novos, value_input_option="RAW")
-    # coluna conferido recém-criada: aplica o checkbox só nas linhas que já têm pesquisa
+    # coluna conferido recém-criada: aplica a lista suspensa só nas linhas que já têm pesquisa
     if _rel_display("conferido") in alvo and _rel_display("conferido") not in idx:
-        _ativar_checkbox(ws, _rel_display("conferido"), alvo, ate_linha=len(valores))
+        _ativar_dropdown(ws, _rel_display("conferido"), alvo, len(valores), ["sim", "não", "N/A"])
     if remover_sobras:
         _remover_colunas_sobrando(ws, len(alvo))
     return alvo
