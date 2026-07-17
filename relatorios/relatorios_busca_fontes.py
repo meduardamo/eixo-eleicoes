@@ -1654,7 +1654,6 @@ def atualizar_planilha():
 
         if _fonte_video(link_fonte):
             pendentes_finais.append(f"{registro} - Fonte é vídeo ({link_fonte}); sem relatório legível, deixado pendente.")
-            celulas_para_atualizar.append(gspread.Cell(i, col_link, link_fonte))
             celulas_para_atualizar.append(gspread.Cell(
                 i, col_nivel,
                 _situacao("nao", "fonte é vídeo, aguardando relatório/matéria", linha.get("data_divulgacao", "")),
@@ -1668,7 +1667,6 @@ def atualizar_planilha():
                 situacao = "bloqueado"
             if situacao in SITUACOES_PENDENTES:
                 pendentes_finais.append(_mensagem_pendente(registro, situacao))
-                celulas_para_atualizar.append(gspread.Cell(i, col_link, link_fonte))
                 celulas_para_atualizar.append(gspread.Cell(
                     i, col_nivel,
                     _situacao(
@@ -1695,7 +1693,6 @@ def atualizar_planilha():
             links_preenchidos += 1
             print(f"  [OK] Salvo no Drive: {nome_pdf}{nota}")
         except Exception as e:
-            celulas_para_atualizar.append(gspread.Cell(i, col_link, link_fonte))
             celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "erro_tecnico"))
             pendentes_finais.append(f"{registro} - Erro técnico ao baixar/salvar PDF: {str(e)}")
 
