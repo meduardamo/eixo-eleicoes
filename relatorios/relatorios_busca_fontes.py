@@ -24,9 +24,9 @@ from compartilhado.relatorios_sheets_utils import (
     REGISTRO_TSE_RE, RELATORIOS_COLUNAS, REL_COL, REL_KEY, STATUS_TOPLINE_MANUAL,
     _append_rows_compacto, _ativar_checkbox, _ativar_dropdown, _cargo_norm,
     _cargos_monitorados, _chave_fila, _colorir_cabecalhos_relatorios, _colorir_por_valor,
-    _compor_situacao, _custo_estimado, _encolher_linhas_vazias, _extrair_json_objeto,
+    _custo_estimado, _encolher_linhas_vazias, _extrair_json_objeto,
     _garantir_coluna, _garantir_coluna_relatorios, _limpar_status_extracao,
-    _narrativa_de, _nivel_de, _normalizar_booleanos_coluna,
+    _nivel_de, _normalizar_booleanos_coluna,
     _registrar_uso, _rel_display, _rel_key, _rel_record, _rel_records,
     _remover_colunas_sobrando, _resetar_validacoes_relatorios, _resumo_uso_tokens,
     _row_count_atual, _sem_acento, _separar_linhas_multicargo, _ultima_linha_com_dados,
@@ -1438,44 +1438,18 @@ def _dias_desde_divulgacao(data_divulgacao):
     return (datetime.now(BRT).date() - d).days
 
 
-def _origem_com_carimbo(origem, data_divulgacao=""):
-    origem = str(origem or "").strip() or "Capturado na Web"
-    agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
-    # Fora da janela de busca, o motivo e a data de divulgação já aparecem em
-    # colunas próprias. Aqui basta registrar quando a fila foi avaliada.
-    origem_normalizada = unicodedata.normalize("NFKD", origem).encode("ascii", "ignore").decode().lower()
-    if "divulgada ha mais de" in origem_normalizada and "dias" in origem_normalizada:
-        return f"puxado em {agora}"
-    partes = [origem, f"puxado em {agora}"]
-    data_prevista = _data_iso_origem(data_divulgacao)
-    hoje = datetime.now(BRT).strftime("%Y-%m-%d")
-    # "verificar fonte" é só uma pendência de busca; a data já aparece na
-    # coluna de divulgação e não precisa se repetir nesse campo.
-    if data_prevista and data_prevista != hoje and "verificar fonte" not in origem_normalizada:
-        partes.append(f"divulgação prevista {data_prevista}")
-    return " | ".join(partes)
-
-
 def _situacao(nivel, origem_texto="", data_divulgacao=""):
-    """Compõe a célula única de 'Situação da fonte' (status + narrativa com
-    carimbo). Sem origem_texto, grava só o status."""
-    if not origem_texto:
-        return _compor_situacao(nivel, "")
-    return _compor_situacao(nivel, _origem_com_carimbo(origem_texto, data_divulgacao))
+    """'Situação da fonte' grava só o status limpo (ex.: 'ok', 'suspensa') -
+    precisa bater exato com a lista suspensa (ONE_OF_LIST). origem_texto/
+    data_divulgacao não são mais usados aqui (a narrativa de busca deixou de
+    ser gravada na planilha); parâmetros ficaram só pra não mexer em cada
+    ponto de chamada."""
+    return str(nivel or "").strip()
 
 
 def _eh_aviso_fora_da_janela(valor):
     texto = unicodedata.normalize("NFKD", str(valor or "")).encode("ascii", "ignore").decode().lower()
     return "divulgada ha mais de" in texto and "dias" in texto
-
-
-def _somente_carimbo_puxada(origem):
-    """Conserva o horário original de busca, sem repetir o aviso nem a data."""
-    origem = str(origem or "")
-    encontrado = re.search(r"puxado em\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})", origem, flags=re.I)
-    if encontrado:
-        return f"puxado em {encontrado.group(1)}"
-    return f"puxado em {datetime.now(BRT).strftime('%Y-%m-%d %H:%M')}"
 
 
 def atualizar_planilha():
@@ -1598,37 +1572,22 @@ def atualizar_planilha():
             # impede que esse tipo de endereço volte à planilha.
             print(f"  [INFO] Descartando redirect temporário do Vertex: {registro}")
             celulas_para_atualizar.append(gspread.Cell(i, col_link, ""))
-            celulas_para_atualizar.append(gspread.Cell(
-                i, col_nivel,
-                _situacao(nivel_atual, "redirect temporário do Vertex descartado; buscando fonte original",
-                          linha.get("data_divulgacao", "")),
-            ))
             link_atual = ""
         if _eh_aviso_fora_da_janela(link_atual):
-            # O aviso e a data de divulgação ficam no próprio campo de link e
-            # na coluna ao lado. Em origem, deixar apenas quando a fila foi
-            # puxada, sem regravar o horário a cada rodada.
-            narrativa_atual = _narrativa_de(linha.get("nivel_conferencia", ""))
-            narrativa_limpa = _somente_carimbo_puxada(narrativa_atual)
-            if narrativa_atual != narrativa_limpa:
-                nivel_novo = nivel_atual or "fora_da_janela"
-                celulas_para_atualizar.append(gspread.Cell(i, col_nivel, _compor_situacao(nivel_novo, narrativa_limpa)))
+            # Aviso legado no próprio campo de link; nada mais a fazer aqui (a
+            # narrativa com carimbo de horário deixou de ser gravada na planilha).
             continue
         if link_atual and _eh_link_drive(link_atual):
             # Já é link do Drive: só normaliza o nome (não precisa baixar/converter,
             # o arquivo já está lá). Só na primeira vez que a linha aparece com link
-            # (sem narrativa ainda na Situação da fonte); depois de carimbada, pula
-            # nas próximas rodadas, senão seria 1 GET no Drive por linha toda rodada
-            # só pra reconferir um nome que já está certo.
-            if not _narrativa_de(linha.get("nivel_conferencia", "")):
+            # (Situação da fonte ainda vazia); depois de marcada, pula nas próximas
+            # rodadas, senão seria 1 GET no Drive por linha toda rodada só pra
+            # reconferir um nome que já está certo.
+            if not nivel_atual:
                 nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")), linha.get("cargo", ""))
                 if renomear_arquivo_drive_por_link(creds, link_atual, nome_pdf):
                     print(f"  [OK] Arquivo renomeado no Drive: {nome_pdf}")
-                nivel_novo = nivel_atual or "link_existente"
-                celulas_para_atualizar.append(gspread.Cell(
-                    i, col_nivel,
-                    _situacao(nivel_novo, "link já existente na fila", linha.get("data_divulgacao", "")),
-                ))
+                celulas_para_atualizar.append(gspread.Cell(i, col_nivel, _situacao("link_existente")))
             continue
 
         if link_atual:
@@ -1640,7 +1599,7 @@ def atualizar_planilha():
             # de baixar/converter/subir pro Drive usado pro link que a IA acha
             # sozinha (baixar_pdf_ou_gerar_headless mais abaixo), só sem precisar
             # buscar - o link já está na célula.
-            if _narrativa_de(linha.get("nivel_conferencia", "")):
+            if nivel_atual:
                 continue   # já processado numa rodada anterior
             link_fonte = link_atual
             origem_texto = "Link inserido manualmente"
@@ -1648,16 +1607,11 @@ def atualizar_planilha():
             dias = _dias_desde_divulgacao(linha.get("data_divulgacao", ""))
             if dias is not None and dias > MAX_DIAS_BUSCA:
                 # divulgada há mais de MAX_DIAS_BUSCA: não vale mais buscar (nem seria
-                # divulgada). Carimba uma vez (só se ainda sem narrativa) pra a equipe
-                # saber o motivo de a linha não ter link, e pula em silêncio nas
+                # divulgada). Carimba uma vez (só se Situação da fonte ainda vazia) pra
+                # a linha não ficar em branco pra sempre, e pula em silêncio nas
                 # próximas rodadas.
-                if not _narrativa_de(linha.get("nivel_conferencia", "")):
-                    nivel_novo = nivel_atual or "fora_da_janela"
-                    celulas_para_atualizar.append(gspread.Cell(
-                        i, col_nivel,
-                        _situacao(nivel_novo, f"não buscado: divulgada há mais de {MAX_DIAS_BUSCA} dias",
-                                  linha.get("data_divulgacao", "")),
-                    ))
+                if not nivel_atual:
+                    celulas_para_atualizar.append(gspread.Cell(i, col_nivel, _situacao("fora_da_janela")))
                     # Fora da janela = nunca vai ter fonte, então nada na linha
                     # depende dela vai acontecer: Conferido?, Segmentos extraídos?
                     # e Intenção de voto cadastrada? viram N/A junto, em vez de
