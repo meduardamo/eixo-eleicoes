@@ -5,7 +5,7 @@ on:
     inputs:
       days_back:
         description: "Dias para trás (backfill: use um número maior, ex.: 20)"
-        default: "7"
+        default: "5"
         required: false
   schedule:
     - cron: '7 10 * * *'
