@@ -561,7 +561,8 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     # revisão manual não digitar fora do vocabulário que o código espera.
     _ativar_dropdown(ws, _rel_display("nivel_conferencia"), header, ate_linha, [
         "ok", "nao", "provavel", "teaser", "paywall", "bloqueado",
-        "erro_chrome", "erro_tecnico", "imagem", "fora_da_janela", "link_existente", "N/A",
+        "erro_chrome", "erro_tecnico", "imagem", "fora_da_janela", "link_existente",
+        "suspensa", "N/A",
     ])
     _colorir_por_valor(ws, _rel_display("nivel_conferencia"), header, ate_linha, {
         "ok": (0.82, 0.93, 0.82),             # verde: fonte confirmada
@@ -574,6 +575,7 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         "erro_chrome": (0.95, 0.75, 0.75),
         "erro_tecnico": (0.95, 0.75, 0.75),
         "imagem": CINZA_NA,                    # não dá pra conferir por texto
+        "suspensa": CINZA_NA,                  # suspensa pela Justiça Eleitoral: nunca vai ter fonte
         "N/A": CINZA_NA,
         # fora_da_janela: pesquisa divulgada há mais de MAX_DIAS_BUSCA dias, não
         # vale mais tentar achar o relatório - só visível, sem ação pendente real.

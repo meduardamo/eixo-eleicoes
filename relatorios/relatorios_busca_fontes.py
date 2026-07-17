@@ -1532,13 +1532,31 @@ def atualizar_planilha():
         if _cargo_norm(linha.get("cargo", "")) not in CARGOS_MONITORADOS:
             continue
 
+        nivel_atual = str(linha.get("nivel_conferencia", "")).strip().lower()
+        url_internet = str(linha.get("url_original", "")).strip()
+
+        # Pesquisa suspensa pela Justiça Eleitoral: estado terminal. Padroniza
+        # qualquer variante digitada à mão ("Pesquisa suspensa.", "Suspensa pelo
+        # TRE", "Suspensa pela Justiça Eleitoral") no valor único "suspensa" e
+        # fecha a linha — nunca vai ter fonte, então não busca nem gera PDF, e
+        # marca Conferido?/Segmentos/Intenção de voto como N/A pra nada ficar
+        # pendente pra sempre (mesmo tratamento de fora_da_janela).
+        if "suspens" in nivel_atual:
+            if nivel_atual != "suspensa":
+                celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "suspensa"))
+            if not str(linha.get(COL_CONFERIDO, "")).strip():
+                celulas_para_atualizar.append(gspread.Cell(i, col_conferido, "N/A"))
+            if not str(linha.get("segmentos_extraido", "")).strip():
+                celulas_para_atualizar.append(gspread.Cell(i, col_segmentos, "N/A"))
+            if not str(linha.get("topline_extraido", "")).strip():
+                celulas_para_atualizar.append(gspread.Cell(i, col_topline, "N/A"))
+            continue
+
         # Conferência manual "ok": ela revisou a matéria e confirmou a fonte. Se
         # ainda não tem o PDF no Drive, congela AGORA a "Link na internet" num PDF
         # e sobe. Roda antes de tudo e mesmo com a linha já carimbada — senão o
         # 'continue' lá embaixo pularia pra sempre e o link vivo apodreceria sem
         # backup. Não usa Gemini (a fonte já foi validada por ela).
-        nivel_atual = str(linha.get("nivel_conferencia", "")).strip().lower()
-        url_internet = str(linha.get("url_original", "")).strip()
         if nivel_atual == "ok" and _eh_url_publica(url_internet) and not _eh_link_drive(link_atual):
             print(f"Conferida (ok): congelando PDF de {registro} / {linha.get('cargo', '')}...")
             try:
