@@ -556,6 +556,41 @@ def _migrar_status_texto_pdf(ws, header, ate_linha):
             print(f"[AVISO] não deu pra gravar limpeza do PDF: {e}")
 
 
+def _sinalizar_voto_pendente(ws, header, ate_linha):
+    """Sempre que Conferido?='sim' e Voto cadastrado? ainda está vazio, avisa que
+    falta lançar a pesquisa no Polling Manual. Extração automática de topline foi
+    aposentada em 16/07/2026 (cadastro de voto é 100% manual agora) - sem isso,
+    'Voto cadastrado?' nunca recebia sinal nenhum de pendência.
+    marcar_topline_extraida_manual (Polling Manual, gerador-de-envios) troca esse
+    aviso por 'sim' quando alguém lança a pesquisa por lá. Idempotente: só grava
+    onde ainda está vazio, nunca sobrescreve 'sim' nem 'N/A'."""
+    if ate_linha < 2:
+        return
+    col_conf = _rel_display("conferido")
+    col_topl = _rel_display("topline_extraido")
+    if col_conf not in header or col_topl not in header:
+        return
+    i_conf = header.index(col_conf)
+    i_topl = header.index(col_topl)
+    try:
+        valores = ws.get_all_values()
+    except Exception as e:
+        print(f"[AVISO] não deu pra ler valores pra sinalizar voto pendente: {e}")
+        return
+    celulas = []
+    for r in range(1, min(ate_linha, len(valores))):
+        row = valores[r]
+        conf = str(row[i_conf]).strip().lower() if i_conf < len(row) else ""
+        topl = str(row[i_topl]).strip() if i_topl < len(row) else ""
+        if conf == "sim" and not topl:
+            celulas.append(gspread.Cell(r + 1, i_topl + 1, link_status_topline_manual()))
+    if celulas:
+        try:
+            ws.update_cells(celulas, value_input_option="USER_ENTERED")
+        except Exception as e:
+            print(f"[AVISO] não deu pra gravar aviso de Polling Manual: {e}")
+
+
 def _resetar_validacoes_relatorios(ws, header, ate_linha):
     """Remove checkboxes/validações acidentais nas OUTRAS colunas e garante a de
     Conferido?. NUNCA limpa a validação de Conferido? antes de recriar: isso roda em
@@ -566,14 +601,16 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     sem esse risco."""
     if ate_linha < 2:
         return
-    # Limpa status digitado à mão na coluna do PDF antes de (re)aplicar
-    # cores/validações, pra elas já refletirem os valores corrigidos.
+    # Limpa status digitado à mão na coluna do PDF e sinaliza pendência de Polling
+    # Manual antes de (re)aplicar cores/validações, pra elas já refletirem os
+    # valores corrigidos.
     _migrar_status_texto_pdf(ws, header, ate_linha)
+    _sinalizar_voto_pendente(ws, header, ate_linha)
     col_conferido = _rel_display("conferido")
     # colunas com validação PRÓPRIA que não podem ser limpas junto (senão o checkbox do
     # Conferido? some a cada rodada de manutenção).
     protegidas = sorted({header.index(_rel_display(n)) for n in
-                         ("conferido", "segmentos_extraido", "nivel_conferencia")
+                         ("conferido", "segmentos_extraido", "nivel_conferencia", "topline_extraido")
                          if _rel_display(n) in header})
     faixas, ini = [], 0
     for pc in protegidas:
@@ -611,6 +648,11 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         "sim": (0.82, 0.93, 0.82),
         "N/A": CINZA_NA,
     })
+    # Voto cadastrado?: lista suspensa também - "sim" (lançado no Polling Manual),
+    # o aviso de pendência (grava sozinho quando Conferido?=sim, ver
+    # _sinalizar_voto_pendente) ou N/A (linha sem fonte, nunca vai ter voto).
+    _ativar_dropdown(ws, _rel_display("topline_extraido"), header, ate_linha,
+                      ["sim", STATUS_TOPLINE_MANUAL, "N/A"])
     _colorir_por_valor(ws, _rel_display("topline_extraido"), header, ate_linha, {
         "sim": (0.82, 0.93, 0.82),
         STATUS_TOPLINE_MANUAL: (1.0, 0.82, 0.68),  # laranja: ação manual necessária
