@@ -33,12 +33,10 @@ RELATORIOS_COLUNAS = [
     ("uf", "UF"),
     ("instituto", "Instituto"),
     ("data_divulgacao", "Data de divulgação"),
-    ("etapa", "Etapa"),
     ("url_original", "Link na internet"),
     ("link", "PDF salvo no Drive"),
     ("origem_link", "Origem do link"),
     ("nivel_conferencia", "Situação da fonte"),
-    ("tipo_fonte", "Tipo"),
     ("conferido", "Conferido?"),
     ("segmentos_extraido", "Segmentos extraídos?"),
     ("segmentos_data_extracao", "Data da extração de segmentos"),
@@ -69,12 +67,10 @@ ALIASES_RELATORIOS = {
     "UF": ["uf"],
     "Instituto": ["instituto"],
     "Data de divulgação": ["data_divulgacao", "data_divulgacao_pesqele"],
-    "Etapa": ["etapa"],
     "Link na internet": ["url_original"],
     "PDF salvo no Drive": ["link", "Link do relatório"],
     "Origem do link": ["origem_link", "origem_busca"],
     "Situação da fonte": ["nivel_conferencia", "Nível de conferência"],
-    "Tipo": ["tipo_fonte", "tipo", "tipo_de_fonte"],
     "Conferido?": ["conferido"],
     "Segmentos extraídos?": ["segmentos_extraido", "extraido"],
     "Data da extração de segmentos": ["segmentos_data_extracao", "data_extracao"],
@@ -450,11 +446,8 @@ def _colorir_cabecalhos_relatorios(ws, header):
         # Identificação da pesquisa: cinza azulado.
         (["registro", "cargo", "uf", "instituto", "data_divulgacao"],
          (0.85, 0.90, 0.95)),
-        # Etapa (resumo do estágio da linha): amarelo âmbar, pra puxar o olho.
-        (["etapa"],
-         (0.99, 0.90, 0.60)),
         # Fonte e revisão humana: verde muito claro.
-        (["url_original", "link", "origem_link", "nivel_conferencia", "tipo_fonte", "conferido"],
+        (["url_original", "link", "origem_link", "nivel_conferencia", "conferido"],
          (0.88, 0.94, 0.86)),
         # Resultado da extração demográfica: azul claro.
         (["segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas"],
@@ -488,41 +481,6 @@ def _colorir_cabecalhos_relatorios(ws, header):
         print(f"[AVISO] não deu pra colorir cabeçalhos da aba relatorios: {e}")
 
 
-def _calcular_etapa(reg):
-    """Resume o estágio da linha num rótulo só, derivado das colunas que o
-    pipeline já preenche. É SÓ DISPLAY: não decide nada no fluxo (a extração
-    continua olhando 'conferido'/'segmentos_extraido' etc. diretamente), serve
-    pra pessoa bater o olho sem cruzar cinco colunas. ``reg`` é o dict da linha
-    com chaves canônicas."""
-    def g(chave):
-        return str(reg.get(chave, "") or "").strip()
-
-    if not g("registro"):
-        return ""
-    topl = g("topline_extraido").lower()
-    seg = g("segmentos_extraido").lower()
-    conf = g("conferido").lower()
-    nivel = g("nivel_conferencia").lower()
-    link = g("link").lower()
-
-    if topl == "sim":
-        return "cadastrado"
-    if nivel == "suspensa":
-        return "suspensa"
-    if nivel == "fora_da_janela":
-        return "fora da janela"
-    if seg in ("sim", "não", "nao"):
-        return "a cadastrar"
-    if conf == "sim":
-        return "a extrair"
-    if nivel in ("ok", "link_existente") or link.startswith("http"):
-        return "a conferir"
-    if nivel in ("nao", "provavel", "teaser", "paywall", "bloqueado",
-                 "erro_chrome", "erro_tecnico", "imagem"):
-        return "fonte pendente"
-    return "sem fonte"
-
-
 def _situacao_do_texto_solto(valor):
     """Reconhece o status que a equipe às vezes digita À MÃO na coluna do PDF
     em vez de um link (ex.: 'Pesquisa suspensa pelo TSE', 'Suspensa pelo TRE',
@@ -540,57 +498,45 @@ def _situacao_do_texto_solto(valor):
     return ""
 
 
-def _atualizar_etapa_e_limpar_pdf(ws, header, ate_linha):
-    """Recalcula a coluna Etapa (resumo do estágio) de toda linha com registro e
-    tira texto de status escrito à mão na coluna do PDF, jogando pra 'Situação
+def _migrar_status_texto_pdf(ws, header, ate_linha):
+    """Tira texto de status escrito à mão na coluna do PDF, jogando pra 'Situação
     da fonte' quando ela ainda está vazia. Idempotente: lê tudo uma vez e só
     grava as células que mudaram."""
-    if ate_linha < 2 or _rel_display("etapa") not in header:
+    if ate_linha < 2:
+        return
+    pos = {chave: header.index(_rel_display(chave))
+           for chave in ("link", "nivel_conferencia")
+           if _rel_display(chave) in header}
+    if "link" not in pos or "nivel_conferencia" not in pos:
         return
     try:
         valores = ws.get_all_values()
     except Exception as e:
-        print(f"[AVISO] não deu pra ler valores pra Etapa: {e}")
+        print(f"[AVISO] não deu pra ler valores pra limpar status do PDF: {e}")
         return
     if len(valores) < 2:
-        return
-    pos = {chave: header.index(_rel_display(chave))
-           for chave in ("etapa", "link", "nivel_conferencia")
-           if _rel_display(chave) in header}
-    if "etapa" not in pos:
         return
 
     celulas = []
     for r in range(1, min(ate_linha, len(valores))):
         row = valores[r]
-        reg = {_rel_key(nome): (row[c] if c < len(row) else "")
-               for c, nome in enumerate(header)}
-
-        # Parte B: status digitado na coluna do PDF migra pra Situação da fonte.
-        # Só grava a Situação por cima de célula vazia ou "N/A" (placeholder, não
-        # é revisão de verdade); se já houver uma Situação com sentido, respeita e
+        # Status digitado na coluna do PDF migra pra Situação da fonte. Só grava
+        # a Situação por cima de célula vazia ou "N/A" (placeholder, não é
+        # revisão de verdade); se já houver uma Situação com sentido, respeita e
         # só tira o texto solto do PDF, que ali é redundante.
-        if "link" in pos and "nivel_conferencia" in pos:
-            link_val = row[pos["link"]] if pos["link"] < len(row) else ""
-            situ = _situacao_do_texto_solto(link_val)
-            if situ:
-                nivel_atual = str(reg.get("nivel_conferencia", "")).strip()
-                if nivel_atual.upper() in ("", "N/A", "NA"):
-                    celulas.append(gspread.Cell(r + 1, pos["nivel_conferencia"] + 1, situ))
-                    reg["nivel_conferencia"] = situ
-                celulas.append(gspread.Cell(r + 1, pos["link"] + 1, ""))
-                reg["link"] = ""
-
-        etapa_nova = _calcular_etapa(reg)
-        etapa_atual = str(row[pos["etapa"]]).strip() if pos["etapa"] < len(row) else ""
-        if etapa_nova != etapa_atual:
-            celulas.append(gspread.Cell(r + 1, pos["etapa"] + 1, etapa_nova))
+        link_val = row[pos["link"]] if pos["link"] < len(row) else ""
+        situ = _situacao_do_texto_solto(link_val)
+        if situ:
+            nivel_atual = str(row[pos["nivel_conferencia"]]).strip() if pos["nivel_conferencia"] < len(row) else ""
+            if nivel_atual.upper() in ("", "N/A", "NA"):
+                celulas.append(gspread.Cell(r + 1, pos["nivel_conferencia"] + 1, situ))
+            celulas.append(gspread.Cell(r + 1, pos["link"] + 1, ""))
 
     if celulas:
         try:
             ws.update_cells(celulas, value_input_option="USER_ENTERED")
         except Exception as e:
-            print(f"[AVISO] não deu pra gravar Etapa/limpeza do PDF: {e}")
+            print(f"[AVISO] não deu pra gravar limpeza do PDF: {e}")
 
 
 def _resetar_validacoes_relatorios(ws, header, ate_linha):
@@ -603,14 +549,14 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     sem esse risco."""
     if ate_linha < 2:
         return
-    # Recalcula a Etapa e limpa status digitado à mão na coluna do PDF antes de
-    # (re)aplicar cores/validações, pra elas já refletirem os valores corrigidos.
-    _atualizar_etapa_e_limpar_pdf(ws, header, ate_linha)
+    # Limpa status digitado à mão na coluna do PDF antes de (re)aplicar
+    # cores/validações, pra elas já refletirem os valores corrigidos.
+    _migrar_status_texto_pdf(ws, header, ate_linha)
     col_conferido = _rel_display("conferido")
     # colunas com validação PRÓPRIA que não podem ser limpas junto (senão o checkbox do
-    # Conferido? e a lista suspensa do Tipo somem a cada rodada de manutenção).
+    # Conferido? some a cada rodada de manutenção).
     protegidas = sorted({header.index(_rel_display(n)) for n in
-                         ("conferido", "tipo_fonte", "nivel_conferencia", "segmentos_extraido")
+                         ("conferido", "nivel_conferencia", "segmentos_extraido")
                          if _rel_display(n) in header})
     faixas, ini = [], 0
     for pc in protegidas:
@@ -640,18 +586,12 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
             print(f"[AVISO] não deu pra limpar validações antigas da aba relatorios: {e}")
     CINZA_NA = (0.85, 0.85, 0.85)  # cinza único pra todo "não se aplica" (N/A, fora_da_janela, imagem)
     # Conferido?: virou lista suspensa (era checkbox) pra caber um terceiro estado -
-    # N/A pra linha que não tem nem fonte pra conferir (Tipo=N/A/fora_da_janela).
+    # N/A pra linha que não tem nem fonte pra conferir (fora_da_janela/suspensa).
     # Sem "não": ou já foi conferida (sim), ou não se aplica (N/A), ou ainda não
     # foi revisada (em branco) - não existe um "não" permanente aqui.
     _ativar_dropdown(ws, col_conferido, header, ate_linha, ["sim", "N/A"])
     _colorir_por_valor(ws, col_conferido, header, ate_linha, {
         "sim": (0.82, 0.93, 0.82),
-        "N/A": CINZA_NA,
-    })
-    _ativar_dropdown(ws, _rel_display("tipo_fonte"), header, ate_linha, ["relatório", "notícia", "N/A"])
-    _colorir_por_valor(ws, _rel_display("tipo_fonte"), header, ate_linha, {
-        "relatório": (0.89, 0.84, 0.95),   # roxo claro
-        "notícia": (1.0, 0.90, 0.80),      # laranja claro
         "N/A": CINZA_NA,
     })
     _colorir_por_valor(ws, _rel_display("topline_extraido"), header, ate_linha, {
@@ -694,24 +634,11 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         # vale mais tentar achar o relatório - só visível, sem ação pendente real.
         "fora_da_janela": CINZA_NA,
     })
-    # Etapa (resumo do estágio): mesma paleta das colunas de origem, pra a cor
-    # contar a mesma história de ponta a ponta.
-    _colorir_por_valor(ws, _rel_display("etapa"), header, ate_linha, {
-        "cadastrado": (0.82, 0.93, 0.82),      # verde: fim do fluxo
-        "a cadastrar": (1.0, 0.82, 0.68),      # laranja: ação manual (Polling Manual)
-        "a extrair": (1.0, 0.95, 0.70),        # amarelo: espera a extração automática
-        "a conferir": (0.85, 0.90, 0.95),      # azul claro: espera revisão humana
-        "fonte pendente": (0.96, 0.80, 0.80),  # vermelho pastel: fonte ainda não confirmada
-        "sem fonte": (1.0, 0.97, 0.85),        # creme: ainda sem link nenhum
-        "fora da janela": CINZA_NA,
-        "suspensa": CINZA_NA,
-    })
     _colorir_cabecalhos_relatorios(ws, header)
 
 
 def _limpar_status_extracao(row):
     for coluna in (
-        "etapa",
         "link", "nivel_conferencia", "conferido",
         "segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas",
         "topline_extraido", "topline_data_extracao",
