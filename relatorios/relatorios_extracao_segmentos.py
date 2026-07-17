@@ -58,8 +58,8 @@ PESQELE_ID = os.getenv("SPREADSHEET_ID", "")
 PESQELE_ABA = os.getenv("PESQELE_ABA", "Consolidado")
 
 
-PASTA_URL = os.getenv("PASTA_RELATORIOS_URL",
-                      "https://drive.google.com/drive/folders/0AH-94UFLKIFPUk9PVA")
+POLLING_MANUAL_URL = os.getenv("POLLING_MANUAL_URL",
+                               "https://eixoestrategiapolitica.streamlit.app/Polling_Manual")
 
 
 GRUPOS = ["Presidente (Nacional)", "Presidente (por UF)", "Governador / Senador"]
@@ -109,15 +109,16 @@ def _html(pesquisas, hoje):
       <div style="background:#eef0f6;border-left:3px solid #192D4E;padding:10px 12px;margin:0 0 16px 0;font-size:13px">
         <strong style="color:#192D4E">Ação do dia</strong>, para cada pesquisa abaixo:
         <ol style="margin:8px 0 0 0;padding-left:18px">
-          <li>Baixe o relatório completo e salve na pasta
-            <a href="{PASTA_URL}" style="color:#192D4E">Pesquisas Eleitorais</a> do Drive,
-            na subpasta do cargo: Presidente Nacional em <b>Presidenciáveis/Nacional</b>;
-            Presidente por UF em <b>Presidenciáveis/Por UF</b>;
-            Governador e Senador em <b>Governadores+Senadores</b>.</li>
-          <li>Na planilha
-            <a href="{planilha_url}" style="color:#192D4E">Voto por Segmento</a>,
-            aba <b>relatorios</b>, ache a linha do registro (já criada hoje) e cole o link
-            do relatório na coluna <b>link</b>. A extração roda em cima dessas linhas.</li>
+          <li>Confira se a notícia ou o relatório confere com o que a linha traz:
+            registro TSE, instituto, data de campo e cargos.</li>
+          <li>Registre a pesquisa no
+            <a href="{POLLING_MANUAL_URL}" style="color:#192D4E">Polling Manual</a>,
+            colando a notícia ou o texto do relatório. Ele grava nas matrizes
+            <b>T1</b> e <b>T2</b> e marca a linha da fila (aba <b>relatorios</b> da
+            <a href="{planilha_url}" style="color:#192D4E">Voto por Segmento</a>)
+            como concluída.</li>
+          <li>Confira na planilha se ficou tudo certo: cenários, candidatos,
+            partidos, percentuais, turno e UF.</li>
         </ol>
       </div>
       {secoes}
