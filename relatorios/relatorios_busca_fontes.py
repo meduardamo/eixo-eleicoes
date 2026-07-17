@@ -1256,6 +1256,34 @@ def baixar_pdf_ou_gerar_headless(url, registro="", uf="", instituto="", gemini_c
         pdf_bytes, registro, uf, instituto, texto_imagens_pagina)
 
 
+def _snapshot_pdf_do_link(url):
+    """Gera o PDF de uma URL já conferida, SEM Gemini (não reconfere nada — quem
+    marcou 'ok' na coluna Nível de conferência já validou a fonte). Serve pra
+    congelar a matéria num PDF no Drive antes que o link vivo apodreça.
+
+    Ordem: PDF direto → imagem embrulhada em PDF → PDF embutido na página →
+    impressão da página inteira via Chrome headless. Devolve b"" se nada colar."""
+    try:
+        req = requests.get(url, headers=STEALTH_HEADERS, timeout=30)
+        req.raise_for_status()
+        content_type = (req.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if content_type == "application/pdf" or _url_tem_extensao(url, (".pdf",)):
+            if req.content[:4] == b"%PDF":
+                return req.content
+        mime_type = _mime_imagem(req, url)
+        if mime_type:
+            return _imagem_para_pdf(req.content)
+    except requests.exceptions.RequestException:
+        pass  # 403 etc.: ainda tenta renderizar com Chrome
+
+    captura = _capturar_com_selenium(url)
+    for b in (captura.get("pdfs") or []):
+        if b and b[:4] == b"%PDF":
+            return b
+    page_pdf = captura.get("page_pdf") or b""
+    return page_pdf if page_pdf[:4] == b"%PDF" else b""
+
+
 def resolver_pasta_drive(creds, cargo, uf_extenso):
     """Retorna o ID da subpasta correta, criando-a se necessário"""
     headers = {'Authorization': f'Bearer {creds.token}'}
@@ -1503,6 +1531,38 @@ def atualizar_planilha():
             continue
         if _cargo_norm(linha.get("cargo", "")) not in CARGOS_MONITORADOS:
             continue
+
+        # Conferência manual "ok": ela revisou a matéria e confirmou a fonte. Se
+        # ainda não tem o PDF no Drive, congela AGORA a "Link na internet" num PDF
+        # e sobe. Roda antes de tudo e mesmo com a linha já carimbada — senão o
+        # 'continue' lá embaixo pularia pra sempre e o link vivo apodreceria sem
+        # backup. Não usa Gemini (a fonte já foi validada por ela).
+        nivel_atual = str(linha.get("nivel_conferencia", "")).strip().lower()
+        url_internet = str(linha.get("url_original", "")).strip()
+        if nivel_atual == "ok" and _eh_url_publica(url_internet) and not _eh_link_drive(link_atual):
+            print(f"Conferida (ok): congelando PDF de {registro} / {linha.get('cargo', '')}...")
+            try:
+                pdf_bytes = _snapshot_pdf_do_link(url_internet)
+            except Exception as e:
+                pdf_bytes = b""
+                print(f"  [AVISO] Erro gerando snapshot de {url_internet}: {str(e)[:150]}")
+            if pdf_bytes and pdf_bytes[:4] == b"%PDF":
+                pasta_id = resolver_pasta_drive(creds, linha.get("cargo", ""), linha.get("uf", ""))
+                nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")), linha.get("cargo", ""))
+                link_drive = fazer_upload_drive(creds, pasta_id, nome_pdf, pdf_bytes)
+                celulas_para_atualizar.append(gspread.Cell(i, col_link, link_drive))
+                celulas_para_atualizar.append(gspread.Cell(
+                    i, col_status,
+                    _origem_com_carimbo("PDF salvo do link conferido", linha.get("data_divulgacao", "")),
+                ))
+                pdfs_salvos += 1
+                print(f"  [OK] Snapshot salvo no Drive: {nome_pdf}")
+            else:
+                pendentes_finais.append(
+                    f"{registro} - marcada 'ok' mas não consegui gerar PDF de {url_internet}")
+                print(f"  [AVISO] Não consegui converter em PDF: {url_internet}")
+            continue
+
         if _eh_redirect_grounding(link_atual):
             # Corrige legado: o workflow antigo gravou a citação temporária do
             # Vertex como se fosse a fonte. Limpa o 404 e refaz a busca da URL
