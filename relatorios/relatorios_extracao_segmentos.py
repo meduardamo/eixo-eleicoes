@@ -3,7 +3,7 @@ Pesquisas eleitorais: alerta diário + extração de voto por segmento, rejeiç�
 e aprovação (Gemini lê o PDF do relatório).
 
 A extração de TOPLINE (voto estimulado geral) foi aposentada em 16/07/2026 -
-mora em relatorios_extracao_topline_aposentado.py, sem workflow chamando.
+mora em deprecated/relatorios_extracao_topline_aposentado.py, sem workflow chamando.
 Cadastro de topline agora é 100% manual, via Polling Manual
 (gerador-de-envios). Esta extração de segmentos/rejeição/aprovação continua
 automática, sem mudança nenhuma de comportamento.

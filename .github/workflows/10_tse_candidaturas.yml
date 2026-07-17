@@ -2,7 +2,7 @@ name: 10 - TSE
 
 on:
   schedule:
-    - cron: '0 * * * *'   # de hora em hora
+    - cron: '0 */3 * * *'   # de 3 em 3 horas
   workflow_dispatch:
 
 jobs:
