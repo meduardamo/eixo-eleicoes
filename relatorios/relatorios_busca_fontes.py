@@ -24,8 +24,9 @@ from compartilhado.relatorios_sheets_utils import (
     REGISTRO_TSE_RE, RELATORIOS_COLUNAS, REL_COL, REL_KEY, STATUS_TOPLINE_MANUAL,
     _append_rows_compacto, _ativar_checkbox, _ativar_dropdown, _cargo_norm,
     _cargos_monitorados, _chave_fila, _colorir_cabecalhos_relatorios, _colorir_por_valor,
-    _custo_estimado, _encolher_linhas_vazias, _extrair_json_objeto, _garantir_coluna,
-    _garantir_coluna_relatorios, _limpar_status_extracao, _normalizar_booleanos_coluna,
+    _compor_situacao, _custo_estimado, _encolher_linhas_vazias, _extrair_json_objeto,
+    _garantir_coluna, _garantir_coluna_relatorios, _limpar_status_extracao,
+    _narrativa_de, _nivel_de, _normalizar_booleanos_coluna,
     _registrar_uso, _rel_display, _rel_key, _rel_record, _rel_records,
     _remover_colunas_sobrando, _resetar_validacoes_relatorios, _resumo_uso_tokens,
     _row_count_atual, _sem_acento, _separar_linhas_multicargo, _ultima_linha_com_dados,
@@ -66,7 +67,6 @@ PASTA_PRESIDENCIAVEIS = '1apgniY4undEtkqjDYOEdf1aoMU7HDfOh'
 PASTA_GOV_SEN = '1MmeVz63PG9imU_oDqk7thw5gHha0xAWa'
 
 # colunas da fila compartilhada com relatorios_extracao_segmentos.py
-COL_ORIGEM_LINK = "origem_link"
 COL_NIVEL_CONFERENCIA = "nivel_conferencia"
 COL_CONFERIDO = "conferido"
 
@@ -1456,6 +1456,14 @@ def _origem_com_carimbo(origem, data_divulgacao=""):
     return " | ".join(partes)
 
 
+def _situacao(nivel, origem_texto="", data_divulgacao=""):
+    """Compõe a célula única de 'Situação da fonte' (status + narrativa com
+    carimbo). Sem origem_texto, grava só o status."""
+    if not origem_texto:
+        return _compor_situacao(nivel, "")
+    return _compor_situacao(nivel, _origem_com_carimbo(origem_texto, data_divulgacao))
+
+
 def _eh_aviso_fora_da_janela(valor):
     texto = unicodedata.normalize("NFKD", str(valor or "")).encode("ascii", "ignore").decode().lower()
     return "divulgada ha mais de" in texto and "dias" in texto
@@ -1486,7 +1494,6 @@ def atualizar_planilha():
     header = _normalizar_cabecalho_relatorios(ws)
     col_link = _garantir_coluna_relatorios(ws, header, "link")
     col_url_original = _garantir_coluna_relatorios(ws, header, "url_original")
-    col_status = _garantir_coluna_relatorios(ws, header, COL_ORIGEM_LINK)
     col_nivel = _garantir_coluna_relatorios(ws, header, COL_NIVEL_CONFERENCIA)
     col_conferido = _garantir_coluna_relatorios(ws, header, COL_CONFERIDO)
     col_segmentos = _garantir_coluna_relatorios(ws, header, "segmentos_extraido")
@@ -1532,7 +1539,10 @@ def atualizar_planilha():
         if _cargo_norm(linha.get("cargo", "")) not in CARGOS_MONITORADOS:
             continue
 
-        nivel_atual = str(linha.get("nivel_conferencia", "")).strip().lower()
+        # "Situação da fonte" agora é célula única (status + narrativa); nivel_atual
+        # fica só com o token de status pra comparação exata continuar funcionando
+        # mesmo depois que a célula ganha narrativa/carimbo.
+        nivel_atual = _nivel_de(linha.get("nivel_conferencia", "")).strip().lower()
         url_internet = str(linha.get("url_original", "")).strip()
 
         # Pesquisa suspensa pela Justiça Eleitoral: estado terminal. Padroniza
@@ -1570,8 +1580,8 @@ def atualizar_planilha():
                 link_drive = fazer_upload_drive(creds, pasta_id, nome_pdf, pdf_bytes)
                 celulas_para_atualizar.append(gspread.Cell(i, col_link, link_drive))
                 celulas_para_atualizar.append(gspread.Cell(
-                    i, col_status,
-                    _origem_com_carimbo("PDF salvo do link conferido", linha.get("data_divulgacao", "")),
+                    i, col_nivel,
+                    _situacao("ok", "PDF salvo do link conferido", linha.get("data_divulgacao", "")),
                 ))
                 pdfs_salvos += 1
                 print(f"  [OK] Snapshot salvo no Drive: {nome_pdf}")
@@ -1589,36 +1599,36 @@ def atualizar_planilha():
             print(f"  [INFO] Descartando redirect temporário do Vertex: {registro}")
             celulas_para_atualizar.append(gspread.Cell(i, col_link, ""))
             celulas_para_atualizar.append(gspread.Cell(
-                i, col_status,
-                _origem_com_carimbo("redirect temporário do Vertex descartado; buscando fonte original",
-                                    linha.get("data_divulgacao", "")),
+                i, col_nivel,
+                _situacao(nivel_atual, "redirect temporário do Vertex descartado; buscando fonte original",
+                          linha.get("data_divulgacao", "")),
             ))
             link_atual = ""
         if _eh_aviso_fora_da_janela(link_atual):
             # O aviso e a data de divulgação ficam no próprio campo de link e
             # na coluna ao lado. Em origem, deixar apenas quando a fila foi
             # puxada, sem regravar o horário a cada rodada.
-            origem_atual = str(linha.get(COL_ORIGEM_LINK, "")).strip()
-            origem_limpa = _somente_carimbo_puxada(origem_atual)
-            if origem_atual != origem_limpa:
-                celulas_para_atualizar.append(gspread.Cell(i, col_status, origem_limpa))
+            narrativa_atual = _narrativa_de(linha.get("nivel_conferencia", ""))
+            narrativa_limpa = _somente_carimbo_puxada(narrativa_atual)
+            if narrativa_atual != narrativa_limpa:
+                nivel_novo = nivel_atual or "fora_da_janela"
+                celulas_para_atualizar.append(gspread.Cell(i, col_nivel, _compor_situacao(nivel_novo, narrativa_limpa)))
             continue
         if link_atual and _eh_link_drive(link_atual):
             # Já é link do Drive: só normaliza o nome (não precisa baixar/converter,
             # o arquivo já está lá). Só na primeira vez que a linha aparece com link
-            # (origem_link ainda vazio); depois de carimbada, pula nas próximas
-            # rodadas, senão seria 1 GET no Drive por linha toda rodada só pra
-            # reconferir um nome que já está certo.
-            if not str(linha.get(COL_ORIGEM_LINK, "")).strip():
+            # (sem narrativa ainda na Situação da fonte); depois de carimbada, pula
+            # nas próximas rodadas, senão seria 1 GET no Drive por linha toda rodada
+            # só pra reconferir um nome que já está certo.
+            if not _narrativa_de(linha.get("nivel_conferencia", "")):
                 nome_pdf = normalizar_nome_arquivo(registro, str(linha.get("data_divulgacao", "")), linha.get("cargo", ""))
                 if renomear_arquivo_drive_por_link(creds, link_atual, nome_pdf):
                     print(f"  [OK] Arquivo renomeado no Drive: {nome_pdf}")
+                nivel_novo = nivel_atual or "link_existente"
                 celulas_para_atualizar.append(gspread.Cell(
-                    i, col_status,
-                    _origem_com_carimbo("link já existente na fila", linha.get("data_divulgacao", "")),
+                    i, col_nivel,
+                    _situacao(nivel_novo, "link já existente na fila", linha.get("data_divulgacao", "")),
                 ))
-                if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
-                    celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "link_existente"))
             continue
 
         if link_atual:
@@ -1630,7 +1640,7 @@ def atualizar_planilha():
             # de baixar/converter/subir pro Drive usado pro link que a IA acha
             # sozinha (baixar_pdf_ou_gerar_headless mais abaixo), só sem precisar
             # buscar - o link já está na célula.
-            if str(linha.get(COL_ORIGEM_LINK, "")).strip():
+            if _narrativa_de(linha.get("nivel_conferencia", "")):
                 continue   # já processado numa rodada anterior
             link_fonte = link_atual
             origem_texto = "Link inserido manualmente"
@@ -1638,17 +1648,16 @@ def atualizar_planilha():
             dias = _dias_desde_divulgacao(linha.get("data_divulgacao", ""))
             if dias is not None and dias > MAX_DIAS_BUSCA:
                 # divulgada há mais de MAX_DIAS_BUSCA: não vale mais buscar (nem seria
-                # divulgada). Carimba uma vez (só se origem ainda vazia) pra a equipe
+                # divulgada). Carimba uma vez (só se ainda sem narrativa) pra a equipe
                 # saber o motivo de a linha não ter link, e pula em silêncio nas
                 # próximas rodadas.
-                if not str(linha.get(COL_ORIGEM_LINK, "")).strip():
+                if not _narrativa_de(linha.get("nivel_conferencia", "")):
+                    nivel_novo = nivel_atual or "fora_da_janela"
                     celulas_para_atualizar.append(gspread.Cell(
-                        i, col_status,
-                        _origem_com_carimbo(f"não buscado: divulgada há mais de {MAX_DIAS_BUSCA} dias",
-                                            linha.get("data_divulgacao", "")),
+                        i, col_nivel,
+                        _situacao(nivel_novo, f"não buscado: divulgada há mais de {MAX_DIAS_BUSCA} dias",
+                                  linha.get("data_divulgacao", "")),
                     ))
-                    if not str(linha.get(COL_NIVEL_CONFERENCIA, "")).strip():
-                        celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "fora_da_janela"))
                     # Fora da janela = nunca vai ter fonte, então nada na linha
                     # depende dela vai acontecer: Conferido?, Segmentos extraídos?
                     # e Intenção de voto cadastrada? viram N/A junto, em vez de
@@ -1671,10 +1680,9 @@ def atualizar_planilha():
             if resultado.get("tipo") == "paywall" and not resultado.get("link"):
                 pendentes_finais.append(f"{registro} - Paywall, sem matéria aberta localizada.")
                 celulas_para_atualizar.append(gspread.Cell(
-                    i, col_status,
-                    _origem_com_carimbo("paywall, aguardando fonte aberta", linha.get("data_divulgacao", "")),
+                    i, col_nivel,
+                    _situacao("paywall", "paywall, aguardando fonte aberta", linha.get("data_divulgacao", "")),
                 ))
-                celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "paywall"))
                 continue
 
             link_fonte = resultado.get("link")
@@ -1694,10 +1702,9 @@ def atualizar_planilha():
             pendentes_finais.append(f"{registro} - Fonte é vídeo ({link_fonte}); sem relatório legível, deixado pendente.")
             celulas_para_atualizar.append(gspread.Cell(i, col_link, link_fonte))
             celulas_para_atualizar.append(gspread.Cell(
-                i, col_status,
-                _origem_com_carimbo("fonte é vídeo, aguardando relatório/matéria", linha.get("data_divulgacao", "")),
+                i, col_nivel,
+                _situacao("nao", "fonte é vídeo, aguardando relatório/matéria", linha.get("data_divulgacao", "")),
             ))
-            celulas_para_atualizar.append(gspread.Cell(i, col_nivel, "nao"))
             continue
 
         try:
@@ -1705,14 +1712,13 @@ def atualizar_planilha():
                 link_fonte, registro, linha.get("uf", ""), linha.get("instituto", ""), gemini_client)
             if not pdf_bytes or pdf_bytes[:4] != b"%PDF":
                 situacao = "bloqueado"
-            celulas_para_atualizar.append(gspread.Cell(i, col_nivel, situacao))
             if situacao in SITUACOES_PENDENTES:
                 pendentes_finais.append(_mensagem_pendente(registro, situacao))
                 celulas_para_atualizar.append(gspread.Cell(i, col_link, link_fonte))
                 celulas_para_atualizar.append(gspread.Cell(
-                    i, col_status,
-                    _origem_com_carimbo(
-                        "verificar fonte" + _nota_conferencia(situacao),
+                    i, col_nivel,
+                    _situacao(
+                        situacao, "verificar fonte" + _nota_conferencia(situacao),
                         linha.get("data_divulgacao", ""),
                     ),
                 ))
@@ -1728,11 +1734,8 @@ def atualizar_planilha():
             nota = _nota_conferencia(situacao)
             celulas_para_atualizar.append(gspread.Cell(i, col_link, link_drive))
             celulas_para_atualizar.append(gspread.Cell(
-                i, col_status,
-                _origem_com_carimbo(
-                    origem_texto + nota,
-                    linha.get("data_divulgacao", ""),
-                ),
+                i, col_nivel,
+                _situacao(situacao, origem_texto + nota, linha.get("data_divulgacao", "")),
             ))
             pdfs_salvos += 1
             links_preenchidos += 1

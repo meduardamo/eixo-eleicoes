@@ -35,7 +35,6 @@ RELATORIOS_COLUNAS = [
     ("data_divulgacao", "Data de divulgação"),
     ("url_original", "Link na internet"),
     ("link", "PDF salvo no Drive"),
-    ("origem_link", "Origem do link"),
     ("nivel_conferencia", "Situação da fonte"),
     ("conferido", "Conferido?"),
     ("segmentos_extraido", "Segmentos extraídos?"),
@@ -69,7 +68,10 @@ ALIASES_RELATORIOS = {
     "Data de divulgação": ["data_divulgacao", "data_divulgacao_pesqele"],
     "Link na internet": ["url_original"],
     "PDF salvo no Drive": ["link", "Link do relatório"],
-    "Origem do link": ["origem_link", "origem_busca"],
+    # "Origem do link" foi fundida aqui em 17/07/2026 (célula única "nivel — narrativa";
+    # ver _nivel_de/_narrativa_de). Alias mantido só pra planilha antiga não migrada perder
+    # a coluna sem aviso - _normalizar_cabecalho pega o valor mas NÃO concatena com nivel_conferencia
+    # (isso foi feito uma vez, manualmente, na migração ao vivo).
     "Situação da fonte": ["nivel_conferencia", "Nível de conferência"],
     "Conferido?": ["conferido"],
     "Segmentos extraídos?": ["segmentos_extraido", "extraido"],
@@ -120,6 +122,35 @@ def _sem_acento(valor):
 
 def _rel_display(nome):
     return REL_COL.get(nome, nome)
+
+
+SEPARADOR_SITUACAO = " — "
+
+
+def _nivel_de(valor):
+    """Extrai o token de status (ex.: 'ok', 'suspensa') da célula fundida de
+    'Situação da fonte', que pode ser só o token ou 'token — narrativa'."""
+    txt = str(valor or "").strip()
+    if not txt:
+        return ""
+    return txt.split(SEPARADOR_SITUACAO, 1)[0].strip()
+
+
+def _narrativa_de(valor):
+    """Extrai a parte narrativa (carimbo de origem/busca) da célula fundida de
+    'Situação da fonte', ou '' se ela só tiver o token de status."""
+    txt = str(valor or "").strip()
+    partes = txt.split(SEPARADOR_SITUACAO, 1)
+    return partes[1].strip() if len(partes) == 2 else ""
+
+
+def _compor_situacao(nivel, narrativa=""):
+    """Junta status + narrativa na célula única de 'Situação da fonte'."""
+    nivel = str(nivel or "").strip()
+    narrativa = str(narrativa or "").strip()
+    if not narrativa:
+        return nivel
+    return f"{nivel}{SEPARADOR_SITUACAO}{narrativa}" if nivel else narrativa
 
 
 def _rel_key(nome):
@@ -440,6 +471,40 @@ def _colorir_por_valor(ws, coluna, header, ate_linha, cores):
         print(f"[AVISO] não deu pra colorir a coluna '{coluna}': {e}")
 
 
+def _colorir_por_prefixo(ws, coluna, header, ate_linha, cores):
+    """Como _colorir_por_valor, mas casa por PREFIXO (TEXT_STARTS_WITH) em vez de
+    valor exato. Necessário pra 'Situação da fonte' fundida, cuja célula pode ser só
+    o token ('suspensa') ou 'token — narrativa' ('ok — link já existente na fila...')."""
+    if coluna not in header or ate_linha < 2:
+        return
+    col = header.index(coluna)
+    try:
+        meta = ws.spreadsheet.fetch_sheet_metadata(
+            params={"fields": "sheets(properties(sheetId),conditionalFormats)"})
+        reqs = []
+        for s in meta.get("sheets", []):
+            if s.get("properties", {}).get("sheetId") != ws.id:
+                continue
+            cfs = s.get("conditionalFormats", [])
+            for idx in range(len(cfs) - 1, -1, -1):
+                rngs = cfs[idx].get("ranges", [])
+                if any(r.get("startColumnIndex") == col and r.get("endColumnIndex") == col + 1 for r in rngs):
+                    reqs.append({"deleteConditionalFormatRule": {"sheetId": ws.id, "index": idx}})
+        faixa = {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": max(ate_linha, ws.row_count),
+                 "startColumnIndex": col, "endColumnIndex": col + 1}
+        for valor, (r, g, b) in cores.items():
+            reqs.append({"addConditionalFormatRule": {"index": 0, "rule": {
+                "ranges": [faixa],
+                "booleanRule": {
+                    "condition": {"type": "TEXT_STARTS_WITH", "values": [{"userEnteredValue": valor}]},
+                    "format": {"backgroundColor": {"red": r, "green": g, "blue": b}},
+                }}}})
+        if reqs:
+            ws.spreadsheet.batch_update({"requests": reqs})
+    except Exception as e:
+        print(f"[AVISO] não deu pra colorir por prefixo a coluna '{coluna}': {e}")
+
+
 def _colorir_cabecalhos_relatorios(ws, header):
     """Dá leitura visual imediata aos três blocos operacionais da fila."""
     grupos = [
@@ -447,7 +512,7 @@ def _colorir_cabecalhos_relatorios(ws, header):
         (["registro", "cargo", "uf", "instituto", "data_divulgacao"],
          (0.85, 0.90, 0.95)),
         # Fonte e revisão humana: verde muito claro.
-        (["url_original", "link", "origem_link", "nivel_conferencia", "conferido"],
+        (["url_original", "link", "nivel_conferencia", "conferido"],
          (0.88, 0.94, 0.86)),
         # Resultado da extração demográfica: azul claro.
         (["segmentos_extraido", "segmentos_data_extracao", "segmentos_erro", "segmentos_tentativas"],
@@ -556,7 +621,7 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     # colunas com validação PRÓPRIA que não podem ser limpas junto (senão o checkbox do
     # Conferido? some a cada rodada de manutenção).
     protegidas = sorted({header.index(_rel_display(n)) for n in
-                         ("conferido", "nivel_conferencia", "segmentos_extraido")
+                         ("conferido", "segmentos_extraido")
                          if _rel_display(n) in header})
     faixas, ini = [], 0
     for pc in protegidas:
@@ -607,17 +672,10 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         "não": (0.96, 0.80, 0.80),  # vermelho pastel: relatório sem quebra de segmento
         "N/A": CINZA_NA,
     })
-    # Nível de conferência: todo valor que o busca_fontes grava (ver nota das
-    # colunas em relatorios/relatorios_busca_fontes.py), mais N/A pra caso
-    # marcado à mão (ex.: "Pesquisa suspensa pelo TSE" - nunca vai ter fonte,
-    # mas não é bem "fora_da_janela" porque não é sobre prazo) - dropdown pra
-    # revisão manual não digitar fora do vocabulário que o código espera.
-    _ativar_dropdown(ws, _rel_display("nivel_conferencia"), header, ate_linha, [
-        "ok", "nao", "provavel", "teaser", "paywall", "bloqueado",
-        "erro_chrome", "erro_tecnico", "imagem", "fora_da_janela", "link_existente",
-        "suspensa", "N/A",
-    ])
-    _colorir_por_valor(ws, _rel_display("nivel_conferencia"), header, ate_linha, {
+    # Situação da fonte: célula fundida (status + narrativa/carimbo, ver
+    # _compor_situacao/_nivel_de) - texto livre, sem dropdown (composto não bate
+    # com lista fixa). Cor por PREFIXO (_colorir_por_prefixo), não valor exato.
+    _colorir_por_prefixo(ws, _rel_display("nivel_conferencia"), header, ate_linha, {
         "ok": (0.82, 0.93, 0.82),             # verde: fonte confirmada
         "link_existente": (0.88, 0.95, 0.88),  # verde claro: link já veio pronto
         "nao": (0.96, 0.80, 0.80),             # vermelho pastel: ainda não confirmada
@@ -645,8 +703,9 @@ def _limpar_status_extracao(row):
     ):
         row[_rel_display(coluna)] = ""
         row[coluna] = ""
-    row[_rel_display("origem_link")] = "separado de linha multicargo; buscar fonte específica"
-    row["origem_link"] = "separado de linha multicargo; buscar fonte específica"
+    nota = "separado de linha multicargo; buscar fonte específica"
+    row[_rel_display("nivel_conferencia")] = nota
+    row["nivel_conferencia"] = nota
     return row
 
 
