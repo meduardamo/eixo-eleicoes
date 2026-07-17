@@ -1,7 +1,13 @@
 name: 05 - Rebuild BI
 
 on:
-  workflow_dispatch:
+  schedule:
+    # GitHub Actions usa UTC; Brasil/Recife = UTC-3. De 4 em 4 horas, minuto
+    # fora do :00 porque o :00 é quando o GitHub Actions mais enfileira e
+    # atrasa a rodada agendada. Reconstrói o resultados_bi do PollingData
+    # (o salvamento manual não faz mais isso na hora).
+    - cron: '25 */4 * * *'  # a cada 4h (…, 21:25, 01:25, 05:25 BRT …)
+  workflow_dispatch:         # permite rodar manualmente pelo GitHub
 
 jobs:
   run:
