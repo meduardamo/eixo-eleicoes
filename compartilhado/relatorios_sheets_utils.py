@@ -436,6 +436,46 @@ def _ativar_dropdown(ws, coluna, header, ate_linha, opcoes):
         print(f"[AVISO] não deu pra criar a lista suspensa de '{coluna}': {e}")
 
 
+def _ativar_validacao_prefixo(ws, coluna, header, ate_linha, tokens):
+    """Trava a coluna a começar por um dos 'tokens' (status), mas permite o resto
+    da célula livre (narrativa depois de ' — '), formato 'token' ou 'token — texto'.
+    ONE_OF_LIST exige valor EXATO e rejeitaria a narrativa; aqui uma fórmula custom
+    (REGEXMATCH ancorado no início) barra qualquer coisa que não comece com um
+    token válido, sem proibir o que vem depois."""
+    if coluna not in header or ate_linha < 2:
+        return
+    col_i = header.index(coluna) + 1
+    ref = gspread.utils.rowcol_to_a1(2, col_i)
+    alternativas = "|".join(re.escape(str(t)) for t in tokens)
+    # separador de argumento é ";" (não ","): planilha em locale BR, mesmo padrão
+    # já usado na fórmula HYPERLINK de STATUS_TOPLINE_MANUAL.
+    formula = f'=REGEXMATCH(TO_TEXT({ref}); "^({alternativas})( — .*)?$")'
+    try:
+        ws.spreadsheet.batch_update({
+            "requests": [{
+                "setDataValidation": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": 1,
+                        "endRowIndex": ate_linha,
+                        "startColumnIndex": col_i - 1,
+                        "endColumnIndex": col_i,
+                    },
+                    "rule": {
+                        "condition": {
+                            "type": "CUSTOM_FORMULA",
+                            "values": [{"userEnteredValue": formula}],
+                        },
+                        "strict": True,
+                        "showCustomUi": False,
+                    },
+                }
+            }]
+        })
+    except Exception as e:
+        print(f"[AVISO] não deu pra criar a validação por prefixo de '{coluna}': {e}")
+
+
 def _colorir_por_valor(ws, coluna, header, ate_linha, cores):
     """Formatação condicional: pinta o fundo da coluna conforme o valor (ex.: relatório
     verde, notícia laranja, N/A cinza). 'cores' = {valor: (r,g,b)} com r,g,b em 0-1.
@@ -621,7 +661,7 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
     # colunas com validação PRÓPRIA que não podem ser limpas junto (senão o checkbox do
     # Conferido? some a cada rodada de manutenção).
     protegidas = sorted({header.index(_rel_display(n)) for n in
-                         ("conferido", "segmentos_extraido")
+                         ("conferido", "segmentos_extraido", "nivel_conferencia")
                          if _rel_display(n) in header})
     faixas, ini = [], 0
     for pc in protegidas:
@@ -673,8 +713,16 @@ def _resetar_validacoes_relatorios(ws, header, ate_linha):
         "N/A": CINZA_NA,
     })
     # Situação da fonte: célula fundida (status + narrativa/carimbo, ver
-    # _compor_situacao/_nivel_de) - texto livre, sem dropdown (composto não bate
-    # com lista fixa). Cor por PREFIXO (_colorir_por_prefixo), não valor exato.
+    # _compor_situacao/_nivel_de). NÃO é texto livre: _ativar_validacao_prefixo
+    # trava a célula a começar por um dos tokens abaixo (rejeita qualquer outra
+    # coisa), só permite o que vem depois de ' — ' ser livre. Cor por PREFIXO
+    # (_colorir_por_prefixo), não valor exato, pelo mesmo motivo.
+    NIVEIS_VALIDOS = [
+        "ok", "nao", "provavel", "teaser", "paywall", "bloqueado",
+        "erro_chrome", "erro_tecnico", "imagem", "fora_da_janela", "link_existente",
+        "suspensa", "N/A",
+    ]
+    _ativar_validacao_prefixo(ws, _rel_display("nivel_conferencia"), header, ate_linha, NIVEIS_VALIDOS)
     _colorir_por_prefixo(ws, _rel_display("nivel_conferencia"), header, ate_linha, {
         "ok": (0.82, 0.93, 0.82),             # verde: fonte confirmada
         "link_existente": (0.88, 0.95, 0.88),  # verde claro: link já veio pronto
