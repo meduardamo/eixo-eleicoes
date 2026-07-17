@@ -42,7 +42,7 @@ RELATORIOS_COLUNAS = [
     ("segmentos_erro", "Erro na extração de segmentos"),
     ("segmentos_tentativas", "Tentativas de segmentos"),
     ("topline_extraido", "Voto cadastrado?"),
-    ("topline_data_extracao", "Data do registro manual"),
+    ("topline_data_extracao", "Data do registro"),
 ]
 
 REL_COL = dict(RELATORIOS_COLUNAS)
@@ -79,7 +79,7 @@ ALIASES_RELATORIOS = {
     "Erro na extração de segmentos": ["segmentos_erro", "extracao_erro"],
     "Tentativas de segmentos": ["segmentos_tentativas", "extracao_tentativas"],
     "Voto cadastrado?": ["topline_extraido", "Topline extraída?", "Intenção de voto cadastrada?"],
-    "Data do registro manual": ["topline_data_extracao", "Data da extração de topline"],
+    "Data do registro": ["topline_data_extracao", "Data da extração de topline", "Data do registro manual"],
 }
 
 REL_KEY = {rotulo: chave for chave, rotulo in RELATORIOS_COLUNAS}
