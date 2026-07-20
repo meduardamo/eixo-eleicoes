@@ -45,6 +45,11 @@ ALIASES_INSTITUTO_CANONICO = {
     "ipespe": "Ipespe",
     "ipems": "IPEMS",
     "instituto opiniao pi": "Instituto Opinião (PI)",
+    # ECM — nome legal do TSE corresponde à marca ECM Pesquisas.
+    "ecm edicao comunicacao marketing ltda ecm pesquisas": "ECM Pesquisas",
+    "ecm pesquisas": "ECM Pesquisas",
+    # IMAPE — nome legal do TSE.
+    "imape inst majoritario de pesquisas e estatisticas": "IMAPE",
 }
 
 
