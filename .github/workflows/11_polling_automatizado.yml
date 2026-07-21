@@ -45,4 +45,4 @@ jobs:
           ARGS=()
           [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS+=(--dry-run)
           [ -n "${{ github.event.inputs.so_uf }}" ] && ARGS+=(--so-uf "${{ github.event.inputs.so_uf }}")
-          python -u -m outros.pollingdata_api "${ARGS[@]}"
+          python -u -m outros.polling_automatizado "${ARGS[@]}"

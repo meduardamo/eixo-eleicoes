@@ -18,10 +18,10 @@ a sessao do navegador da pessoa varias vezes por dia. O token vem pronto por
 variavel de ambiente; quando expirar, o script avisa em vez de tentar renovar.
 
 Uso:
-  python -m outros.pollingdata_api --explorar            # mostra o formato da resposta
-  python -m outros.pollingdata_api --explorar --uf PE --cargo Governador
-  python -m outros.pollingdata_api                       # coleta e grava na planilha
-  python -m outros.pollingdata_api --dry-run
+  python -m outros.polling_automatizado --explorar            # mostra o formato da resposta
+  python -m outros.polling_automatizado --explorar --uf PE --cargo Governador
+  python -m outros.polling_automatizado                       # coleta e grava na planilha
+  python -m outros.polling_automatizado --dry-run
 
 Secrets/env:
   POLLINGDATA_TOKEN            token do portal (obrigatorio)
