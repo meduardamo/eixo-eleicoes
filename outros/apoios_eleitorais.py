@@ -69,12 +69,23 @@ CABECALHO = [
 TIPOS_APOIADOR = {
     "candidato": "candidato(a)", "candidata": "candidato(a)",
     "candidatoa": "candidato(a)", "candidatura": "candidato(a)",
+    "precandidato": "candidato(a)", "precandidata": "candidato(a)",
     "partido": "partido", "federacao": "partido", "diretorio": "partido",
-    "lideranca": "liderança", "politico": "liderança", "personalidade": "liderança",
-    "movimento": "movimento",
-    "grupopolitico": "grupo político", "grupo": "grupo político",
-    "gruppolitico": "grupo político",
 }
+
+# Cargos em disputa em 2026. Serve pra confirmar que as duas pontas da relacao
+# sao candidaturas, e nao gente sem candidatura propria.
+CARGOS_2026 = {
+    "presidente": "Presidente", "presidenta": "Presidente",
+    "vicepresidente": "Vice-presidente",
+    "governador": "Governador", "governadora": "Governador",
+    "vicegovernador": "Vice-governador", "vicegovernadora": "Vice-governador",
+    "senador": "Senador", "senadora": "Senador",
+    "deputadofederal": "Deputado federal", "deputadafederal": "Deputado federal",
+    "deputadoestadual": "Deputado estadual", "deputadaestadual": "Deputado estadual",
+    "deputadodistrital": "Deputado distrital", "deputadadistrital": "Deputado distrital",
+}
+
 TIPOS_RELACAO = {
     "apoiodeclarado": "apoio declarado", "apoio": "apoio declarado",
     "declaracaodeapoio": "apoio declarado",
@@ -228,6 +239,28 @@ def _de_vocabulario(valor, mapa, padrao):
     return mapa.get(_norm(valor), padrao)
 
 
+# Um mesmo par nao pode ser apoio e oposicao ao mesmo tempo. Na primeira rodada
+# o PL apareceu como "negociação" E como "oposição" com Soldado Sampaio, e as
+# duas linhas entraram porque o tipo faz parte da chave de dedup.
+RELACOES_POSITIVAS = {"apoio declarado", "apoio partidário", "ato conjunto", "negociação", "aliança"}
+RELACOES_NEGATIVAS = {"rompimento", "oposição"}
+
+
+def _polaridade(relacao):
+    if relacao in RELACOES_NEGATIVAS:
+        return "negativa"
+    return "positiva" if relacao in RELACOES_POSITIVAS else ""
+
+
+def _cargo_2026(valor):
+    """Cargo em disputa em 2026, ou "" quando nao reconhecido.
+
+    E o que separa candidatura de figura politica sem candidatura propria: a base
+    e de apoio ENTRE CANDIDATURAS, entao as duas pontas precisam ter cargo valido.
+    """
+    return CARGOS_2026.get(_norm(valor), "")
+
+
 def _tipo_relacao(valor):
     """Traduz pro vocabulário fechado, ou devolve "" pra linha ser descartada.
 
@@ -317,7 +350,7 @@ def _chave(estado, apoiador, apoiado, relacao):
 
 def _prompt(cand):
     return f"""
-Você é um pesquisador eleitoral. Busque na web relações de APOIO entre candidaturas das eleições de 2026 envolvendo:
+Você é um pesquisador eleitoral. Busque na web relações de apoio ENTRE CANDIDATURAS das eleições de 2026 envolvendo:
 
 Estado/UF: {cand['estado']}
 Candidato(a): {cand['candidato']}
@@ -326,39 +359,50 @@ Partido/Federação: {cand['partido']}
 
 Registre tanto quem apoia essa candidatura quanto quem essa candidatura apoia.
 
-CADA RELAÇÃO É DIRECIONADA. "A apoia B" é diferente de "B apoia A". Nunca presuma reciprocidade: se houver apoio mútuo documentado, devolva DUAS relações, uma em cada direção.
+O QUE ENTRA. As duas pontas da relação precisam ser candidaturas de 2026 (candidato ou pré-candidato a presidente, vice, governador, vice-governador, senador ou deputado), ou um partido/federação apoiando uma candidatura. Exemplos do que interessa:
+- candidato ao governo que compõe chapa com candidata ao Senado do mesmo palanque
+- candidato estadual que declara apoio a um presidenciável
+- presidenciável que declara apoio a candidato estadual
+- ministro ou candidato que apoia outra candidatura ao Senado
 
-tipo_apoiador, use exatamente um destes:
-- "candidato(a)": pessoa que é candidata ou pré-candidata
+O QUE NÃO ENTRA, nunca:
+- sindicato, central sindical, movimento social, entidade religiosa, associação
+- pessoa sem candidatura própria em 2026 (ex-governador aposentado, cacique sem disputa, empresário, artista)
+- grupo político, ala partidária ou família política sem candidatura nomeada
+Se o apoiador não tem candidatura própria em 2026 e não é um partido, NÃO devolva a relação.
+
+CADA RELAÇÃO É DIRECIONADA. "A apoia B" é diferente de "B apoia A". Nunca presuma reciprocidade: se as duas direções estiverem documentadas, devolva DUAS relações, uma em cada direção.
+
+tipo_apoiador, exatamente um destes:
+- "candidato(a)": pessoa candidata ou pré-candidata em 2026
 - "partido": legenda, federação ou diretório
-- "liderança": pessoa com peso político que não é candidata (ex-governador, prefeito, senador que não disputa, cacique partidário)
-- "movimento": movimento social, sindical, religioso ou de base
-- "grupo político": grupo, bancada, ala ou família política sem personalidade jurídica
 
-tipo_relacao, use exatamente um destes:
+cargo_apoiador e cargo_apoiado: o cargo DISPUTADO em 2026, um destes: Presidente, Vice-presidente, Governador, Vice-governador, Senador, Deputado federal, Deputado estadual, Deputado distrital. Para apoiador do tipo "partido", deixe cargo_apoiador vazio. Se você não souber o cargo que a pessoa disputa em 2026, não devolva a relação.
+
+tipo_relacao, exatamente um destes:
 - "apoio declarado": manifestação pública e nominal de apoio
 - "apoio partidário": decisão formal do partido/federação de apoiar
-- "ato conjunto": participaram juntos de evento, agenda ou palanque
+- "ato conjunto": participaram juntos de evento, agenda ou palanque de campanha
 - "negociação": conversas em curso, ainda sem decisão
-- "aliança": composição formal (coligação, chapa, acordo anunciado)
+- "aliança": composição formal (mesma chapa, coligação, acordo anunciado)
 - "rompimento": relação de apoio que existia e foi desfeita
 - "oposição": declaração pública de que atuará contra a candidatura
 
-status, use exatamente um destes:
+status, exatamente um destes:
 - "confirmado": oficializado ou declarado publicamente pelas partes
 - "em negociação": em curso, sem decisão anunciada
 - "especulação": noticiado como bastidor, sem confirmação das partes
 - "encerrado": vínculo que acabou (use junto com rompimento)
 
 REGRAS:
-1. Só devolva relação que tenha FONTE e LINK. Sem link verificável, não devolva.
+1. Só devolva relação que tenha FONTE e LINK verificável. Sem link, não devolva.
 2. NÃO infira apoio por afinidade partidária, por serem do mesmo partido, por serem aliados históricos ou por menção indireta. Só conta declaração, ato ou decisão documentada.
-3. Não confunda estar no mesmo evento institucional (posse, inauguração) com ato conjunto de campanha.
-4. Não organize por palanque nem agrupe candidaturas: uma linha por vínculo entre duas pontas.
-5. "data" é a data do fato (declaração, ato, decisão), não a data da publicação, quando as duas aparecerem. Formato DD/MM/AAAA.
-6. "fonte" é o nome do veículo ou da instituição; "link_fonte" é a URL.
-7. "observacao" é uma frase curta com o que a fonte diz. Sem opinião.
-8. Se não encontrar nenhuma relação documentada, devolva "relacoes": [].
+3. Não confunda evento institucional (posse, inauguração, entrega de obra) com ato conjunto de campanha.
+4. Não devolva o mesmo par de pessoas com dois tipos de relação contraditórios (ex.: negociação e oposição). Escolha o que a fonte mais recente sustenta.
+5. "data" é a data do fato, não a da publicação, quando as duas aparecerem. Formato DD/MM/AAAA.
+6. "fonte" é o nome do veículo; "link_fonte" é a URL.
+7. "observacao" é uma frase curta com o que a fonte diz, sem opinião.
+8. Se não encontrar nenhuma relação documentada entre candidaturas, devolva "relacoes": [].
 
 Retorne APENAS JSON válido:
 {{
@@ -448,6 +492,8 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
     client = _gemini()
     mapa = _mapa_header(header)
     novas, sem_resultado, erros, descartadas = [], 0, 0, 0
+    fora_do_recorte, contraditorias = 0, 0
+    polaridade_por_par = {}
 
     for cand in fila:
         print(f"{cand['estado']} / {cand['candidato']} ({cand['partido']})...")
@@ -479,20 +525,43 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
             if not relacao:
                 descartadas += 1
                 continue
+
+            # As duas pontas precisam ser candidatura de 2026 (ou um partido, do
+            # lado do apoiador). Apoiador sem candidatura propria e sem legenda
+            # nao entra: a base e de apoio ENTRE CANDIDATURAS.
+            tipo_apoiador = TIPOS_APOIADOR.get(_norm(r.get("tipo_apoiador")), "")
+            cargo_apoiado = _cargo_2026(r.get("cargo_apoiado"))
+            cargo_apoiador = _cargo_2026(r.get("cargo_apoiador"))
+            if not tipo_apoiador or not cargo_apoiado:
+                fora_do_recorte += 1
+                continue
+            if tipo_apoiador == "candidato(a)" and not cargo_apoiador:
+                fora_do_recorte += 1
+                continue
+
             estado = str(r.get("estado") or cand["estado"]).strip()
+            par = (_norm(estado), _norm(apoiador), _norm(apoiado))
+            polaridade = _polaridade(relacao)
+            if par in polaridade_por_par and polaridade_por_par[par] != polaridade:
+                contraditorias += 1
+                print(f"  [conflito] {apoiador} x {apoiado}: já gravado como "
+                      f"{polaridade_por_par[par]}, ignorando '{relacao}'")
+                continue
+
             chave = _chave(estado, apoiador, apoiado, relacao)
             if chave in chaves:
                 continue
             chaves.add(chave)
+            polaridade_por_par[par] = polaridade
 
             valores = {
                 "estado": estado,
                 "apoiador": apoiador,
-                "tipo de apoiador": _de_vocabulario(r.get("tipo_apoiador"), TIPOS_APOIADOR, "liderança"),
-                "cargo do apoiador": str(r.get("cargo_apoiador") or "").strip(),
+                "tipo de apoiador": tipo_apoiador,
+                "cargo do apoiador": cargo_apoiador,
                 "partido do apoiador": str(r.get("partido_apoiador") or "").strip().upper(),
                 "apoiado": apoiado,
-                "cargo do apoiado": str(r.get("cargo_apoiado") or "").strip(),
+                "cargo do apoiado": cargo_apoiado,
                 "partido do apoiado": str(r.get("partido_apoiado") or "").strip().upper(),
                 "tipo de relação": relacao,
                 "status": _de_vocabulario(r.get("status"), STATUS, "especulação"),
@@ -521,6 +590,8 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
     print("\nResumo:")
     print(f"* relações novas: {len(novas)}")
     print(f"* descartadas por falta de fonte/link ou por auto-referência: {descartadas}")
+    print(f"* fora do recorte (não é candidatura de 2026 nem partido): {fora_do_recorte}")
+    print(f"* ignoradas por contradizer relação já gravada: {contraditorias}")
     print(f"* candidatos sem relação encontrada: {sem_resultado}")
     print(f"* erros técnicos: {erros}")
     if dry_run:
