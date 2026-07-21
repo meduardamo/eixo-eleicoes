@@ -4,9 +4,16 @@ on:
   schedule:
     # GitHub Actions usa UTC; Brasil/Recife = UTC-3. Minuto fora do :00 porque
     # o :00 é quando o GitHub Actions mais enfileira e atrasa a rodada agendada.
-    - cron: '15 9 * * *'   # 06:15 BRT
-    - cron: '15 14 * * *'  # 11:15 BRT
-    - cron: '15 18 * * *'  # 15:15 BRT
+    #
+    # Duas horas antes do horário-alvo, de propósito: cron agendado do Actions
+    # é fila de baixa prioridade e não começa na hora marcada. Medido em 12 dias
+    # deste workflow: atraso de 25 min no melhor caso, 89 na mediana, 250 no
+    # pior. O scraper ainda leva de 16 a 77 min. A antecipação cobre o caso
+    # mediano; no dia de fila cheia continua atrasando, e a solução definitiva
+    # é disparar por repository_dispatch a partir de um agendador externo.
+    - cron: '15 7 * * *'   # 04:15 BRT, alvo 06:15
+    - cron: '15 12 * * *'  # 09:15 BRT, alvo 11:15
+    - cron: '15 16 * * *'  # 13:15 BRT, alvo 15:15
   workflow_dispatch:        # permite rodar manualmente pelo GitHub
 
 jobs:
