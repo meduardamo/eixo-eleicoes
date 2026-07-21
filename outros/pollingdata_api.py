@@ -51,6 +51,15 @@ UFS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "
 
 PAUSA = float(os.getenv("POLLING_API_PAUSA", "0.4"))   # respeita o serviço deles
 
+# O que coletar. Senador nao entra no 2o turno: no Brasil a eleicao pro Senado e
+# majoritaria simples, decidida numa unica votacao. Presidente vem em BR (nacional)
+# e tambem por UF, porque instituto testa presidenciavel dentro do estado.
+COLETA = [
+    ("Governador", UFS, [1, 2]),
+    ("Senador", UFS, [1]),
+    ("Presidente", ["BR"] + UFS, [1, 2]),
+]
+
 
 def _sessao():
     token = os.getenv("POLLINGDATA_TOKEN", "").strip()
@@ -158,25 +167,72 @@ def _linhas_de(resposta, contexto):
     return [{**contexto, **_achatar(d)} for d in dados if isinstance(d, dict)]
 
 
-def coletar(cargos, ufs, turno):
+def _cenarios_de(s, ano, cargo, uf, turno):
+    """Lista os cenarios daquela combinacao, em vez de adivinhar nomes.
+
+    O portal expoe cenario tanto por slug na URL ("t1_lula-flavio-sem-bolsonaros")
+    quanto por identificador interno, e a rota /polls/resultado aceita os dois
+    (parametros "url" e "cenario"). Aqui a gente pega o que vier e repassa igual.
+    """
+    resp = _get(s, "/polls/scenarios-overview", ano=ano, cargo=cargo, turno=turno, uf=uf)
+    if resp is None:
+        return []
+    itens = resp
+    if isinstance(resp, dict):
+        for chave in ("data", "scenarios", "cenarios", "results", "items"):
+            if isinstance(resp.get(chave), list):
+                itens = resp[chave]
+                break
+        else:
+            itens = [resp]
+    cenarios = []
+    for it in itens if isinstance(itens, list) else []:
+        if not isinstance(it, dict):
+            continue
+        slug = it.get("url") or it.get("slug") or it.get("cenario_url")
+        ident = it.get("cenario") or it.get("id") or it.get("scenario_id") or it.get("nome")
+        if slug or ident:
+            cenarios.append({"url": slug, "cenario": ident,
+                             "rotulo": it.get("nome") or it.get("titulo") or it.get("label") or ident or slug})
+    return cenarios
+
+
+def coletar(ano=ANO, so_uf=None, plano=None):
     s = _sessao()
-    me = _get(s, "/auth/me")
-    if me:
-        print("token válido.")
-    linhas, vazios = [], 0
-    for cargo in cargos:
-        alvos = ["BR"] if cargo == "Presidente" else ufs
+    if _get(s, "/auth/me"):
+        print("token válido.\n")
+    linhas, sem_cenario, sem_dado = [], 0, 0
+
+    for cargo, ufs_cargo, turnos in (plano or COLETA):
+        alvos = [so_uf.upper()] if so_uf else ufs_cargo
         for uf in alvos:
-            ctx = {"ano": ANO, "cargo": cargo, "uf": uf, "turno": turno,
-                   "coletado_em": datetime.now(BRT).strftime("%Y-%m-%d %H:%M")}
-            resp = _get(s, "/polls/resultado", ano=ANO, cargo=cargo, turno=turno, uf=uf)
-            novas = _linhas_de(resp, ctx)
-            if not novas:
-                vazios += 1
-            linhas.extend(novas)
-            print(f"  {cargo} {uf}: {len(novas)} linha(s)")
-            time.sleep(PAUSA)
-    print(f"\ntotal: {len(linhas)} linha(s) | {vazios} combinação(ões) sem dado")
+            for turno in turnos:
+                cenarios = _cenarios_de(s, ano, cargo, uf, turno)
+                time.sleep(PAUSA)
+                if not cenarios:
+                    # Sem cenario listado, tenta a combinacao "crua": e assim que o
+                    # portal responde quando ha um cenario unico e implicito.
+                    cenarios = [{"url": None, "cenario": None, "rotulo": "(único)"}]
+                    sem_cenario += 1
+                achou = 0
+                for c in cenarios:
+                    ctx = {"ano": ano, "cargo": cargo, "uf": uf, "turno": turno,
+                           "cenario": c.get("rotulo") or "",
+                           "cenario_url": c.get("url") or "",
+                           "coletado_em": datetime.now(BRT).strftime("%Y-%m-%d %H:%M")}
+                    resp = _get(s, "/polls/resultado", ano=ano, cargo=cargo, turno=turno,
+                                uf=uf, cenario=c.get("cenario"), url=c.get("url"))
+                    novas = _linhas_de(resp, ctx)
+                    linhas.extend(novas)
+                    achou += len(novas)
+                    time.sleep(PAUSA)
+                if not achou:
+                    sem_dado += 1
+                print(f"  {cargo:<11} {uf:<3} t{turno}: {len(cenarios):>2} cenário(s), {achou:>3} linha(s)")
+
+    print(f"\ntotal: {len(linhas)} linha(s)")
+    print(f"  combinações sem cenário listado: {sem_cenario}")
+    print(f"  combinações sem dado nenhum: {sem_dado}")
     return linhas
 
 
@@ -233,8 +289,7 @@ def main():
     if args.explorar:
         explorar(args.uf, args.cargo, args.turno)
         return
-    ufs = [args.so_uf.upper()] if args.so_uf else UFS
-    linhas = coletar(CARGOS, ufs, args.turno)
+    linhas = coletar(so_uf=args.so_uf)
     salvar(linhas, dry_run=args.dry_run)
 
 

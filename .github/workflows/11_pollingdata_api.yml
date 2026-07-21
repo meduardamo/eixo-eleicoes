@@ -1,8 +1,12 @@
 name: 11 - PollingData API
 
-# Sem schedule por enquanto: só roda depois que o POLLINGDATA_TOKEN existir e a
-# gente tiver modelado as colunas com dado real (rode --explorar antes).
 on:
+  schedule:
+    # Uma vez por dia, de manhã. Cron do Actions atrasa (25 a 250 min medidos
+    # neste repo), então 07:27 é alvo, não garantia. Aqui não tem prazo duro:
+    # ninguém consome esse dado numa janela fixa como o DOU ou as notícias.
+    - cron: '27 10 * * *'   # 07:27 BRT
+
   workflow_dispatch:
     inputs:
       dry_run:
