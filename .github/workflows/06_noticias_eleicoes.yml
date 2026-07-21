@@ -14,6 +14,16 @@ on:
     - cron: '15 7 * * *'   # 04:15 BRT, alvo 06:15
     - cron: '15 12 * * *'  # 09:15 BRT, alvo 11:15
     - cron: '15 16 * * *'  # 13:15 BRT, alvo 15:15
+  # Disparo externo, em horario exato. O cron agendado do Actions entra numa
+  # fila de baixa prioridade e atrasa de 25 a 250 min (medido em 12 dias), o que
+  # nao serve pro time, que levanta noticia as 7h, 12h e 16h. Um agendador de
+  # fora chama POST /repos/meduardamo/eixo-eleicoes/dispatches com
+  # {"event_type": "raspar-noticias"} e o run comeca em segundos.
+  # Os crons acima ficam como rede de seguranca: o scraper deduplica por titulo
+  # contra a planilha, entao rodar duas vezes nao duplica noticia.
+  repository_dispatch:
+    types: [raspar-noticias]
+
   workflow_dispatch:        # permite rodar manualmente pelo GitHub
 
 jobs:
