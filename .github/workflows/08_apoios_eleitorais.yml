@@ -48,7 +48,7 @@ jobs:
       # Destino: mesma planilha das candidaturas do TSE, pra centralizar.
       SPREADSHEET_ID_TSE: ${{ secrets.SPREADSHEET_ID_TSE }}
       CONVENCOES_ABA: ${{ vars.CONVENCOES_ABA || 'Convenções partidárias' }}
-      APOIOS_ABA: ${{ vars.APOIOS_ABA || 'Apoios por candidatura' }}
+      APOIOS_ABA: ${{ vars.APOIOS_ABA || 'apoio por candidatura' }}
       APOIOS_MAX_LINHAS: ${{ github.event.inputs.max_linhas || '1000' }}
       APOIOS_FORCE: ${{ github.event.inputs.force || 'false' }}
       APOIOS_SENADO_MIN_PESQUISAS: ${{ vars.APOIOS_SENADO_MIN_PESQUISAS || '2' }}

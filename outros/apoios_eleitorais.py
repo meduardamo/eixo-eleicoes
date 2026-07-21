@@ -21,7 +21,7 @@ Secrets/env:
   SPREADSHEET_ID_CONVENCOES   (origem: aba de convencoes)
   SPREADSHEET_ID_TSE          (destino: planilha "Candidaturas 2026 (TSE + Noticias)")
   CONVENCOES_ABA  (origem dos nomes, padrao "Convenções partidárias")
-  APOIOS_ABA      (destino, padrao "Apoios por candidatura")
+  APOIOS_ABA      (destino, padrao "apoio por candidatura")
   SPREADSHEET_ID_POLLINGDATA  (matriz T1, de onde saem os nomes do Senado)
 
 Por padrao so processa candidato cuja convencao JA ACONTECEU (Data convenção <=
@@ -44,7 +44,7 @@ from google.oauth2.service_account import Credentials
 BRT = timezone(timedelta(hours=-3))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL_APOIOS", "gemini-2.5-flash")
 ABA_ORIGEM_PADRAO = "Convenções partidárias"
-ABA_DESTINO_PADRAO = "Apoios por candidatura"
+ABA_DESTINO_PADRAO = "apoio por candidatura"
 ABA_CONTROLE_PADRAO = "_apoios_buscados"
 ANO_ELEICAO = 2026
 

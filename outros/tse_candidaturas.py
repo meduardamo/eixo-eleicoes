@@ -78,14 +78,22 @@ def baixar_base_oficial(ano=ANO):
     url = f"{CDN}/consulta_cand_{ano}.zip"
     estado = PASTA / f"_ultimo_{ano}.txt"
 
-    try:
-        head = requests.head(url, headers=HEADERS, timeout=30)
-        if head.status_code != 200:
-            print(f"base oficial ainda não publicada (HTTP {head.status_code}); seguindo só com a API")
-            return None
-        atual = head.headers.get("Last-Modified")
-    except requests.RequestException as e:
-        print(f"base oficial indisponível ({str(e)[:80]}); seguindo só com a API")
+    # O CDN do TSE derruba a conexao (RemoteDisconnected) em vez de responder 404
+    # quando o arquivo do ano ainda nao existe, entao tentativa unica nao distingue
+    # "nao publicado" de "instabilidade". Tenta algumas vezes antes de desistir.
+    atual = None
+    for tentativa in range(1, 4):
+        try:
+            head = requests.head(url, headers=HEADERS, timeout=30)
+            if head.status_code == 200:
+                atual = head.headers.get("Last-Modified")
+                break
+            print(f"base oficial: HTTP {head.status_code} (tentativa {tentativa}/3)")
+        except requests.RequestException as e:
+            print(f"base oficial: {str(e)[:70]} (tentativa {tentativa}/3)")
+        time.sleep(2 * tentativa)
+    else:
+        print(f"consulta_cand_{ano}.zip ainda não publicado pelo TSE; seguindo só com a API")
         return None
     if estado.exists() and estado.read_text() == (atual or ""):
         print("base sem alteração desde o último download")
