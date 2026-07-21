@@ -32,7 +32,9 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # ~40s por candidato (medido). A varredura inicial tem ~270 nomes, entao
+    # precisa de folga; nas rodadas seguintes so entram os novos e acaba rapido.
+    timeout-minutes: 340
 
     env:
       PYTHONUNBUFFERED: "1"

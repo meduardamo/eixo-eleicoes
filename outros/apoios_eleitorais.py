@@ -44,6 +44,7 @@ BRT = timezone(timedelta(hours=-3))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL_APOIOS", "gemini-2.5-flash")
 ABA_ORIGEM_PADRAO = "Convenções partidárias"
 ABA_DESTINO_PADRAO = "Apoios por candidatura"
+ABA_CONTROLE_PADRAO = "_apoios_buscados"
 ANO_ELEICAO = 2026
 
 # Recorte dos nomes do Senado vindos da matriz T1. A aba de convencoes so tem
@@ -527,6 +528,30 @@ def buscar_apoios(client, cand):
     return relacoes if isinstance(relacoes, list) else []
 
 
+def _abrir_controle(sh):
+    """Aba de controle com quem JA foi usado como semente de busca.
+
+    Nao da pra deduzir isso da propria base: aparecer nela como apoiado so quer
+    dizer que alguem citou a pessoa, nao que as relacoes dela foram pesquisadas.
+    Sem esse registro, quem fosse citado por outro candidato seria pulado pra
+    sempre sem nunca ter sido buscado.
+    """
+    nome = os.getenv("APOIOS_ABA_CONTROLE", ABA_CONTROLE_PADRAO)
+    try:
+        ws = sh.worksheet(nome)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sh.add_worksheet(title=nome, rows=2000, cols=4)
+        ws.update(range_name="A1", values=[["estado", "candidato", "cargo", "data da busca"]],
+                  value_input_option="RAW")
+        ws.freeze(rows=1)
+    return ws
+
+
+def _ja_buscados(ws_controle):
+    valores = ws_controle.get_all_values()[1:]
+    return {(_norm(r[0]), _nome_pessoa(r[1])) for r in valores if len(r) >= 2 and r[1].strip()}
+
+
 def _linhas_existentes(ws, header):
     mapa = _mapa_header(header)
     valores = ws.get_all_values()[1:]
@@ -535,15 +560,13 @@ def _linhas_existentes(ws, header):
         pos = mapa.get(_norm(nome))
         return str(row[pos]).strip() if pos is not None and pos < len(row) else ""
 
-    chaves, ja_buscados = set(), set()
+    chaves = set()
     for row in valores:
         if not any(str(c).strip() for c in row):
             continue
         chaves.add(_chave(campo(row, "estado"), campo(row, "apoiador"),
                           campo(row, "apoiado"), campo(row, "tipo de relação")))
-        for nome in (campo(row, "apoiador"), campo(row, "apoiado")):
-            ja_buscados.add((_norm(campo(row, "estado")), _norm(nome)))
-    return chaves, ja_buscados
+    return chaves
 
 
 def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=False):
@@ -561,7 +584,9 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
     print(f"Semente: {len(candidatos) - len(novos_senado)} da aba de convenções + "
           f"{len(novos_senado)} do Senado (matriz T1).")
     ws, header = _abrir_destino(sh)
-    chaves, ja_buscados = _linhas_existentes(ws, header)
+    chaves = _linhas_existentes(ws, header)
+    ws_controle = _abrir_controle(sh)
+    ja_buscados = _ja_buscados(ws_controle)
 
     hoje = _hoje()
     fila, sem_convencao, ja_feitos = [], 0, 0
@@ -575,7 +600,7 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
             if data is None or data > hoje:
                 sem_convencao += 1
                 continue
-        if not force and (_norm(c["estado"]), _norm(c["candidato"])) in ja_buscados:
+        if not force and (_norm(c["estado"]), _nome_pessoa(c["candidato"])) in ja_buscados:
             ja_feitos += 1
             continue
         fila.append(c)
@@ -589,6 +614,7 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
     mapa = _mapa_header(header)
     novas, sem_resultado, erros, descartadas = [], 0, 0, 0
     fora_do_recorte, contraditorias = 0, 0
+    buscados_agora = []
     polaridade_por_par = {}
 
     for cand in fila:
@@ -678,7 +704,13 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
         if not adicionadas:
             sem_resultado += 1
             print("  [vazio] nenhuma relação com fonte e link")
+        # Registra mesmo sem resultado: senao a proxima rodada gastaria uma
+        # chamada de novo no mesmo nome que ja se sabe que nao rende nada.
+        buscados_agora.append([cand["estado"], cand["candidato"], cand["cargo"], _data_busca()])
 
+    if buscados_agora and not dry_run:
+        ws_controle.append_rows(buscados_agora, value_input_option="USER_ENTERED",
+                                table_range=f"A{len(ws_controle.get_all_values())}")
     if novas and not dry_run:
         ws.append_rows(novas, value_input_option="USER_ENTERED",
                        table_range=f"A{len(ws.get_all_values())}")
