@@ -2,7 +2,11 @@ name: 10 - TSE
 
 on:
   schedule:
-    - cron: '0 */3 * * *'   # de 3 em 3 horas
+    # O DivulgaCand diz atualizar de hora em hora, então acompanhamos no mesmo
+    # ritmo. A coleta é só API, sem Gemini: 28 UEs por cargo, resposta em
+    # milissegundos, custo zero. Minuto fora do :00 porque é quando o Actions
+    # mais enfileira as rodadas agendadas.
+    - cron: '25 * * * *'
   workflow_dispatch:
 
 jobs:

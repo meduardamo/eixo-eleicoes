@@ -34,8 +34,16 @@ UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB
        'PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']
 
 # códigos de cargo do TSE
-CARGOS = {1: 'PRESIDENTE', 3: 'GOVERNADOR', 5: 'SENADOR',
-          6: 'DEPUTADO FEDERAL', 7: 'DEPUTADO ESTADUAL', 8: 'DEPUTADO DISTRITAL'}
+CARGOS = {1: 'PRESIDENTE', 2: 'VICE-PRESIDENTE', 3: 'GOVERNADOR', 4: 'VICE-GOVERNADOR',
+          5: 'SENADOR', 6: 'DEPUTADO FEDERAL', 7: 'DEPUTADO ESTADUAL',
+          8: 'DEPUTADO DISTRITAL', 9: '1º SUPLENTE', 10: '2º SUPLENTE'}
+
+# O vice NÃO vem aninhado no titular na listagem: é candidatura própria, com código
+# de cargo separado. Buscando só 1/3/5 a gente traria Dr. Furlan e perderia Luciana
+# Gurgel, que é a outra metade da mesma chapa. O mesmo vale pros suplentes de senador.
+CARGOS_TITULARES = (1, 3, 5)
+CARGOS_VINCULADOS = (2, 4, 9, 10)
+CARGOS_PADRAO = CARGOS_TITULARES + CARGOS_VINCULADOS
 
 
 def _get(url):
@@ -59,18 +67,36 @@ def cod_eleicao(ano, abrangencia='F'):
 
 
 def baixar_base_oficial(ano=ANO):
-    """Baixa o consulta_cand (zip) e extrai o CSV nacional. Só rebaixa se mudou."""
+    """Baixa o consulta_cand (zip) e extrai o CSV nacional. Só rebaixa se mudou.
+
+    Devolve None quando o arquivo ainda não existe. O TSE só publica essa base
+    depois que o período de registro avança; no começo do período a API já tem
+    candidatura e o CSV ainda não saiu. Antes isso derrubava a rodada inteira e
+    a coleta pela API, que estava funcionando, se perdia junto.
+    """
     PASTA.mkdir(parents=True, exist_ok=True)
     url = f"{CDN}/consulta_cand_{ano}.zip"
     estado = PASTA / f"_ultimo_{ano}.txt"
 
-    atual = requests.head(url, headers=HEADERS, timeout=30).headers.get("Last-Modified")
+    try:
+        head = requests.head(url, headers=HEADERS, timeout=30)
+        if head.status_code != 200:
+            print(f"base oficial ainda não publicada (HTTP {head.status_code}); seguindo só com a API")
+            return None
+        atual = head.headers.get("Last-Modified")
+    except requests.RequestException as e:
+        print(f"base oficial indisponível ({str(e)[:80]}); seguindo só com a API")
+        return None
     if estado.exists() and estado.read_text() == (atual or ""):
         print("base sem alteração desde o último download")
         return PASTA / f"consulta_cand_{ano}_BRASIL.csv"
 
-    r = requests.get(url, headers=HEADERS, timeout=120)
-    r.raise_for_status()
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=120)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        print(f"falha ao baixar a base oficial ({str(e)[:80]}); seguindo só com a API")
+        return None
     alvo = f"consulta_cand_{ano}_BRASIL.csv"
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
         z.extract(alvo, PASTA)
@@ -101,7 +127,7 @@ def consolidar(df_api, csv_path):
     return base.merge(extra, on="SQ_CANDIDATO", how="left")
 
 
-def extrair_candidaturas(ano=ANO, cargos=(1, 3, 5), enriquecer=True):
+def extrair_candidaturas(ano=ANO, cargos=CARGOS_PADRAO, enriquecer=True):
     """Lista candidaturas pela API. enriquecer busca o detalhe (partido, gênero, raça)
     de cada um — mais lento, vale a pena só no majoritário."""
     eleicao = cod_eleicao(ano)
@@ -114,7 +140,11 @@ def extrair_candidaturas(ano=ANO, cargos=(1, 3, 5), enriquecer=True):
             for c in cands:
                 row = {"ano": ano, "cargo": CARGOS[cargo], "ue": ue,
                        "sq_candidato": c['id'], "numero": c.get('numero'),
-                       "nome_urna": c.get('nomeUrna'), "situacao": c.get('descricaoSituacao'),
+                       "nome_urna": c.get('nomeUrna'),
+                       "nome_completo": c.get('nomeCompleto'),
+                       "partido_listagem": (c.get('partido') or {}).get('sigla'),
+                       "situacao": c.get('descricaoSituacao'),
+                       "totalizacao": c.get('descricaoTotalizacao'),
                        "coligacao_federacao": c.get('nomeColigacao')}
                 if enriquecer:
                     det = _get(f"{API}/candidatura/buscar/{ano}/{ue}/{eleicao}/candidato/{c['id']}")
@@ -127,6 +157,56 @@ def extrair_candidaturas(ano=ANO, cargos=(1, 3, 5), enriquecer=True):
                         row["link_plano"] = f"{DOC}/{idarq}" if idarq else None
                 linhas.append(row)
             print(f"{CARGOS[cargo]} {ue}: {len(cands)}")
+    return pd.DataFrame(linhas)
+
+
+def extrair_chapas(ano=ANO):
+    """Uma linha por chapa majoritária registrada: titular + cada vice/suplente.
+
+    O vínculo entre titular e vice só é confiável DE CIMA PRA BAIXO: o detalhe do
+    titular traz a lista `vices`, enquanto a listagem do vice vem com
+    idCandidatoSuperior nulo (conferido na chapa do AP em 21/07/2026, a primeira
+    registrada do país). Por isso percorre titular por titular.
+
+    Os campos do vice usam outra convenção de nome (nm_URNA, sg_PARTIDO,
+    sq_CANDIDATO) porque vêm de outra tabela do TSE, não do mesmo serializer.
+    """
+    eleicao = cod_eleicao(ano)
+    linhas = []
+    for cargo in CARGOS_TITULARES:
+        ues = ['BR'] if cargo == 1 else UFS
+        for ue in ues:
+            d = _get(f"{API}/candidatura/listar/{ano}/{ue}/{eleicao}/{cargo}/candidatos")
+            for c in (d or {}).get('candidatos', []):
+                det = _get(f"{API}/candidatura/buscar/{ano}/{ue}/{eleicao}/candidato/{c['id']}") or {}
+                base = {
+                    "ano": ano, "uf": ue, "cargo": CARGOS[cargo],
+                    "titular": c.get('nomeUrna'),
+                    "titular_nome_completo": c.get('nomeCompleto'),
+                    "titular_partido": (c.get('partido') or {}).get('sigla'),
+                    "numero": c.get('numero'),
+                    "coligacao_federacao": c.get('nomeColigacao'),
+                    "situacao": c.get('descricaoSituacao'),
+                    "totalizacao": c.get('descricaoTotalizacao'),
+                    "sq_titular": c.get('id'),
+                    "link_plano": (lambda i: f"{DOC}/{i}" if i else None)(_id_plano(det)),
+                }
+                vices = det.get('vices') or []
+                if not vices:
+                    # Chapa registrada sem vice ainda, ou cargo que não tem vice
+                    # (senador tem suplente, que aparece aqui do mesmo jeito).
+                    linhas.append({**base, "vinculado": None, "vinculado_cargo": None,
+                                   "vinculado_partido": None, "sq_vinculado": None,
+                                   "vinculado_situacao": None})
+                    continue
+                for v in vices:
+                    linhas.append({**base,
+                                   "vinculado": v.get('nm_URNA') or v.get('nm_CANDIDATO'),
+                                   "vinculado_cargo": v.get('ds_CARGO'),
+                                   "vinculado_partido": v.get('sg_PARTIDO'),
+                                   "sq_vinculado": v.get('sq_CANDIDATO'),
+                                   "vinculado_situacao": v.get('descricaoTotalizacao')})
+            print(f"chapas {CARGOS[cargo]} {ue}: {len([l for l in linhas if l['uf']==ue and l['cargo']==CARGOS[cargo]])}")
     return pd.DataFrame(linhas)
 
 
@@ -158,10 +238,22 @@ def salvar_no_sheets(df, aba):
 
 
 if __name__ == '__main__':
-    csv = baixar_base_oficial()
-    df = extrair_candidaturas(cargos=(1, 3, 5))
-    base = consolidar(df, csv)
-    print(f"base consolidada: {base.shape[0]} linhas")
+    df = extrair_candidaturas()
+    print(f"candidaturas: {len(df)} linha(s)")
+    if len(df):
+        salvar_no_sheets(df, "candidaturas")
 
-    salvar_no_sheets(df, "candidaturas")
-    salvar_no_sheets(base, "base_consolidada")
+    chapas = extrair_chapas()
+    print(f"chapas: {len(chapas)} linha(s)")
+    if len(chapas):
+        salvar_no_sheets(chapas, "chapas")
+
+    # A base oficial só sai depois que o período de registro avança. Enquanto não
+    # existe, a coleta pela API já vale por si e não faz sentido derrubar a rodada.
+    csv = baixar_base_oficial()
+    if csv and len(df):
+        base = consolidar(df, csv)
+        print(f"base consolidada: {base.shape[0]} linhas")
+        salvar_no_sheets(base, "base_consolidada")
+    else:
+        print("base_consolidada não gerada nesta rodada")
