@@ -21,6 +21,7 @@ Secrets/env:
   SPREADSHEET_ID_CONVENCOES
   CONVENCOES_ABA  (origem dos nomes, padrao "Convenções partidárias")
   APOIOS_ABA      (destino, padrao "Apoios por candidatura")
+  SPREADSHEET_ID_POLLINGDATA  (matriz T1, de onde saem os nomes do Senado)
 
 Por padrao so processa candidato cuja convencao JA ACONTECEU (Data convenção <=
 hoje na aba de origem): e na convencao que a alianca vira fato registrado.
@@ -44,6 +45,13 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL_APOIOS", "gemini-2.5-flash")
 ABA_ORIGEM_PADRAO = "Convenções partidárias"
 ABA_DESTINO_PADRAO = "Apoios por candidatura"
 ANO_ELEICAO = 2026
+
+# Recorte dos nomes do Senado vindos da matriz T1. A aba de convencoes so tem
+# governador e presidente; quem disputa o Senado aparece nas pesquisas. Instituto
+# testa muito nome que nao e pre-candidatura real, entao exige presenca em mais de
+# uma pesquisa e teste recente: 507 pessoas viram 263 com esse corte.
+SENADO_MIN_PESQUISAS = int(os.getenv("APOIOS_SENADO_MIN_PESQUISAS", "2"))
+SENADO_DESDE = os.getenv("APOIOS_SENADO_DESDE", "2026-05-01")
 
 USO_TOKENS = {"chamadas": 0, "entrada": 0, "saida": 0, "pensamento": 0}
 
@@ -315,6 +323,83 @@ def _ler_origem(sh):
     return candidatos
 
 
+def _nome_pessoa(valor):
+    """Chave de pessoa: sem acento e sem prefixo de tratamento.
+
+    A matriz grava a mesma pessoa de varias formas ("Alvaro Dias"/"Álvaro Dias",
+    "Dr. Junior Feitosa"/"Júnior Feitosa"). Sem isso a mesma candidatura entraria
+    duas vezes na fila e viraria dois nos no grafo.
+    """
+    s = _sem_acento(valor).lower().strip()
+    s = re.sub(r"\b(dr|dra|sr|sra|prof|cel|coronel|delegado|delegada|pastor|padre)\b", "", s)
+    return re.sub(r"[^a-z0-9]+", "", s)
+
+
+def _ler_senado_matriz():
+    """Candidaturas ao Senado, tiradas de quem e testado nas pesquisas da T1."""
+    sheet_id = _normalizar_spreadsheet_id(os.getenv("SPREADSHEET_ID_POLLINGDATA", ""))
+    if not sheet_id:
+        print("Aviso: SPREADSHEET_ID_POLLINGDATA não definido; Senado fica de fora.")
+        return []
+    creds = Credentials.from_service_account_info(
+        _creds_info(), scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    try:
+        ws = gspread.authorize(creds).open_by_key(sheet_id).worksheet("resultados")
+        valores = ws.get_all_values()
+    except Exception as exc:
+        print(f"Aviso: não consegui ler a matriz T1 ({str(exc)[:120]}); Senado fica de fora.")
+        return []
+    if not valores:
+        return []
+
+    header = valores[0]
+    idx = {c.strip(): i for i, c in enumerate(header)}
+    precisa = ["uf", "cargo", "ano", "tipo", "candidato", "partido", "poll_id", "data_campo"]
+    if any(c not in idx for c in precisa):
+        print("Aviso: matriz T1 sem as colunas esperadas; Senado fica de fora.")
+        return []
+
+    agrupado = {}
+    for row in valores[1:]:
+        if len(row) <= max(idx[c] for c in precisa):
+            continue
+        if (row[idx["cargo"]].strip().lower() != "senador"
+                or row[idx["ano"]].strip() != str(ANO_ELEICAO)
+                or row[idx["tipo"]].strip() != "candidato"):
+            continue
+        nome = row[idx["candidato"]].strip()
+        if not nome:
+            continue
+        chave = (row[idx["uf"]].strip().upper(), _nome_pessoa(nome))
+        d = agrupado.setdefault(chave, {"polls": set(), "datas": [], "nomes": {}, "partidos": {}})
+        d["polls"].add(row[idx["poll_id"]].strip())
+        d["nomes"][nome] = d["nomes"].get(nome, 0) + 1
+        partido = row[idx["partido"]].strip().upper()
+        if partido and partido != "SEM PARTIDO":
+            d["partidos"][partido] = d["partidos"].get(partido, 0) + 1
+        data = row[idx["data_campo"]].strip()
+        if len(data) == 10:
+            d["datas"].append(data)
+
+    candidatos = []
+    for (uf, _), d in agrupado.items():
+        if len(d["polls"]) < SENADO_MIN_PESQUISAS:
+            continue
+        if not d["datas"] or max(d["datas"]) < SENADO_DESDE:
+            continue
+        candidatos.append({
+            "estado": uf,
+            # Grafia mais usada, mesma regra ja aplicada na matriz.
+            "candidato": max(d["nomes"].items(), key=lambda kv: kv[1])[0],
+            "cargo": "Senador",
+            "partido": max(d["partidos"].items(), key=lambda kv: kv[1])[0] if d["partidos"] else "",
+            "data_convencao": "",
+            "origem_semente": "matriz T1",
+        })
+    return candidatos
+
+
 def _abrir_destino(sh):
     aba = os.getenv("APOIOS_ABA", ABA_DESTINO_PADRAO)
     try:
@@ -464,6 +549,17 @@ def _linhas_existentes(ws, header):
 def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=False):
     sh = _planilha()
     candidatos = _ler_origem(sh)
+    # Senado nao esta na aba de convencoes; vem de quem e testado nas pesquisas.
+    # Nao passa pelo filtro de convencao: estar numa pesquisa registrada no TSE
+    # ja e sinal de pre-candidatura, e esperar a convencao do governador daquela
+    # UF pra buscar o senador nao faz sentido.
+    senado = _ler_senado_matriz()
+    vistos = {(_norm(c["estado"]), _nome_pessoa(c["candidato"])) for c in candidatos}
+    novos_senado = [c for c in senado
+                    if (_norm(c["estado"]), _nome_pessoa(c["candidato"])) not in vistos]
+    candidatos = candidatos + novos_senado
+    print(f"Semente: {len(candidatos) - len(novos_senado)} da aba de convenções + "
+          f"{len(novos_senado)} do Senado (matriz T1).")
     ws, header = _abrir_destino(sh)
     chaves, ja_buscados = _linhas_existentes(ws, header)
 
@@ -474,7 +570,7 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
         # fato registrado, e é esse histórico que a base precisa capturar. Quem
         # tem convenção marcada pra frente entra sozinho nas rodadas seguintes,
         # conforme a data chega.
-        if not incluir_sem_convencao:
+        if not incluir_sem_convencao and c.get("origem_semente") != "matriz T1":
             data = _data_convencao(c["data_convencao"])
             if data is None or data > hoje:
                 sem_convencao += 1

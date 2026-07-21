@@ -513,11 +513,36 @@ def normalizar_percentual_planilha(valor):
         return None
 
 
+# Sigla canonica, sempre em maiuscula. O PollingData publica a mesma legenda com
+# grafias diferentes conforme o instituto, e ate aqui o partido entrava cru na
+# matriz: em 21/07/2026 a T1 tinha "UB" e "UNIAO", "POD" e "PODE", "DEMOCRATA" e
+# "DEM", "PC" e "PCO", "PARTIDO MISSÃO" e "MISSAO" para as mesmas pessoas. Isso
+# fatia a serie do candidato em duas no resultados_bi e polui o levantamento de
+# divergencia de partido, que serve pra achar erro de cadastro de verdade.
+PARTIDOS_CANONICOS = {
+    "UB": "UNIAO", "UNIÃO": "UNIAO", "UNIAO BRASIL": "UNIAO", "UNIÃO BRASIL": "UNIAO",
+    "POD": "PODE", "PODEMOS": "PODE",
+    "DEMOCRATA": "DEM", "DEMOCRATAS": "DEM",
+    "PC": "PCO",
+    "PARTIDO MISSÃO": "MISSAO", "PARTIDO MISSAO": "MISSAO", "MISSÃO": "MISSAO",
+}
+
+
+def normalizar_sigla_partido(valor: str) -> str:
+    """Sigla em maiuscula, resolvendo as grafias que o PollingData mistura.
+
+    Sigla desconhecida passa direto, so em maiuscula: e melhor entrar com o nome
+    que veio do que ser descartada em silencio.
+    """
+    sigla = _norm_ws(valor).upper()
+    return PARTIDOS_CANONICOS.get(sigla, sigla)
+
+
 def parsear_candidato_partido(col_header: str):
     col_clean = _strip_html(str(col_header).replace("<br>", " "))
     m = re.match(r"^(.+?)\s*\(([^)]+)\)\s*$", col_clean.strip())
     if m:
-        return _norm_ws(m.group(1)), _norm_ws(m.group(2))
+        return _norm_ws(m.group(1)), normalizar_sigla_partido(m.group(2))
     return _norm_ws(col_clean), ""
 
 
