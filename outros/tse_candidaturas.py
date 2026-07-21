@@ -133,7 +133,8 @@ def extrair_candidaturas(ano=ANO, cargos=CARGOS_PADRAO, enriquecer=True):
     eleicao = cod_eleicao(ano)
     linhas = []
     for cargo in cargos:
-        ues = ['BR'] if cargo == 1 else UFS   # presidente é nacional; resto é por UF
+        # Presidente e vice-presidente são nacionais (UE = BR); o resto é por UF.
+        ues = ['BR'] if cargo in (1, 2) else UFS
         for ue in ues:
             d = _get(f"{API}/candidatura/listar/{ano}/{ue}/{eleicao}/{cargo}/candidatos")
             cands = (d or {}).get('candidatos', [])
@@ -174,7 +175,7 @@ def extrair_chapas(ano=ANO):
     eleicao = cod_eleicao(ano)
     linhas = []
     for cargo in CARGOS_TITULARES:
-        ues = ['BR'] if cargo == 1 else UFS
+        ues = ['BR'] if cargo in (1, 2) else UFS
         for ue in ues:
             d = _get(f"{API}/candidatura/listar/{ano}/{ue}/{eleicao}/{cargo}/candidatos")
             for c in (d or {}).get('candidatos', []):

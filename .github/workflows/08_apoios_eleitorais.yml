@@ -45,6 +45,8 @@ jobs:
       SPREADSHEET_ID_CONVENCOES: ${{ secrets.SPREADSHEET_ID_CONVENCOES }}
       # Matriz T1: de onde saem os nomes do Senado, que a aba de convenções não tem.
       SPREADSHEET_ID_POLLINGDATA: ${{ secrets.SPREADSHEET_ID_POLLINGDATA }}
+      # Destino: mesma planilha das candidaturas do TSE, pra centralizar.
+      SPREADSHEET_ID_TSE: ${{ secrets.SPREADSHEET_ID_TSE }}
       CONVENCOES_ABA: ${{ vars.CONVENCOES_ABA || 'Convenções partidárias' }}
       APOIOS_ABA: ${{ vars.APOIOS_ABA || 'Apoios por candidatura' }}
       APOIOS_MAX_LINHAS: ${{ github.event.inputs.max_linhas || '1000' }}

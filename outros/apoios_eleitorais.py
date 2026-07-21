@@ -18,7 +18,8 @@ Uso:
 Secrets/env:
   GOOGLE_CREDENTIALS_JSON
   GEMINI_API_KEY
-  SPREADSHEET_ID_CONVENCOES
+  SPREADSHEET_ID_CONVENCOES   (origem: aba de convencoes)
+  SPREADSHEET_ID_TSE          (destino: planilha "Candidaturas 2026 (TSE + Noticias)")
   CONVENCOES_ABA  (origem dos nomes, padrao "Convenções partidárias")
   APOIOS_ABA      (destino, padrao "Apoios por candidatura")
   SPREADSHEET_ID_POLLINGDATA  (matriz T1, de onde saem os nomes do Senado)
@@ -175,6 +176,23 @@ def _normalizar_spreadsheet_id(valor):
         if m:
             return m.group(1)
     return s
+
+
+def _planilha_destino():
+    """Planilha onde a base de apoios e gravada.
+
+    Fica junto das candidaturas do TSE, e nao na planilha de convencoes de onde
+    sai a semente: a Eduarda centralizou tudo que e produto final ali.
+    """
+    creds = Credentials.from_service_account_info(
+        _creds_info(), scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    sheet_id = _normalizar_spreadsheet_id(
+        os.getenv("SPREADSHEET_ID_APOIOS", "") or os.getenv("SPREADSHEET_ID_TSE", "")
+    )
+    if not sheet_id:
+        raise RuntimeError("Defina SPREADSHEET_ID_TSE (ou SPREADSHEET_ID_APOIOS).")
+    return gspread.authorize(creds).open_by_key(sheet_id)
 
 
 def _planilha():
@@ -590,8 +608,9 @@ def _linhas_existentes(ws, header):
 
 
 def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=False):
-    sh = _planilha()
-    candidatos = _ler_origem(sh)
+    sh_origem = _planilha()
+    sh = _planilha_destino()
+    candidatos = _ler_origem(sh_origem)
     # Senado nao esta na aba de convencoes; vem de quem e testado nas pesquisas.
     # Nao passa pelo filtro de convencao: estar numa pesquisa registrada no TSE
     # ja e sinal de pre-candidatura, e esperar a convencao do governador daquela
