@@ -54,6 +54,11 @@ ANO_ELEICAO = 2026
 SENADO_MIN_PESQUISAS = int(os.getenv("APOIOS_SENADO_MIN_PESQUISAS", "2"))
 SENADO_DESDE = os.getenv("APOIOS_SENADO_DESDE", "2026-05-01")
 
+# Grava a cada N candidatos em vez de so no fim. A varredura inicial leva horas;
+# gravando so no final, uma queda ou um cancelamento no meio joga fora tudo que
+# ja foi pesquisado e o custo do Gemini junto.
+LOTE_GRAVACAO = int(os.getenv("APOIOS_LOTE", "20"))
+
 USO_TOKENS = {"chamadas": 0, "entrada": 0, "saida": 0, "pensamento": 0}
 
 CABECALHO = [
@@ -617,8 +622,34 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
     buscados_agora = []
     polaridade_por_par = {}
 
+    total_gravado = 0
+
+    def gravar_lote(final=False):
+        """Descarrega o que esta em memoria na planilha.
+
+        table_range ancorado na ultima linha com dado de propósito: sem ele a API
+        do Sheets procura o fim da tabela a partir de A1 e escreve dentro do
+        primeiro buraco de linhas vazias que encontrar, no meio da aba.
+        """
+        nonlocal novas, buscados_agora, total_gravado
+        if dry_run or not (novas or buscados_agora):
+            return
+        if novas:
+            ws.append_rows(novas, value_input_option="USER_ENTERED",
+                           table_range=f"A{len(ws.get_all_values())}")
+            total_gravado += len(novas)
+            novas = []
+        if buscados_agora:
+            ws_controle.append_rows(buscados_agora, value_input_option="USER_ENTERED",
+                                    table_range=f"A{len(ws_controle.get_all_values())}")
+            buscados_agora = []
+        print(f"  >> gravado na planilha ({total_gravado} relação(ões) no total)"
+              + ("" if final else f", {processados}/{len(fila)} candidatos"))
+
+    processados = 0
     for cand in fila:
-        print(f"{cand['estado']} / {cand['candidato']} ({cand['partido']})...")
+        processados += 1
+        print(f"[{processados}/{len(fila)}] {cand['estado']} / {cand['candidato']} ({cand['partido']})...")
         try:
             relacoes = buscar_apoios(client, cand)
         except Exception as e:
@@ -707,16 +738,13 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
         # Registra mesmo sem resultado: senao a proxima rodada gastaria uma
         # chamada de novo no mesmo nome que ja se sabe que nao rende nada.
         buscados_agora.append([cand["estado"], cand["candidato"], cand["cargo"], _data_busca()])
+        if processados % LOTE_GRAVACAO == 0:
+            gravar_lote()
 
-    if buscados_agora and not dry_run:
-        ws_controle.append_rows(buscados_agora, value_input_option="USER_ENTERED",
-                                table_range=f"A{len(ws_controle.get_all_values())}")
-    if novas and not dry_run:
-        ws.append_rows(novas, value_input_option="USER_ENTERED",
-                       table_range=f"A{len(ws.get_all_values())}")
+    gravar_lote(final=True)
 
     print("\nResumo:")
-    print(f"* relações novas: {len(novas)}")
+    print(f"* relações novas: {total_gravado if not dry_run else len(novas)}")
     print(f"* descartadas por falta de fonte/link ou por auto-referência: {descartadas}")
     print(f"* fora do recorte (não é candidatura de 2026 nem partido): {fora_do_recorte}")
     print(f"* ignoradas por contradizer relação já gravada: {contraditorias}")

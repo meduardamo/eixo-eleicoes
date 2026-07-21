@@ -6,7 +6,7 @@ on:
       max_linhas:
         description: "Máximo de candidatos a buscar nesta rodada"
         required: false
-        default: "40"
+        default: "1000"
       force:
         description: "Reconsultar candidatos que já têm relação gravada"
         required: false
@@ -18,9 +18,10 @@ on:
   repository_dispatch:
     types: [buscar-apoios]
   schedule:
-    # Noite: pega o que foi anunciado ao longo do dia. Cron do Actions atrasa
-    # bastante (medido no workflow 06: 25 a 250 min), mas aqui o horário exato
-    # não importa, ninguém consome esse dado numa janela fixa.
+    # Uma vez por dia, como o 07 (convenções). Processa TODA a fila pendente na
+    # rodada, não um lote fixo: a gravação é feita a cada 20 candidatos, então
+    # rodada longa não corre risco de perder o que já buscou.
+    # O horário exato não importa aqui, ninguém consome esse dado numa janela fixa.
     - cron: '10 23 * * *'  # 20:10 Recife
 
 # Uma rodada por vez: duas execuções simultâneas leem as relações já gravadas
@@ -46,7 +47,7 @@ jobs:
       SPREADSHEET_ID_POLLINGDATA: ${{ secrets.SPREADSHEET_ID_POLLINGDATA }}
       CONVENCOES_ABA: ${{ vars.CONVENCOES_ABA || 'Convenções partidárias' }}
       APOIOS_ABA: ${{ vars.APOIOS_ABA || 'Apoios por candidatura' }}
-      APOIOS_MAX_LINHAS: ${{ github.event.inputs.max_linhas || '40' }}
+      APOIOS_MAX_LINHAS: ${{ github.event.inputs.max_linhas || '1000' }}
       APOIOS_FORCE: ${{ github.event.inputs.force || 'false' }}
       APOIOS_SENADO_MIN_PESQUISAS: ${{ vars.APOIOS_SENADO_MIN_PESQUISAS || '2' }}
       APOIOS_SENADO_DESDE: ${{ vars.APOIOS_SENADO_DESDE || '2026-05-01' }}
