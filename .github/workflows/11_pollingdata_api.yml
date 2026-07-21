@@ -1,0 +1,44 @@
+name: 11 - PollingData API
+
+# Sem schedule por enquanto: só roda depois que o POLLINGDATA_TOKEN existir e a
+# gente tiver modelado as colunas com dado real (rode --explorar antes).
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Só mostrar o que viria, sem gravar"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      so_uf:
+        description: "Coletar uma UF só (ex.: PE). Vazio = todas."
+        required: false
+        default: ""
+
+concurrency:
+  group: pollingdata-api
+  cancel-in-progress: false
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUNBUFFERED: "1"
+      TZ: "America/Recife"
+      POLLINGDATA_TOKEN: ${{ secrets.POLLINGDATA_TOKEN }}
+      GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+      SPREADSHEET_ID_POLLING_API: ${{ secrets.SPREADSHEET_ID_POLLING_API }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Coletar
+        run: |
+          ARGS=()
+          [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS+=(--dry-run)
+          [ -n "${{ github.event.inputs.so_uf }}" ] && ARGS+=(--so-uf "${{ github.event.inputs.so_uf }}")
+          python -u -m outros.pollingdata_api "${ARGS[@]}"
