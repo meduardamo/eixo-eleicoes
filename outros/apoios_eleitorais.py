@@ -48,10 +48,15 @@ ABA_CONTROLE_PADRAO = "_apoios_buscados"
 ANO_ELEICAO = 2026
 
 # Recorte dos nomes do Senado vindos da matriz T1. A aba de convencoes so tem
-# governador e presidente; quem disputa o Senado aparece nas pesquisas. Instituto
-# testa muito nome que nao e pre-candidatura real, entao exige presenca em mais de
-# uma pesquisa e teste recente: 507 pessoas viram 263 com esse corte.
-SENADO_MIN_PESQUISAS = int(os.getenv("APOIOS_SENADO_MIN_PESQUISAS", "2"))
+# governador e presidente; quem disputa o Senado aparece nas pesquisas.
+#
+# Instituto testa muita gente que nao e pre-candidatura real, entao o corte e por
+# DESEMPENHO: so entra quem ficou entre os N primeiros em algum cenario, medido
+# pelo percentual dentro daquele cenario. Estar na lista de testados nao diz nada;
+# aparecer na frente diz. O Senado elege duas vagas por estado nesta eleicao, entao
+# o top 4 cobre os dois favoritos mais o segundo pelotao.
+# Medido na T1 em 21/07/2026: 507 nomes testados -> 176 com top 4 desde 01/05.
+SENADO_TOP_N = int(os.getenv("APOIOS_SENADO_TOP_N", "4"))
 SENADO_DESDE = os.getenv("APOIOS_SENADO_DESDE", "2026-05-01")
 
 # Grava a cada N candidatos em vez de so no fim. A varredura inicial leva horas;
@@ -363,12 +368,14 @@ def _ler_senado_matriz():
 
     header = valores[0]
     idx = {c.strip(): i for i, c in enumerate(header)}
-    precisa = ["uf", "cargo", "ano", "tipo", "candidato", "partido", "poll_id", "data_campo"]
+    precisa = ["uf", "cargo", "ano", "tipo", "candidato", "partido",
+               "scenario_id", "percentual", "data_campo"]
     if any(c not in idx for c in precisa):
         print("Aviso: matriz T1 sem as colunas esperadas; Senado fica de fora.")
         return []
 
-    agrupado = {}
+    # Passo 1: percentual de cada candidato em cada cenario, pra poder ranquear.
+    cenarios = {}
     for row in valores[1:]:
         if len(row) <= max(idx[c] for c in precisa):
             continue
@@ -379,21 +386,29 @@ def _ler_senado_matriz():
         nome = row[idx["candidato"]].strip()
         if not nome:
             continue
-        chave = (row[idx["uf"]].strip().upper(), _nome_pessoa(nome))
-        d = agrupado.setdefault(chave, {"polls": set(), "datas": [], "nomes": {}, "partidos": {}})
-        d["polls"].add(row[idx["poll_id"]].strip())
-        d["nomes"][nome] = d["nomes"].get(nome, 0) + 1
-        partido = row[idx["partido"]].strip().upper()
-        if partido and partido != "SEM PARTIDO":
-            d["partidos"][partido] = d["partidos"].get(partido, 0) + 1
-        data = row[idx["data_campo"]].strip()
-        if len(data) == 10:
-            d["datas"].append(data)
+        try:
+            pct = float(str(row[idx["percentual"]]).replace(",", "."))
+        except (ValueError, TypeError):
+            continue
+        cenarios.setdefault(row[idx["scenario_id"]].strip(), []).append((pct, row))
+
+    # Passo 2: so quem ficou entre os N primeiros de algum cenario.
+    agrupado = {}
+    for itens in cenarios.values():
+        for _, row in sorted(itens, key=lambda t: -t[0])[:SENADO_TOP_N]:
+            nome = row[idx["candidato"]].strip()
+            chave = (row[idx["uf"]].strip().upper(), _nome_pessoa(nome))
+            d = agrupado.setdefault(chave, {"datas": [], "nomes": {}, "partidos": {}})
+            d["nomes"][nome] = d["nomes"].get(nome, 0) + 1
+            partido = row[idx["partido"]].strip().upper()
+            if partido and partido != "SEM PARTIDO":
+                d["partidos"][partido] = d["partidos"].get(partido, 0) + 1
+            data = row[idx["data_campo"]].strip()
+            if len(data) == 10:
+                d["datas"].append(data)
 
     candidatos = []
     for (uf, _), d in agrupado.items():
-        if len(d["polls"]) < SENADO_MIN_PESQUISAS:
-            continue
         if not d["datas"] or max(d["datas"]) < SENADO_DESDE:
             continue
         candidatos.append({
