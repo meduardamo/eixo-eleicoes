@@ -18,6 +18,7 @@ from email.utils import parsedate_to_datetime
 import requests
 from googlenewsdecoder import gnewsdecoder
 from newspaper import Article
+from compartilhado.relatorios_sheets_utils import autorizar_com_retry as _autorizar
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -339,7 +340,7 @@ def _gc():
         with open("credentials.json", encoding="utf-8") as f:
             info = {k: v for k, v in json.load(f).items() if k in _SA_FIELDS}
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    return gspread.authorize(Credentials.from_service_account_info(info, scopes=scopes))
+    return _autorizar(Credentials.from_service_account_info(info, scopes=scopes))
 
 
 def _sheets_aba():

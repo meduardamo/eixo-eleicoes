@@ -1461,7 +1461,7 @@ def atualizar_planilha():
     if not sheet_id:
         raise RuntimeError("SPREADSHEET_ID_RELATORIOS ausente nos Secrets.")
 
-    gc = gspread.authorize(creds)
+    gc = autorizar_com_retry(creds)
     sh = gc.open_by_key(sheet_id)
     ws = sh.worksheet("relatorios")
 
@@ -1482,22 +1482,80 @@ def atualizar_planilha():
         if reg_norm and reg_norm not in primeiro_cargo_por_registro:
             primeiro_cargo_por_registro[reg_norm] = _cargo_norm(r.get("cargo", ""))
 
+    col_registro = _garantir_coluna_relatorios(ws, header, "registro")
+    col_cargo = _garantir_coluna_relatorios(ws, header, "cargo")
+
     pdfs_salvos = 0
     links_preenchidos = 0
     pendentes_finais = []
     celulas_para_atualizar = []
+    # Identidade da linha que cada gravacao pendente pretende atingir. A planilha
+    # e lida uma vez no inicio e as celulas sao gravadas 20 ou 30 min depois; se
+    # a ordem das linhas mudar nesse intervalo, o numero da linha deixa de
+    # apontar pra mesma pesquisa. Guardando (registro, cargo) da pra reconferir
+    # na hora de gravar.
+    chave_por_linha = {}
 
     # Grava em lotes ao longo da rodada, não só no fim: se o run cair no meio
     # (timeout, Gemini travar), o que já foi baixado e escrito fica salvo, em vez
     # de perder tudo e ter que refazer download/Gemini na próxima rodada.
     LOTE_CELULAS = 60      # ~20 linhas (cada linha escreve link/status/nivel)
 
+    def _chave_identidade(registro, cargo):
+        return (re.sub(r"[^A-Z0-9]", "", str(registro or "").upper()), _cargo_norm(cargo))
+
+    def _remapear_por_identidade(celulas):
+        """Reposiciona as gravacoes pendentes na linha onde a pesquisa ESTA agora.
+
+        Em 21/07/2026 a aba foi reordenada no meio de uma rodada e as gravacoes
+        cairam na linha errada: RO-04369 recebeu um link de Pernambuco e
+        RN-02620 ganhou link mesmo com o log dizendo que nada foi encontrado.
+        Escrever por posicao so e seguro se ninguem tocar na planilha durante a
+        rodada, o que nao da pra garantir.
+
+        Le de novo as colunas de registro e cargo, monta o mapa identidade ->
+        linha atual e corrige. Linha que sumiu da planilha e descartada com
+        aviso, em vez de sobrescrever quem ocupou o lugar dela.
+        """
+        atual = ws.get_all_values()
+        mapa = {}
+        for pos, row in enumerate(atual[1:], start=2):
+            reg = row[col_registro - 1] if len(row) >= col_registro else ""
+            car = row[col_cargo - 1] if len(row) >= col_cargo else ""
+            chave = _chave_identidade(reg, car)
+            if chave[0]:
+                mapa.setdefault(chave, pos)
+
+        corrigidas, descartadas, movidas = [], 0, 0
+        for c in celulas:
+            chave = chave_por_linha.get(c.row)
+            if not chave:
+                corrigidas.append(c)      # linha sem identidade registrada
+                continue
+            destino = mapa.get(chave)
+            if destino is None:
+                descartadas += 1
+                print(f"  [aviso] linha de {chave[0]} ({chave[1]}) sumiu da planilha; "
+                      f"gravação descartada em vez de escrever na linha errada")
+                continue
+            if destino != c.row:
+                movidas += 1
+                corrigidas.append(gspread.Cell(destino, c.col, c.value))
+            else:
+                corrigidas.append(c)
+        if movidas or descartadas:
+            print(f"  [remapeado] {movidas} célula(s) reposicionada(s), "
+                  f"{descartadas} descartada(s): a planilha mudou de ordem durante a rodada")
+        return corrigidas
+
     def _gravar_celulas_pendentes(contexto=""):
         if not celulas_para_atualizar:
             return
         detalhe = f" ({contexto})" if contexto else ""
         print(f"Gravando {len(celulas_para_atualizar)} atualização(ões) na planilha{detalhe}...")
-        ws.update_cells(celulas_para_atualizar, value_input_option="USER_ENTERED")
+        alvo = _remapear_por_identidade(celulas_para_atualizar)
+        if alvo:
+            ws.update_cells(alvo, value_input_option="USER_ENTERED")
         celulas_para_atualizar.clear()
 
     # PROCESSAR LINHAS SEM LINK: busca e salva o PDF de cada pesquisa que já está
@@ -1510,6 +1568,7 @@ def atualizar_planilha():
         link_atual = str(linha.get("link", "")).strip()
         if not registro:
             continue
+        chave_por_linha[i] = _chave_identidade(registro, linha.get("cargo", ""))
         if _cargo_norm(linha.get("cargo", "")) not in CARGOS_MONITORADOS:
             continue
 

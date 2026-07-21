@@ -39,6 +39,7 @@ import gspread
 from google import genai
 from google.genai import types
 from google.oauth2.service_account import Credentials
+from compartilhado.relatorios_sheets_utils import autorizar_com_retry as _autorizar
 
 
 BRT = timezone(timedelta(hours=-3))
@@ -192,7 +193,7 @@ def _planilha_destino():
     )
     if not sheet_id:
         raise RuntimeError("Defina SPREADSHEET_ID_TSE (ou SPREADSHEET_ID_APOIOS).")
-    return gspread.authorize(creds).open_by_key(sheet_id)
+    return _autorizar(creds).open_by_key(sheet_id)
 
 
 def _planilha():
@@ -203,7 +204,7 @@ def _planilha():
     if not sheet_id:
         raise RuntimeError("Defina SPREADSHEET_ID_CONVENCOES.")
     try:
-        return gspread.authorize(creds).open_by_key(sheet_id)
+        return _autorizar(creds).open_by_key(sheet_id)
     except gspread.exceptions.SpreadsheetNotFound as exc:
         email = str(_creds_info().get("client_email", "")).strip()
         raise RuntimeError(
@@ -376,7 +377,7 @@ def _ler_senado_matriz():
         _creds_info(), scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
     try:
-        ws = gspread.authorize(creds).open_by_key(sheet_id).worksheet("resultados")
+        ws = _autorizar(creds).open_by_key(sheet_id).worksheet("resultados")
         valores = ws.get_all_values()
     except Exception as exc:
         print(f"Aviso: não consegui ler a matriz T1 ({str(exc)[:120]}); Senado fica de fora.")

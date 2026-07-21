@@ -27,6 +27,7 @@ import gspread
 from google import genai
 from google.genai import types
 from google.oauth2.service_account import Credentials
+from compartilhado.relatorios_sheets_utils import autorizar_com_retry as _autorizar
 
 
 BRT = timezone(timedelta(hours=-3))
@@ -111,7 +112,7 @@ def _creds_info():
 def _sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = Credentials.from_service_account_info(_creds_info(), scopes=scopes)
-    return gspread.authorize(creds)
+    return _autorizar(creds)
 
 
 def _service_account_email():

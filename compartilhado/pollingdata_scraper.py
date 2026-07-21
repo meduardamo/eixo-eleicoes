@@ -17,6 +17,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from compartilhado.relatorios_sheets_utils import autorizar_com_retry as _autorizar
 
 try:
     from webdriver_manager.chrome import ChromeDriverManager
@@ -1124,7 +1125,7 @@ def gs_client_from_env():
         "https://www.googleapis.com/auth/drive",
     ]
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    return gspread.authorize(credentials)
+    return _autorizar(credentials)
 
 
 def garantir_aba(sh, nome, rows=50000, cols=25):

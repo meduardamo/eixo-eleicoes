@@ -20,6 +20,7 @@ from selenium.common.exceptions import (
 
 import gspread
 from google.oauth2.service_account import Credentials
+from compartilhado.relatorios_sheets_utils import autorizar_com_retry as _autorizar
 
 URL_LISTAR = "https://pesqele-divulgacao.tse.jus.br/app/pesquisa/listar.xhtml"
 
@@ -594,7 +595,7 @@ def gspread_client(creds_path: str) -> gspread.Client:
         "https://www.googleapis.com/auth/drive",
     ]
     creds = Credentials.from_service_account_file(creds_path, scopes=scopes)
-    return gspread.authorize(creds)
+    return _autorizar(creds)
 
 
 def get_spreadsheet(gc: gspread.Client) -> gspread.Spreadsheet:

@@ -116,6 +116,37 @@ REGISTRO_TSE_RE = re.compile(
 )
 
 
+def autorizar_com_retry(creds, tentativas: int = 4):
+    """Cliente gspread que reencaminha a chamada quando o Google engasga.
+
+    O adapter e montado na sessao HTTP que o gspread usa, entao vale pra TODA
+    chamada ao Sheets, nao so pra abertura da planilha. Sem isso, um soluco de
+    rede derruba o workflow inteiro mesmo que o segundo seguinte funcionasse:
+    em 21/07/2026 dois workflows cairam assim, um com
+    ConnectionResetError(104) no open_by_key e outro com APIError 503 num
+    col_values, os dois na PRIMEIRA leitura, antes de processar qualquer linha.
+
+    allowed_methods=None inclui POST/PUT no retry. E seguro aqui porque toda
+    escrita e de valor determinado (update_cells com celulas ja calculadas):
+    repetir grava o mesmo conteudo, nao acumula.
+    """
+    from requests.adapters import HTTPAdapter
+    from urllib3.util import Retry
+
+    gc = gspread.authorize(creds)
+    retry = Retry(
+        total=tentativas,
+        backoff_factor=1.5,          # espera 1,5s, 3s, 6s, 12s
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=None,
+        raise_on_status=False,
+    )
+    sessao = getattr(getattr(gc, "http_client", None), "session", None) or getattr(gc, "session", None)
+    if sessao is not None:
+        sessao.mount("https://", HTTPAdapter(max_retries=retry))
+    return gc
+
+
 def _sem_acento(valor):
     return unicodedata.normalize("NFKD", str(valor or "")).encode("ascii", "ignore").decode()
 
@@ -818,7 +849,7 @@ def _creds_info():
 
 def _sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    return gspread.authorize(Credentials.from_service_account_info(_creds_info(), scopes=scopes))
+    return autorizar_com_retry(Credentials.from_service_account_info(_creds_info(), scopes=scopes))
 
 
 def _rel_row(valores, header):
