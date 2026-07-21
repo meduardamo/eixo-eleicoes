@@ -64,7 +64,6 @@ USO_TOKENS = {"chamadas": 0, "entrada": 0, "saida": 0, "pensamento": 0}
 CABECALHO = [
     "estado",
     "apoiador",
-    "tipo de apoiador",
     "cargo do apoiador",
     "partido do apoiador",
     "apoiado",
@@ -83,6 +82,8 @@ CABECALHO = [
 # So pessoa fisica com candidatura propria em 2026. Partido, federacao e
 # diretorio ficaram de fora: a base e de apoio entre PESSOAS, e legenda apoiando
 # candidato e outra natureza de vinculo, que polui o grafo de relacoes pessoais.
+# Nao e mais coluna da planilha (seria constante "candidato(a)" em toda linha),
+# so filtro: o que o modelo devolver fora disso e descartado.
 TIPOS_APOIADOR = {
     "candidato": "candidato(a)", "candidata": "candidato(a)",
     "candidatoa": "candidato(a)", "candidatura": "candidato(a)",
@@ -708,7 +709,6 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
             valores = {
                 "estado": estado,
                 "apoiador": apoiador,
-                "tipo de apoiador": tipo_apoiador,
                 "cargo do apoiador": cargo_apoiador,
                 "partido do apoiador": str(r.get("partido_apoiador") or "").strip().upper(),
                 "apoiado": apoiado,
