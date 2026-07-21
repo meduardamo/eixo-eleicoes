@@ -26,6 +26,16 @@ on:
 
   workflow_dispatch:        # permite rodar manualmente pelo GitHub
 
+# Uma rodada por vez. Sao 6 gatilhos por dia (3 crons de rede de seguranca +
+# 3 disparos externos) e o cron atrasa ate 250 min, entao duas rodadas podem se
+# sobrepor. Se isso acontecer as duas leem carregar_titulos_existentes() antes
+# de qualquer uma gravar, e as duas inserem as mesmas noticias: a deduplicacao
+# por titulo nao protege contra execucao simultanea. Com cancel-in-progress
+# false a segunda espera a primeira terminar e ai le a planilha ja atualizada.
+concurrency:
+  group: noticias-eleicoes
+  cancel-in-progress: false
+
 jobs:
   scraper:
     runs-on: ubuntu-latest
