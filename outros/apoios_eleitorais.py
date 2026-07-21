@@ -80,11 +80,13 @@ CABECALHO = [
 
 # Vocabularios fechados. O que vier fora deles e normalizado pelo alias ou cai
 # no valor mais conservador, nunca num rotulo novo inventado pelo modelo.
+# So pessoa fisica com candidatura propria em 2026. Partido, federacao e
+# diretorio ficaram de fora: a base e de apoio entre PESSOAS, e legenda apoiando
+# candidato e outra natureza de vinculo, que polui o grafo de relacoes pessoais.
 TIPOS_APOIADOR = {
     "candidato": "candidato(a)", "candidata": "candidato(a)",
     "candidatoa": "candidato(a)", "candidatura": "candidato(a)",
     "precandidato": "candidato(a)", "precandidata": "candidato(a)",
-    "partido": "partido", "federacao": "partido", "diretorio": "partido",
 }
 
 # Cargos em disputa em 2026. Serve pra confirmar que as duas pontas da relacao
@@ -103,7 +105,6 @@ CARGOS_2026 = {
 TIPOS_RELACAO = {
     "apoiodeclarado": "apoio declarado", "apoio": "apoio declarado",
     "declaracaodeapoio": "apoio declarado",
-    "apoiopartidario": "apoio partidário", "apoiodopartido": "apoio partidário",
     "atoconjunto": "ato conjunto", "evento": "ato conjunto", "palanque": "ato conjunto",
     "negociacao": "negociação", "conversas": "negociação", "tratativas": "negociação",
     "alianca": "aliança", "coligacao": "aliança", "federacao": "aliança",
@@ -256,7 +257,7 @@ def _de_vocabulario(valor, mapa, padrao):
 # Um mesmo par nao pode ser apoio e oposicao ao mesmo tempo. Na primeira rodada
 # o PL apareceu como "negociação" E como "oposição" com Soldado Sampaio, e as
 # duas linhas entraram porque o tipo faz parte da chave de dedup.
-RELACOES_POSITIVAS = {"apoio declarado", "apoio partidário", "ato conjunto", "negociação", "aliança"}
+RELACOES_POSITIVAS = {"apoio declarado", "ato conjunto", "negociação", "aliança"}
 RELACOES_NEGATIVAS = {"rompimento", "oposição"}
 
 
@@ -450,29 +451,27 @@ Partido/Federação: {cand['partido']}
 
 Registre tanto quem apoia essa candidatura quanto quem essa candidatura apoia.
 
-O QUE ENTRA. As duas pontas da relação precisam ser candidaturas de 2026 (candidato ou pré-candidato a presidente, vice, governador, vice-governador, senador ou deputado), ou um partido/federação apoiando uma candidatura. Exemplos do que interessa:
+O QUE ENTRA. As duas pontas precisam ser PESSOAS com candidatura propria em 2026 (candidato ou pré-candidato a presidente, vice, governador, vice-governador, senador ou deputado). Exemplos do que interessa:
 - candidato ao governo que compõe chapa com candidata ao Senado do mesmo palanque
 - candidato estadual que declara apoio a um presidenciável
 - presidenciável que declara apoio a candidato estadual
 - ministro ou candidato que apoia outra candidatura ao Senado
 
 O QUE NÃO ENTRA, nunca:
+- partido, federação ou diretório como apoiador (ex.: "o PL apoia fulano"). Só pessoa entra
 - sindicato, central sindical, movimento social, entidade religiosa, associação
 - pessoa sem candidatura própria em 2026 (ex-governador aposentado, cacique sem disputa, empresário, artista)
 - grupo político, ala partidária ou família política sem candidatura nomeada
-Se o apoiador não tem candidatura própria em 2026 e não é um partido, NÃO devolva a relação.
+Se o apoiador não é uma pessoa com candidatura própria em 2026, NÃO devolva a relação. Legenda apoiando candidato não entra nesta base.
 
 CADA RELAÇÃO É DIRECIONADA. "A apoia B" é diferente de "B apoia A". Nunca presuma reciprocidade: se as duas direções estiverem documentadas, devolva DUAS relações, uma em cada direção.
 
-tipo_apoiador, exatamente um destes:
-- "candidato(a)": pessoa candidata ou pré-candidata em 2026
-- "partido": legenda, federação ou diretório
+tipo_apoiador: sempre "candidato(a)". Se a ponta não for uma pessoa candidata, não devolva a relação.
 
-cargo_apoiador e cargo_apoiado: o cargo DISPUTADO em 2026, um destes: Presidente, Vice-presidente, Governador, Vice-governador, Senador, Deputado federal, Deputado estadual, Deputado distrital. Para apoiador do tipo "partido", deixe cargo_apoiador vazio. Se você não souber o cargo que a pessoa disputa em 2026, não devolva a relação.
+cargo_apoiador e cargo_apoiado: o cargo DISPUTADO em 2026, um destes: Presidente, Vice-presidente, Governador, Vice-governador, Senador, Deputado federal, Deputado estadual, Deputado distrital. Se você não souber o cargo que a pessoa disputa em 2026, não devolva a relação.
 
 tipo_relacao, exatamente um destes:
 - "apoio declarado": manifestação pública e nominal de apoio
-- "apoio partidário": decisão formal do partido/federação de apoiar
 - "ato conjunto": participaram juntos de evento, agenda ou palanque de campanha
 - "negociação": conversas em curso, ainda sem decisão
 - "aliança": composição formal (mesma chapa, coligação, acordo anunciado)
@@ -685,10 +684,9 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
             tipo_apoiador = TIPOS_APOIADOR.get(_norm(r.get("tipo_apoiador")), "")
             cargo_apoiado = _cargo_2026(r.get("cargo_apoiado"))
             cargo_apoiador = _cargo_2026(r.get("cargo_apoiador"))
-            if not tipo_apoiador or not cargo_apoiado:
-                fora_do_recorte += 1
-                continue
-            if tipo_apoiador == "candidato(a)" and not cargo_apoiador:
+            # Pessoa fisica dos dois lados: sem cargo em 2026 numa das pontas,
+            # nao e apoio entre candidaturas e nao entra.
+            if not tipo_apoiador or not cargo_apoiado or not cargo_apoiador:
                 fora_do_recorte += 1
                 continue
 
@@ -746,7 +744,7 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
     print("\nResumo:")
     print(f"* relações novas: {total_gravado if not dry_run else len(novas)}")
     print(f"* descartadas por falta de fonte/link ou por auto-referência: {descartadas}")
-    print(f"* fora do recorte (não é candidatura de 2026 nem partido): {fora_do_recorte}")
+    print(f"* fora do recorte (não é pessoa com candidatura em 2026): {fora_do_recorte}")
     print(f"* ignoradas por contradizer relação já gravada: {contraditorias}")
     print(f"* candidatos sem relação encontrada: {sem_resultado}")
     print(f"* erros técnicos: {erros}")
