@@ -1,0 +1,78 @@
+name: 08 - Apoios entre candidaturas
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_linhas:
+        description: "Máximo de candidatos a buscar nesta rodada"
+        required: false
+        default: "40"
+      force:
+        description: "Reconsultar candidatos que já têm relação gravada"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  repository_dispatch:
+    types: [buscar-apoios]
+  schedule:
+    # Noite: pega o que foi anunciado ao longo do dia. Cron do Actions atrasa
+    # bastante (medido no workflow 06: 25 a 250 min), mas aqui o horário exato
+    # não importa, ninguém consome esse dado numa janela fixa.
+    - cron: '10 23 * * *'  # 20:10 Recife
+
+# Uma rodada por vez: duas execuções simultâneas leem as relações já gravadas
+# antes de qualquer uma escrever, e a deduplicação por chave não protege contra isso.
+concurrency:
+  group: apoios-eleitorais
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      TZ: "America/Recife"
+      GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      SPREADSHEET_ID_CONVENCOES: ${{ secrets.SPREADSHEET_ID_CONVENCOES }}
+      CONVENCOES_ABA: ${{ vars.CONVENCOES_ABA || 'Convenções partidárias' }}
+      APOIOS_ABA: ${{ vars.APOIOS_ABA || 'Apoios por candidatura' }}
+      APOIOS_MAX_LINHAS: ${{ github.event.inputs.max_linhas || '40' }}
+      APOIOS_FORCE: ${{ github.event.inputs.force || 'false' }}
+
+    steps:
+      - name: Baixar o código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Diagnóstico da rodada
+        run: |
+          date
+          python --version
+          echo "Workflow: apoios-eleitorais"
+          echo "Aba origem: $CONVENCOES_ABA"
+          echo "Aba destino: $APOIOS_ABA"
+          echo "Máximo de candidatos: $APOIOS_MAX_LINHAS"
+          echo "Force: $APOIOS_FORCE"
+
+      - name: Buscar apoios
+        run: |
+          ARGS=(--max-linhas "$APOIOS_MAX_LINHAS")
+          if [ "$APOIOS_FORCE" = "true" ]; then
+            ARGS+=(--force)
+          fi
+          python -u -m outros.apoios_eleitorais "${ARGS[@]}"
