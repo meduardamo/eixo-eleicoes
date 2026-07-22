@@ -43,7 +43,8 @@ CARGOS = {1: 'PRESIDENTE', 2: 'VICE-PRESIDENTE', 3: 'GOVERNADOR', 4: 'VICE-GOVER
 # Gurgel, que é a outra metade da mesma chapa. O mesmo vale pros suplentes de senador.
 CARGOS_TITULARES = (1, 3, 5)
 CARGOS_VINCULADOS = (2, 4, 9, 10)
-CARGOS_PADRAO = CARGOS_TITULARES + CARGOS_VINCULADOS
+CARGOS_PROPORCIONAIS = (6, 7, 8)   # deputado federal, estadual, distrital
+CARGOS_PADRAO = CARGOS_TITULARES + CARGOS_VINCULADOS + CARGOS_PROPORCIONAIS
 
 
 def _get(url):
@@ -113,14 +114,9 @@ def baixar_base_oficial(ano=ANO):
     return PASTA / alvo
 
 
-# cargos proporcionais que não interessam — filtrados da base oficial
-CARGOS_IGNORAR = {"DEPUTADO FEDERAL", "DEPUTADO ESTADUAL", "DEPUTADO DISTRITAL"}
-
-
 def carregar_base(csv_path):
-    # o CSV vem com todos os cargos; cortamos deputado (não monitoramos)
-    df = pd.read_csv(csv_path, encoding="ISO-8859-1", sep=";", low_memory=False)
-    return df[~df["DS_CARGO"].isin(CARGOS_IGNORAR)].reset_index(drop=True)
+    # o CSV vem com todos os cargos — mantemos todos (majoritários + proporcionais)
+    return pd.read_csv(csv_path, encoding="ISO-8859-1", sep=";", low_memory=False)
 
 
 def consolidar(df_api, csv_path):
@@ -137,12 +133,15 @@ def consolidar(df_api, csv_path):
 
 def extrair_candidaturas(ano=ANO, cargos=CARGOS_PADRAO, enriquecer=True):
     """Lista candidaturas pela API. enriquecer busca o detalhe (partido, gênero, raça)
-    de cada um — mais lento, vale a pena só no majoritário."""
+    de cada um — uma chamada por candidato, mais lento. Vale a pena só no majoritário;
+    os proporcionais (deputados) NÃO são enriquecidos aqui (seriam milhares de chamadas
+    por rodada) — o perfil completo deles vem da base_dadosabertos na consolidação."""
     eleicao = cod_eleicao(ano)
     linhas = []
     for cargo in cargos:
-        # Presidente e vice-presidente são nacionais (UE = BR); o resto é por UF.
-        ues = ['BR'] if cargo in (1, 2) else UFS
+        # Presidente e vice-presidente são nacionais (UE = BR); dep. distrital só no DF;
+        # o resto é por UF.
+        ues = ['BR'] if cargo in (1, 2) else (['DF'] if cargo == 8 else UFS)
         for ue in ues:
             d = _get(f"{API}/candidatura/listar/{ano}/{ue}/{eleicao}/{cargo}/candidatos")
             cands = (d or {}).get('candidatos', [])
@@ -155,7 +154,7 @@ def extrair_candidaturas(ano=ANO, cargos=CARGOS_PADRAO, enriquecer=True):
                        "situacao": c.get('descricaoSituacao'),
                        "totalizacao": c.get('descricaoTotalizacao'),
                        "coligacao_federacao": c.get('nomeColigacao')}
-                if enriquecer:
+                if enriquecer and cargo not in CARGOS_PROPORCIONAIS:
                     det = _get(f"{API}/candidatura/buscar/{ano}/{ue}/{eleicao}/candidato/{c['id']}")
                     if det:
                         row["partido"] = (det.get('partido') or {}).get('sigla')
