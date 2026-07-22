@@ -29,14 +29,20 @@ hoje na aba de origem): e na convencao que a alianca vira fato registrado.
 """
 
 import argparse
+import html as html_mod
 import json
 import os
 import re
+import time
 import unicodedata
+import urllib.parse
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 import gspread
 import requests
+from googlenewsdecoder import gnewsdecoder
+from newspaper import Article
 from google import genai
 from google.genai import types
 from google.oauth2.service_account import Credentials
@@ -70,25 +76,108 @@ LOTE_GRAVACAO = int(os.getenv("APOIOS_LOTE", "20"))
 USO_TOKENS = {"chamadas": 0, "entrada": 0, "saida": 0, "pensamento": 0}
 
 # Fonte unica por enquanto: G1, que tem secao estadual em todas as UFs e e a
-# fonte mais confiavel do recorte. O grounding do Gemini devolve link de
-# redirect (vertexaisearch...), entao o filtro de dominio so funciona depois de
-# resolver o redirect — e e a URL final que vai pra planilha, senao a base
-# guarda link que expira.
+# fonte mais confiavel do recorte. A busca e por Google News RSS com
+# site:g1.globo.com (mesmo esquema do noticias_eleicoes_scraper), nao pelo
+# grounding do Gemini: o grounding cobra POR REQUISICAO de busca e devolvia
+# link de redirect que expira; no RSS a busca e gratis, o Gemini so le o texto
+# dos artigos, e o link gravado e o da reportagem real que NOS baixamos.
 FONTE_HOST = re.compile(r"^(www\.)?g1\.globo\.com$", re.I)
+JANELA_DIAS = int(os.getenv("APOIOS_JANELA_DIAS", "90"))
+MAX_ARTIGOS = int(os.getenv("APOIOS_MAX_ARTIGOS", "8"))
+HEADERS_HTTP = {"User-Agent": "Mozilla/5.0"}
+
+# Termos de apoio na query: sem eles o RSS devolve qualquer noticia com o nome
+# do candidato e a janela de 20 itens do feed se enche de ruido.
+TERMOS_APOIO = "(apoio OR aliança OR palanque OR chapa OR convenção OR candidatura)"
 
 
-def _resolver_link(url, _cache={}):
-    """Segue o redirect do grounding e devolve a URL final ('' se falhar)."""
-    if url in _cache:
-        return _cache[url]
+def _rss_g1(cand):
+    """Busca no Google News RSS as reportagens do G1 sobre o candidato."""
+    uf = "" if _norm(cand.get("cargo")) in ("presidente", "vicepresidente") else cand["estado"]
+    q = urllib.parse.quote(f'"{cand["candidato"]}" {uf} {TERMOS_APOIO} site:g1.globo.com')
+    url = f"https://news.google.com/rss/search?q={q}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+    r = requests.get(url, headers=HEADERS_HTTP, timeout=30)
+    r.raise_for_status()
+    corte = datetime.now(BRT) - timedelta(days=JANELA_DIAS)
+    itens = []
+    for item in ET.fromstring(r.content).findall(".//item"):
+        pub = item.findtext("pubDate", "")
+        try:
+            dt = datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %Z").replace(tzinfo=timezone.utc)
+        except ValueError:
+            dt = None
+        if dt and dt.astimezone(BRT) < corte:
+            continue
+        itens.append({
+            "titulo": item.findtext("title", ""),
+            "data": dt.astimezone(BRT).strftime("%d/%m/%Y") if dt else "",
+            "link": item.findtext("link", ""),
+        })
+    return itens
+
+
+def _texto_g1(url):
+    """Extrai o corpo da reportagem do G1.
+
+    A pagina normal do G1 e casca JS: requests + newspaper3k so pegam titulo e
+    subtitulo. A versao AMP (inserir google/amp/ depois do dominio) vem com o
+    corpo renderizado no HTML — e o caminho principal. O newspaper3k fica de
+    fallback pra quando o AMP nao existe (paginas de video/multicontent, cujo
+    "corpo" curto e o texto todo mesmo).
+    """
+    amp = re.sub(r"^(https?://(?:www\.)?g1\.globo\.com/)", r"\1google/amp/", url)
     try:
-        r = requests.get(url, timeout=20, allow_redirects=True,
-                         headers={"User-Agent": "Mozilla/5.0"})
-        final = str(r.url or "")
+        r = requests.get(amp, headers=HEADERS_HTTP, timeout=30)
+        if r.status_code == 200:
+            corpo = re.sub(r"<(script|style).*?</\1>", " ", r.text, flags=re.S)
+            paras = [re.sub(r"<[^>]+>", "", p).strip()
+                     for p in re.findall(r"<p[^>]*>(.*?)</p>", corpo, re.S)
+                     if len(p) > 60]
+            texto = html_mod.unescape("\n".join(paras)).strip()
+            if len(texto) > 200:
+                return texto[:6000]
     except Exception:
-        final = ""
-    _cache[url] = final
-    return final
+        pass
+    try:
+        art = Article(url, language="pt")
+        art.download()
+        art.parse()
+        return (art.text or "").strip()[:6000]
+    except Exception:
+        return ""
+
+
+def buscar_artigos_g1(cand):
+    """Devolve ate MAX_ARTIGOS reportagens do G1 com texto extraido.
+
+    O <link> do RSS e uma pagina de redirecionamento JS do Google Noticias;
+    o gnewsdecoder resolve pra URL real (mesmo truque do scraper de noticias).
+    So entra artigo cuja URL final e do g1.globo.com — o site: da query ja
+    filtra, mas o feed as vezes vaza outro dominio — e que cite o candidato
+    no titulo ou no texto (o feed tambem vaza materia fora do assunto).
+    """
+    artigos = []
+    nome = _norm(cand["candidato"])
+    for it in _rss_g1(cand):
+        if len(artigos) >= MAX_ARTIGOS:
+            break
+        try:
+            decoded = gnewsdecoder(it["link"], interval=1)
+            url_real = decoded.get("decoded_url") if decoded.get("status") else ""
+        except Exception:
+            url_real = ""
+        host = re.match(r"https?://([^/]+)", url_real or "")
+        if not host or not FONTE_HOST.match(host.group(1)):
+            continue
+        texto = _texto_g1(url_real)
+        if not texto:
+            continue
+        if nome not in _norm(it["titulo"]) and nome not in _norm(texto):
+            continue
+        artigos.append({"titulo": it["titulo"], "data": it["data"],
+                        "url": url_real, "texto": texto})
+        time.sleep(0.5)
+    return artigos
 
 CABECALHO = [
     "estado",
@@ -161,9 +250,9 @@ def _registrar_uso(resp):
 
 
 def _custo_estimado(entrada, saida, pensamento):
-    # Faixa "flash": ~$0,30/1M de entrada, ~$2,50/1M de saida (pensamento cobra como
-    # saida). O grounding do Google Search e cobrado POR REQUISICAO, fora dos tokens,
-    # entao este numero e um PISO. O valor real esta no billing do Google.
+    # Faixa "flash": ~$0,30/1M de entrada, ~$2,50/1M de saida (pensamento cobra
+    # como saida). Sem grounding de busca (a busca e por RSS, gratis), o custo
+    # e so token mesmo.
     return (entrada / 1_000_000 * 0.30) + ((saida + pensamento) / 1_000_000 * 2.50)
 
 
@@ -497,14 +586,23 @@ def _chave(estado, apoiador, apoiado, relacao):
     return (_norm(estado), _norm(apoiador), _norm(apoiado), _norm(relacao))
 
 
-def _prompt(cand):
+def _prompt(cand, artigos):
+    bloco_artigos = "\n\n".join(
+        f"ARTIGO {i}\nTítulo: {a['titulo']}\nData: {a['data']}\n{a['texto']}"
+        for i, a in enumerate(artigos, start=1))
     return f"""
-Você é um pesquisador eleitoral. Busque NO G1 (g1.globo.com, incluindo as seções estaduais do G1) relações de apoio ENTRE CANDIDATURAS das eleições de 2026 envolvendo:
+Você é um pesquisador eleitoral. Leia as reportagens do G1 numeradas abaixo e extraia relações de apoio ENTRE CANDIDATURAS das eleições de 2026 envolvendo:
 
 Estado/UF: {cand['estado']}
 Candidato(a): {cand['candidato']}
 Cargo: {cand['cargo']}
 Partido/Federação: {cand['partido']}
+
+REPORTAGENS:
+
+{bloco_artigos}
+
+FIM DAS REPORTAGENS. Use APENAS o que está documentado nelas; não use conhecimento externo.
 
 Registre tanto quem apoia essa candidatura quanto quem essa candidatura apoia.
 
@@ -542,15 +640,13 @@ status, exatamente um destes:
 - "encerrado": vínculo que acabou (use junto com rompimento)
 
 REGRAS:
-1. Só devolva relação que tenha FONTE e LINK verificável. Sem link, não devolva.
-1b. A fonte deve ser SEMPRE uma reportagem do G1 (g1.globo.com, qualquer seção estadual). Relação noticiada só por outro veículo NÃO entra. "fonte" será "G1" e "link_fonte" deve apontar para a reportagem no G1.
+1. Só devolva relação documentada numa das reportagens acima. "artigo" é o número da reportagem que documenta a relação (se mais de uma documentar, use a mais recente).
 2. NÃO infira apoio por afinidade partidária, por serem do mesmo partido, por serem aliados históricos ou por menção indireta. Só conta declaração, ato ou decisão documentada.
 3. Não confunda evento institucional (posse, inauguração, entrega de obra) com ato conjunto de campanha.
 4. Não devolva o mesmo par de pessoas com dois tipos de relação contraditórios (ex.: negociação e oposição). Escolha o que a fonte mais recente sustenta.
 5. "data" é a data do fato, não a da publicação, quando as duas aparecerem. Formato DD/MM/AAAA.
-6. "fonte" é o nome do veículo; "link_fonte" é a URL.
-7. "observacao" é uma frase curta com o que a fonte diz, sem opinião.
-8. Se não encontrar nenhuma relação documentada entre candidaturas, devolva "relacoes": [].
+6. "observacao" é uma frase curta com o que a reportagem diz, sem opinião.
+7. Se não encontrar nenhuma relação documentada entre candidaturas, devolva "relacoes": [].
 
 Retorne APENAS JSON válido:
 {{
@@ -567,8 +663,7 @@ Retorne APENAS JSON válido:
       "tipo_relacao": "",
       "status": "",
       "data": "",
-      "fonte": "",
-      "link_fonte": "",
+      "artigo": 1,
       "observacao": ""
     }}
   ]
@@ -577,17 +672,38 @@ Retorne APENAS JSON válido:
 
 
 def buscar_apoios(client, cand):
+    """Busca artigos do G1 via RSS e extrai as relações com o Gemini.
+
+    Sem artigo, sem chamada ao Gemini: a maioria dos nomes não tem noticia
+    de apoio na janela e sai daqui de graça. O link/fonte de cada relação é
+    preenchido AQUI, a partir do artigo que nós baixamos — o modelo só aponta
+    o número do artigo, não inventa URL.
+    """
+    artigos = buscar_artigos_g1(cand)
+    if not artigos:
+        return []
+    print(f"  {len(artigos)} artigo(s) do G1 na janela de {JANELA_DIAS} dias")
     resp = client.models.generate_content(
         model=GEMINI_MODEL,
-        contents=_prompt(cand),
-        config=types.GenerateContentConfig(
-            temperature=0.1,
-            tools=[types.Tool(google_search=types.GoogleSearch())],
-        ),
+        contents=_prompt(cand, artigos),
+        config=types.GenerateContentConfig(temperature=0.1),
     )
     _registrar_uso(resp)
     relacoes = _extrair_json_objeto(getattr(resp, "text", "") or "").get("relacoes")
-    return relacoes if isinstance(relacoes, list) else []
+    if not isinstance(relacoes, list):
+        return []
+    for r in relacoes:
+        if not isinstance(r, dict):
+            continue
+        try:
+            idx = int(r.get("artigo", 0))
+            art = artigos[idx - 1] if 1 <= idx <= len(artigos) else None
+        except (ValueError, TypeError):
+            art = None
+        r["fonte"] = "G1" if art else ""
+        r["link_fonte"] = art["url"] if art else ""
+        r.setdefault("data", art["data"] if art else "")
+    return relacoes
 
 
 def _abrir_controle(sh):
@@ -728,17 +844,14 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
             if not (apoiador and apoiado and fonte and link.lower().startswith("http")):
                 descartadas += 1
                 continue
-            # O link vem como redirect do grounding: resolve pra URL final e
-            # aceita só G1. A URL resolvida é a que vai pra planilha.
-            link_final = _resolver_link(link)
-            host = re.match(r"https?://([^/]+)", link_final or "")
+            # O link ja e a URL real do G1, preenchida em buscar_apoios a partir
+            # do artigo baixado. O guarda fica: se o modelo apontar artigo
+            # invalido, a relacao vem sem link G1 e nao entra.
+            host = re.match(r"https?://([^/]+)", link)
             if not host or not FONTE_HOST.match(host.group(1)):
                 fora_da_fonte += 1
-                destino = host.group(1) if host else "link morto"
-                print(f"  [fora do G1] {apoiador} x {apoiado}: {destino}")
+                print(f"  [fora do G1] {apoiador} x {apoiado}")
                 continue
-            link = link_final
-            fonte = "G1"
             if _norm(apoiador) == _norm(apoiado):
                 descartadas += 1
                 continue
