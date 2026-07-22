@@ -1,0 +1,29 @@
+name: 12 - TSE Atas
+
+on:
+  schedule:
+    # Atas de convenção no DivulgaCand. Rodada horária, mas só baixa/reparseia
+    # PDF de ata nova ou ressincronizada (dtSincronizacao); o resto reaproveita
+    # o que já está na planilha. Minuto fora do :00 porque é quando o Actions
+    # mais enfileira as rodadas agendadas.
+    - cron: '40 * * * *'
+  workflow_dispatch:
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install gspread requests pandas pymupdf
+
+      - name: Escrever credentials.json
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
+
+      - run: python -m outros.tse_atas
+        env:
+          SPREADSHEET_ID_TSE: ${{ secrets.SPREADSHEET_ID_TSE }}
