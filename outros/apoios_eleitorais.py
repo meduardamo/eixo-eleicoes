@@ -36,6 +36,7 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 
 import gspread
+import requests
 from google import genai
 from google.genai import types
 from google.oauth2.service_account import Credentials
@@ -67,6 +68,27 @@ SENADO_DESDE = os.getenv("APOIOS_SENADO_DESDE", "2026-05-01")
 LOTE_GRAVACAO = int(os.getenv("APOIOS_LOTE", "20"))
 
 USO_TOKENS = {"chamadas": 0, "entrada": 0, "saida": 0, "pensamento": 0}
+
+# Fonte unica por enquanto: G1, que tem secao estadual em todas as UFs e e a
+# fonte mais confiavel do recorte. O grounding do Gemini devolve link de
+# redirect (vertexaisearch...), entao o filtro de dominio so funciona depois de
+# resolver o redirect — e e a URL final que vai pra planilha, senao a base
+# guarda link que expira.
+FONTE_HOST = re.compile(r"^(www\.)?g1\.globo\.com$", re.I)
+
+
+def _resolver_link(url, _cache={}):
+    """Segue o redirect do grounding e devolve a URL final ('' se falhar)."""
+    if url in _cache:
+        return _cache[url]
+    try:
+        r = requests.get(url, timeout=20, allow_redirects=True,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        final = str(r.url or "")
+    except Exception:
+        final = ""
+    _cache[url] = final
+    return final
 
 CABECALHO = [
     "estado",
@@ -477,7 +499,7 @@ def _chave(estado, apoiador, apoiado, relacao):
 
 def _prompt(cand):
     return f"""
-Você é um pesquisador eleitoral. Busque na web relações de apoio ENTRE CANDIDATURAS das eleições de 2026 envolvendo:
+Você é um pesquisador eleitoral. Busque NO G1 (g1.globo.com, incluindo as seções estaduais do G1) relações de apoio ENTRE CANDIDATURAS das eleições de 2026 envolvendo:
 
 Estado/UF: {cand['estado']}
 Candidato(a): {cand['candidato']}
@@ -521,6 +543,7 @@ status, exatamente um destes:
 
 REGRAS:
 1. Só devolva relação que tenha FONTE e LINK verificável. Sem link, não devolva.
+1b. A fonte deve ser SEMPRE uma reportagem do G1 (g1.globo.com, qualquer seção estadual). Relação noticiada só por outro veículo NÃO entra. "fonte" será "G1" e "link_fonte" deve apontar para a reportagem no G1.
 2. NÃO infira apoio por afinidade partidária, por serem do mesmo partido, por serem aliados históricos ou por menção indireta. Só conta declaração, ato ou decisão documentada.
 3. Não confunda evento institucional (posse, inauguração, entrega de obra) com ato conjunto de campanha.
 4. Não devolva o mesmo par de pessoas com dois tipos de relação contraditórios (ex.: negociação e oposição). Escolha o que a fonte mais recente sustenta.
@@ -653,7 +676,7 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
     client = _gemini()
     mapa = _mapa_header(header)
     novas, sem_resultado, erros, descartadas = [], 0, 0, 0
-    fora_do_recorte, contraditorias = 0, 0
+    fora_do_recorte, contraditorias, fora_da_fonte = 0, 0, 0
     buscados_agora = []
     polaridade_por_par = {}
 
@@ -705,6 +728,17 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
             if not (apoiador and apoiado and fonte and link.lower().startswith("http")):
                 descartadas += 1
                 continue
+            # O link vem como redirect do grounding: resolve pra URL final e
+            # aceita só G1. A URL resolvida é a que vai pra planilha.
+            link_final = _resolver_link(link)
+            host = re.match(r"https?://([^/]+)", link_final or "")
+            if not host or not FONTE_HOST.match(host.group(1)):
+                fora_da_fonte += 1
+                destino = host.group(1) if host else "link morto"
+                print(f"  [fora do G1] {apoiador} x {apoiado}: {destino}")
+                continue
+            link = link_final
+            fonte = "G1"
             if _norm(apoiador) == _norm(apoiado):
                 descartadas += 1
                 continue
@@ -780,6 +814,7 @@ def atualizar(max_linhas=40, force=False, incluir_sem_convencao=False, dry_run=F
     print(f"* relações novas: {total_gravado if not dry_run else len(novas)}")
     print(f"* descartadas por falta de fonte/link ou por auto-referência: {descartadas}")
     print(f"* fora do recorte (não é pessoa com candidatura em 2026): {fora_do_recorte}")
+    print(f"* fora da fonte (notícia que não é do G1 ou link morto): {fora_da_fonte}")
     print(f"* ignoradas por contradizer relação já gravada: {contraditorias}")
     print(f"* candidatos sem relação encontrada: {sem_resultado}")
     print(f"* erros técnicos: {erros}")
