@@ -161,8 +161,14 @@ def google_news_rss(busca, max_itens=20):
     return itens
 
 
+# Um bloco OR só: termos de candidatura (convenção etc.) + pesquisa de intenção de
+# voto (frases genéricas e nomes de institutos, o sinal mais forte). Assim mantém
+# uma query por cargo/UF em vez de dobrar. O Gemini separa depois pelo status.
 TERMOS = ('(convenção OR pré-candidato OR "coordenador de campanha" '
-          'OR "lançamento de candidatura")')
+          'OR "lançamento de candidatura" '
+          'OR "pesquisa eleitoral" OR "intenção de voto" OR "pesquisa de opinião" '
+          'OR Datafolha OR Quaest OR Ipec OR AtlasIntel OR "Paraná Pesquisas" '
+          'OR "Real Time Big Data")')
 
 
 def gerar_buscas(cargos=('presidente', 'governador', 'senador')):
@@ -260,7 +266,7 @@ def classificar_com_gemini(titulo, trecho=""):
         '  "cargo": "governador | senador | presidente | vice-governador | outro | null",\n'
         '  "uf": "Sigla do estado (ex: SP, RJ, MG) ou null se cargo federal ou não identificado",\n'
         '  "partido": "Sigla oficial do partido em maiúsculas (ex: PT, PL, MDB). Se for federação, siglas separadas por \'/\' (ex: PSOL/REDE, UNIÃO/PP). null se não mencionado",\n'
-        '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | cobertura geral | não relacionado | indefinido",\n'
+        '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | pesquisa | cobertura geral | não relacionado | indefinido",\n'
         '  "convencao": true ou false — true SOMENTE se a notícia trata diretamente de uma convenção partidária '
         "(data, realização, resultado ou decisão tomada em convenção). Independente do status da candidatura.\n"
         '  "confianca": "alto | médio | baixo"\n'
@@ -270,9 +276,12 @@ def classificar_com_gemini(titulo, trecho=""):
         "- status='pré-candidato': intenção declarada publicamente, sem oficialização ainda\n"
         "- status='em disputa': partido ou coligação ainda decide entre dois ou mais nomes\n"
         "- status='renúncia' ou 'desistência': candidato que retirou ou perdeu a candidatura\n"
+        "- status='pesquisa': o tema central da notícia é o resultado ou a divulgação de uma pesquisa eleitoral de "
+        "intenção de voto (ex.: Datafolha, Quaest, Ipec, AtlasIntel, Paraná Pesquisas, Real Time Big Data), trazendo "
+        "percentuais ou números de candidatos. Independente de citar convenção ou o status de alguma candidatura\n"
         "- status='cobertura geral': cita um político, partido ou estado brasileiro e tem a ver com política/eleições "
-        "do Brasil, mas não trata do status da candidatura em si (ex.: declaração, agenda de campanha, resultado de "
-        "pesquisa, repercussão de um fato político)\n"
+        "do Brasil, mas não trata do status da candidatura em si nem é sobre uma pesquisa (ex.: declaração, agenda de "
+        "campanha, repercussão de um fato político)\n"
         "- status='não relacionado': NÃO cita nenhum político, partido ou estado brasileiro, ou trata de assunto sem "
         "ligação com política brasileira (ex.: notícia de política internacional — Trump, eleições de outro país — "
         "que não menciona nenhum político/partido/estado do Brasil)\n"
