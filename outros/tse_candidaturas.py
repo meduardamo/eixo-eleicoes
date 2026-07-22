@@ -250,12 +250,12 @@ if __name__ == '__main__':
     df = extrair_candidaturas()
     print(f"candidaturas: {len(df)} linha(s)")
     if len(df):
-        salvar_no_sheets(df, "candidaturas")
+        salvar_no_sheets(df, "candidaturas_divulgacand")
 
     chapas = extrair_chapas()
     print(f"chapas: {len(chapas)} linha(s)")
     if len(chapas):
-        salvar_no_sheets(chapas, "chapas")
+        salvar_no_sheets(chapas, "chapas_divulgacand")
 
     # A base oficial só sai depois que o período de registro avança. Enquanto não
     # existe, a coleta pela API já vale por si e não faz sentido derrubar a rodada.
@@ -263,6 +263,6 @@ if __name__ == '__main__':
     if csv and len(df):
         base = consolidar(df, csv)
         print(f"base consolidada: {base.shape[0]} linhas")
-        salvar_no_sheets(base, "base_consolidada")
+        salvar_no_sheets(base, "base_dadosabertos")
     else:
-        print("base_consolidada não gerada nesta rodada")
+        print("base_dadosabertos não gerada nesta rodada")
