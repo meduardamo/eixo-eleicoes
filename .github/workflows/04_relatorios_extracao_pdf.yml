@@ -5,8 +5,8 @@ on:
   schedule:
     # GitHub Actions usa UTC; Brasil/Recife = UTC-3. Duas rodadas após as
     # coletas de 07h e 13h, com janela para conferir os links.
-    - cron: '43 12 * * *'  # 09:35 Brasil
-    - cron: '43 18 * * *'  # 15:35 Brasil
+    - cron: '43 12 * * *'  # 09:43 Brasil
+    - cron: '43 18 * * *'  # 15:43 Brasil
 
 jobs:
   run:
