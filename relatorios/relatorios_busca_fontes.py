@@ -22,7 +22,7 @@ from google.genai import types
 from compartilhado.relatorios_sheets_utils import (
     ALIASES_RELATORIOS, BRT, CABECALHO_RELATORIOS, CARGOS_MONITORADOS, CARGO_ROTULO,
     REGISTRO_TSE_RE, RELATORIOS_COLUNAS, REL_COL, REL_KEY, STATUS_TOPLINE_MANUAL,
-    _append_rows_compacto, _ativar_checkbox, _ativar_dropdown, _cargo_norm,
+    _append_rows_compacto, _ativar_checkbox, _ativar_dropdown, _cargo_norm, autorizar_com_retry,
     _cargos_monitorados, _chave_fila, _colorir_cabecalhos_relatorios, _colorir_por_valor,
     _custo_estimado, _encolher_linhas_vazias, _extrair_json_objeto,
     _garantir_coluna, _garantir_coluna_relatorios, _limpar_status_extracao,
