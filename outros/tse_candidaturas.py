@@ -132,10 +132,11 @@ def consolidar(df_api, csv_path):
 
 
 def extrair_candidaturas(ano=ANO, cargos=CARGOS_PADRAO, enriquecer=True):
-    """Lista candidaturas pela API. enriquecer busca o detalhe (partido, gênero, raça)
-    de cada um — uma chamada por candidato, mais lento. Vale a pena só no majoritário;
-    os proporcionais (deputados) NÃO são enriquecidos aqui (seriam milhares de chamadas
-    por rodada) — o perfil completo deles vem da base_dadosabertos na consolidação."""
+    """Lista candidaturas pela API. enriquecer busca o detalhe (link do plano de
+    governo) de cada um — uma chamada por candidato, mais lento. Vale a pena só no
+    majoritário; os proporcionais (deputados) NÃO são enriquecidos aqui (seriam
+    milhares de chamadas por rodada) — e o perfil completo (partido, gênero, raça)
+    de todo mundo vem da base_dadosabertos na consolidação."""
     eleicao = cod_eleicao(ano)
     linhas = []
     for cargo in cargos:
@@ -155,11 +156,11 @@ def extrair_candidaturas(ano=ANO, cargos=CARGOS_PADRAO, enriquecer=True):
                        "totalizacao": c.get('descricaoTotalizacao'),
                        "coligacao_federacao": c.get('nomeColigacao')}
                 if enriquecer and cargo not in CARGOS_PROPORCIONAIS:
+                    # O detalhe também traz partido/gênero/raça, mas esses
+                    # microdados já vêm completos na base_dadosabertos; daqui
+                    # só interessa o que ela não tem: o link do plano.
                     det = _get(f"{API}/candidatura/buscar/{ano}/{ue}/{eleicao}/candidato/{c['id']}")
                     if det:
-                        row["partido"] = (det.get('partido') or {}).get('sigla')
-                        row["genero"] = det.get('descricaoSexo')
-                        row["raca"] = det.get('descricaoCorRaca')
                         # link do plano de governo (só presidente/governador têm)
                         idarq = _id_plano(det)
                         row["link_plano"] = f"{DOC}/{idarq}" if idarq else None
