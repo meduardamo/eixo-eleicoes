@@ -67,7 +67,14 @@ def _get_json(url):
 
 def cod_eleicao(ano=ANO):
     # ordinariasAta lista só as eleições que já têm ata publicada
-    for e in _get_json(f"{API_ATA}/ordinariasAta") or []:
+    eleicoes = _get_json(f"{API_ATA}/ordinariasAta")
+    if eleicoes is None:
+        # API fora do ar mesmo após as 5 tentativas (blip longo do TSE, como
+        # em 23/07): sai limpo, a próxima rodada do schedule cobre. Erro de
+        # verdade é só quando a API responde SEM a eleição (ramo abaixo).
+        print("API do TSE indisponível; encerrando sem erro, próxima rodada cobre")
+        raise SystemExit(0)
+    for e in eleicoes:
         if e.get("ano") == ano and e.get("tipoAbrangencia") == "F":
             return e["id"]
     raise ValueError(f"Eleição geral {ano} sem atas publicadas")

@@ -63,7 +63,14 @@ def _get(url):
 
 def cod_eleicao(ano, abrangencia='F'):
     # cada eleição tem um código próprio (muda a cada ano); 'F' geral, 'M' municipal
-    for e in _get(f"{API}/eleicao/ordinarias") or []:
+    eleicoes = _get(f"{API}/eleicao/ordinarias")
+    if eleicoes is None:
+        # API fora do ar mesmo após as 5 tentativas (blip longo do TSE, como
+        # em 23/07): sai limpo, a próxima rodada do schedule cobre. Erro de
+        # verdade é só quando a API responde SEM a eleição (ramo abaixo).
+        print("API do TSE indisponível; encerrando sem erro, próxima rodada cobre")
+        raise SystemExit(0)
+    for e in eleicoes:
         if e.get('ano') == ano and e.get('tipoAbrangencia') == abrangencia:
             return e['id']
     raise ValueError(f"Eleição {ano}/{abrangencia} não encontrada")
