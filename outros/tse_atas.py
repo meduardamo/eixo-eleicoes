@@ -219,6 +219,21 @@ def salvar_no_sheets(sh, df, aba):
     print(f"Sheets atualizado: aba '{aba}' ({len(df)} linhas)")
 
 
+def _dedup_candidatos(df_cand):
+    """Um candidato aparece em várias atas do mesmo partido: a retificadora
+    repete a lista da convenção (204 casos em 23/07/2026, pedido da Manuela).
+    Fica só a linha da ata mais recente por uf + partido + cargo + nome
+    (dt_sincronizacao; empate decidido pelo sq_ata maior)."""
+    if df_cand.empty:
+        return df_cand
+    df = df_cand.copy()
+    df["_dt"] = pd.to_datetime(df["dt_sincronizacao"], dayfirst=True, errors="coerce")
+    df["_sq"] = pd.to_numeric(df["sq_ata"], errors="coerce")
+    df = df.sort_values(["_dt", "_sq"])
+    df = df.drop_duplicates(subset=["uf", "partido_numero", "cargo", "nome"], keep="last")
+    return df.drop(columns=["_dt", "_sq"])
+
+
 def coletar(sh):
     eleicao = cod_eleicao()
     atas = listar_atas(eleicao)
@@ -279,7 +294,7 @@ def coletar(sh):
 
     print(f"\n{parseadas} ata(s) baixadas/parseadas, {reaproveitadas} reaproveitadas")
     df_atas = pd.DataFrame(linhas_atas, columns=COLS_ATAS + ["sq_eleicao"])[COLS_ATAS]
-    df_cand = pd.DataFrame(linhas_cand, columns=COLS_CANDIDATOS)
+    df_cand = _dedup_candidatos(pd.DataFrame(linhas_cand, columns=COLS_CANDIDATOS))
     df_atas = df_atas.sort_values(["uf", "partido_numero", "sq_ata"])
     df_cand = df_cand.sort_values(["uf", "partido_numero", "sq_ata", "ordem"],
                                   key=lambda s: pd.to_numeric(s, errors="coerce")
