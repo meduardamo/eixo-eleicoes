@@ -62,10 +62,10 @@ ANO_ELEICAO = 2026
 # Instituto testa muita gente que nao e pre-candidatura real, entao o corte e por
 # DESEMPENHO: so entra quem ficou entre os N primeiros em algum cenario, medido
 # pelo percentual dentro daquele cenario. Estar na lista de testados nao diz nada;
-# aparecer na frente diz. O Senado elege duas vagas por estado nesta eleicao, entao
-# o top 4 cobre os dois favoritos mais o segundo pelotao.
-# Medido na T1 em 21/07/2026: 507 nomes testados -> 176 com top 4 desde 01/05.
-SENADO_TOP_N = int(os.getenv("APOIOS_SENADO_TOP_N", "4"))
+# aparecer na frente diz. O Senado elege duas vagas por estado nesta eleicao;
+# top 3 cobre os dois favoritos mais o primeiro de fora, sem encher a fila
+# (era 4, reduzido em 22/07/2026 a pedido da Eduarda).
+SENADO_TOP_N = int(os.getenv("APOIOS_SENADO_TOP_N", "3"))
 SENADO_DESDE = os.getenv("APOIOS_SENADO_DESDE", "2026-05-01")
 
 # Grava a cada N candidatos em vez de so no fim. A varredura inicial leva horas;
