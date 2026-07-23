@@ -262,8 +262,7 @@ def _resumo_uso_tokens():
     custo = _custo_estimado(USO_TOKENS["entrada"], USO_TOKENS["saida"], USO_TOKENS["pensamento"])
     print(f"\nGemini (apoios): {USO_TOKENS['chamadas']} chamada(s) · "
           f"{USO_TOKENS['entrada']:,} tokens entrada · {USO_TOKENS['saida']:,} saída · "
-          f"{USO_TOKENS['pensamento']:,} pensamento · custo estimado ${custo:.4f} "
-          f"(sem a tarifa de busca do Google)")
+          f"{USO_TOKENS['pensamento']:,} pensamento · custo estimado ${custo:.4f}")
 
 
 def _sem_acento(valor):
