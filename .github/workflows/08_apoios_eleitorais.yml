@@ -51,7 +51,7 @@ jobs:
       APOIOS_ABA: ${{ vars.APOIOS_ABA || 'apoio por candidatura' }}
       APOIOS_MAX_LINHAS: ${{ github.event.inputs.max_linhas || '1000' }}
       APOIOS_FORCE: ${{ github.event.inputs.force || 'false' }}
-      APOIOS_SENADO_DESDE: ${{ vars.APOIOS_SENADO_DESDE || '2026-05-01' }}
+      APOIOS_SENADO_DESDE: ${{ vars.APOIOS_SENADO_DESDE || '2026-07-01' }}
 
     steps:
       - name: Baixar o código do repositório

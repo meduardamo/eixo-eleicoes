@@ -66,7 +66,7 @@ ANO_ELEICAO = 2026
 # top 3 cobre os dois favoritos mais o primeiro de fora, sem encher a fila
 # (era 4, reduzido em 22/07/2026 a pedido da Eduarda).
 SENADO_TOP_N = int(os.getenv("APOIOS_SENADO_TOP_N", "3"))
-SENADO_DESDE = os.getenv("APOIOS_SENADO_DESDE", "2026-05-01")
+SENADO_DESDE = os.getenv("APOIOS_SENADO_DESDE", "2026-07-01")
 
 # Grava a cada N candidatos em vez de so no fim. A varredura inicial leva horas;
 # gravando so no final, uma queda ou um cancelamento no meio joga fora tudo que
