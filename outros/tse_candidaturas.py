@@ -48,14 +48,16 @@ CARGOS_PADRAO = CARGOS_TITULARES + CARGOS_VINCULADOS + CARGOS_PROPORCIONAIS
 
 
 def _get(url):
-    for _ in range(3):
+    # 5 tentativas com backoff: a API do TSE tem blips curtos (2 rodadas
+    # falharam em 22/07 com 3 tentativas de 1s; a rodada seguinte passava).
+    for tentativa in range(1, 6):
         try:
             r = requests.get(url, headers=HEADERS, timeout=40)
             r.raise_for_status()
             time.sleep(PAUSA)
             return r.json()
         except Exception:
-            time.sleep(1)
+            time.sleep(2 * tentativa)
     return None
 
 

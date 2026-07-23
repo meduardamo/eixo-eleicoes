@@ -52,14 +52,16 @@ COLS_CANDIDATOS = ["ano", "uf", "partido_numero", "partido_sigla", "tipo_ata",
 
 
 def _get_json(url):
-    for _ in range(3):
+    # 5 tentativas com backoff: a API do TSE tem blips curtos (ver
+    # tse_candidaturas, 2 rodadas falharam em 22/07 com retry de 3x1s).
+    for tentativa in range(1, 6):
         try:
             r = requests.get(url, headers=HEADERS, timeout=40)
             r.raise_for_status()
             time.sleep(PAUSA)
             return r.json()
         except Exception:
-            time.sleep(1)
+            time.sleep(2 * tentativa)
     return None
 
 
