@@ -1,0 +1,39 @@
+name: 13 - Sync cadastrado (relatorios)
+
+on:
+  schedule:
+    # Cruza o `relatorios` com as matrizes T1/T2: marca "Voto cadastrado?"=sim
+    # pro que já está na matriz (Manual ou Colar) e preenche "Link PollingData".
+    # A cada 6h, minuto fora do :00 (que é quando o Actions mais atrasa).
+    - cron: '35 */6 * * *'  # …, 21:35, 03:35, 09:35, 15:35 BRT
+  workflow_dispatch:         # permite rodar manualmente pelo GitHub
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      TZ: "America/Recife"
+      PYTHONUNBUFFERED: "1"
+      GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+      SPREADSHEET_ID_RELATORIOS: ${{ secrets.SPREADSHEET_ID_RELATORIOS }}
+      SPREADSHEET_ID_POLLINGDATA: ${{ secrets.SPREADSHEET_ID_POLLINGDATA }}
+      SPREADSHEET_ID_POLLINGDATA_T2: ${{ secrets.SPREADSHEET_ID_POLLINGDATA_T2 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Sincronizar Voto cadastrado + Link PollingData
+        run: python -u -m relatorios.relatorios_extracao_segmentos sync_cadastrado

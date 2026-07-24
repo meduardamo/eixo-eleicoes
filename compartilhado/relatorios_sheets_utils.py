@@ -41,6 +41,7 @@ RELATORIOS_COLUNAS = [
     ("segmentos_data_extracao", "Data da extração de segmentos"),
     ("segmentos_erro", "Erro na extração de segmentos"),
     ("segmentos_tentativas", "Tentativas de segmentos"),
+    ("link_pollingdata", "Link PollingData"),
     ("topline_extraido", "Voto cadastrado?"),
     ("topline_data_extracao", "Data do registro"),
 ]
@@ -78,6 +79,7 @@ ALIASES_RELATORIOS = {
     "Data da extração de segmentos": ["segmentos_data_extracao", "data_extracao"],
     "Erro na extração de segmentos": ["segmentos_erro", "extracao_erro"],
     "Tentativas de segmentos": ["segmentos_tentativas", "extracao_tentativas"],
+    "Link PollingData": ["link_pollingdata"],
     "Voto cadastrado?": ["topline_extraido", "Topline extraída?", "Intenção de voto cadastrada?"],
     "Data do registro": ["topline_data_extracao", "Data da extração de topline", "Data do registro manual"],
 }

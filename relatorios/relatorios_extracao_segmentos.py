@@ -1092,6 +1092,80 @@ def cmd_canonico():
 
 
 
+def _link_pollingdata_url(registro: str, cargo: str) -> str:
+    """Página do PollingData por cargo/uf (turno 1), derivada do registro TSE
+    (o prefixo do registro é a UF: 'PI-04468/2026' -> pi)."""
+    registro = str(registro)
+    uf = registro.split("-")[0].strip().lower() if "-" in registro else ""
+    cargo = str(cargo).strip().lower()
+    if not (uf and cargo):
+        return ""
+    return f"https://flex.pollingdata.com.br/pdvoto/2026/{cargo}/{uf}/t1"
+
+
+def cmd_sync_cadastrado():
+    """Cruza o `relatorios` com as matrizes T1/T2 do PollingData:
+    - marca 'Voto cadastrado?'=sim (+ data) para (registro, cargo) já presente
+      na aba `pesquisas` de qualquer matriz, venha do Polling Manual ou do Colar;
+    - preenche 'Link PollingData' (página do PollingData por cargo/uf) em todas
+      as linhas, pra guiar o cadastro sem varrer todas as UFs.
+    Não altera linhas 'sim' nem 'N/A'."""
+    from datetime import datetime
+    from gspread.utils import rowcol_to_a1
+    if not RELATORIOS_ID:
+        raise RuntimeError("Defina SPREADSHEET_ID_RELATORIOS.")
+    if not (T1_ID or T2_ID):
+        raise RuntimeError("Defina SPREADSHEET_ID_POLLINGDATA e/ou SPREADSHEET_ID_POLLINGDATA_T2.")
+    gc = _sheets()
+
+    presentes = set()
+    for sid in (T1_ID, T2_ID):
+        if not sid:
+            continue
+        for r in gc.open_by_key(sid).worksheet("pesquisas").get_all_records():
+            pid = str(r.get("poll_id", ""))
+            reg = pid.split("|")[3] if pid.count("|") >= 3 else ""
+            if reg:
+                presentes.add((reg.strip().upper(), str(r.get("cargo", "")).strip().lower()))
+    print(f"[sync] {len(presentes)} (registro, cargo) presentes nas matrizes")
+
+    ws = gc.open_by_key(RELATORIOS_ID).worksheet("relatorios")
+    vals = ws.get_all_values()
+    if len(vals) < 2:
+        print("[sync] relatorios sem linhas de dados")
+        return
+    header = vals[0]
+
+    def _c(chave):
+        rotulo = _rel_display(chave)
+        return header.index(rotulo) if rotulo in header else None
+
+    c_reg, c_cargo = _c("registro"), _c("cargo")
+    c_link, c_voto, c_data = _c("link_pollingdata"), _c("topline_extraido"), _c("topline_data_extracao")
+    agora = datetime.now(BRT).strftime("%Y-%m-%d %H:%M")
+
+    reqs, n_voto, n_link = [], 0, 0
+    for i, row in enumerate(vals[1:], start=2):
+        cel = lambda c: (row[c] if c is not None and c < len(row) else "")
+        reg = cel(c_reg).strip()
+        cargo = cel(c_cargo).strip().lower()
+        if c_link is not None:
+            novo = _link_pollingdata_url(reg, cargo)
+            if novo and cel(c_link) != novo:
+                reqs.append({"range": rowcol_to_a1(i, c_link + 1), "values": [[novo]]})
+                n_link += 1
+        if c_voto is not None:
+            v = cel(c_voto).strip().lower()
+            if v not in ("sim", "n/a", "na") and (reg.upper(), cargo) in presentes:
+                reqs.append({"range": rowcol_to_a1(i, c_voto + 1), "values": [["sim"]]})
+                if c_data is not None:
+                    reqs.append({"range": rowcol_to_a1(i, c_data + 1), "values": [[agora]]})
+                n_voto += 1
+    if reqs:
+        ws.batch_update(reqs, value_input_option="USER_ENTERED")
+    print(f"[sync] Link atualizado: {n_link} | 'Voto cadastrado?' marcado 'sim': {n_voto}")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "alerta":
@@ -1102,5 +1176,8 @@ if __name__ == "__main__":
         cmd_rebuild_bi()
     elif cmd == "canonico":
         cmd_canonico()
+    elif cmd == "sync_cadastrado":
+        cmd_sync_cadastrado()
     else:
-        print("uso: python -m relatorios.relatorios_extracao_segmentos [alerta|extrair|rebuild_bi|canonico]")
+        print("uso: python -m relatorios.relatorios_extracao_segmentos "
+              "[alerta|extrair|rebuild_bi|canonico|sync_cadastrado]")
