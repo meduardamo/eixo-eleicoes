@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -411,7 +412,38 @@ def conferir_classificacao(classif: dict, texto: str,
     # Depois de _conferir_meta, nunca antes: o que acabou de descer por
     # falta de alvo não pode subir de volta na mesma passada.
     classif = _conferir_acao(classif)
+    classif = _conferir_programa(classif, texto)
     return _conferir_nivel_por_citacao(classif)
+
+
+def _conferir_programa(classif: dict, texto: str) -> dict:
+    """Apaga o nome de programa que não está no texto que o modelo leu.
+
+    `programa_nome` era o único campo da linha sem nenhuma conferência, e o
+    painel o mostra como "Programa: X" ao lado da citação. Medido em 08/09/2026
+    sobre os 3.208 preenchidos da base: 39 não aparecem em parte nenhuma do
+    plano. São nomes reais do mundo — "Patrulha Maria da Penha", "Casa da
+    Mulher Brasileira", "Rede de Atenção Psicossocial (RAPS)", "DER-MG",
+    "Marco Civil da Internet" — que o modelo conhece de fora e escreveu num
+    campo que o plano não sustenta.
+
+    Vale para o plano digitalizado também, e de propósito: se o OCR não
+    devolveu o nome, o modelo não o leu ali, então ele veio de fora do mesmo
+    jeito. É a régua que a citação já tem, aplicada ao campo vizinho.
+
+    O campo junta mais de um nome ("Epamig e Emater", "PAA e PNAE"), então a
+    conferência é parte a parte e basta uma parte estar no plano.
+    """
+    plano = _sem_espaco(_norm_busca(texto))
+    for tema, item in classif.items():
+        nome = str((item or {}).get("programa_nome", "") or "").strip()
+        if len(nome) < 5:
+            continue
+        partes = [p.strip() for p in re.split(r"\s*(?:,| e | / |/)\s*", nome)
+                  if len(p.strip()) >= 5]
+        if partes and not any(_sem_espaco(_norm_busca(p)) in plano for p in partes):
+            classif[tema] = dict(item, programa_nome="")
+    return classif
 
 
 # A partir de quantas posições do vocabulário largo a ausência é reperguntada.
