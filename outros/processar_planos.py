@@ -1425,6 +1425,22 @@ def main() -> int:
         # escrito de outro jeito) fica de fora até alguém decidir que entra.
         _cargos = base["DS_CARGO"].astype(str).str.strip().str.upper()
         base = base[_cargos.isin(["GOVERNADOR", "PRESIDENTE"])]
+        # O TSE pode emitir dois SQ_CANDIDATO para o MESMO registro. Elizeu
+        # Aguiar (NOVO/PI, número 30, governador) aparece com 180002533958 e
+        # 180002549920, mesmo nome de urna e mesmo nome completo, cada um com
+        # seu anexo de plano — arquivos diferentes, mesmas 3 páginas e mesmos
+        # 3.171 caracteres. Analisado duas vezes, ele entrava duas vezes em
+        # toda contagem do painel: 203 linhas de plano para 202 candidatos.
+        # Fica o registro mais novo, que é o de SQ maior, como em _id_plano.
+        _chave = (base["SG_UF"].astype(str).str.strip().str.upper() + "|"
+                  + base["DS_CARGO"].astype(str).str.strip().str.upper() + "|"
+                  + base["NM_CANDIDATO"].astype(str).str.strip().str.upper() + "|"
+                  + base["NR_CANDIDATO"].astype(str).str.strip())
+        base = (base.assign(_chave=_chave,
+                            _sq=pd.to_numeric(base["SQ_CANDIDATO"], errors="coerce"))
+                .sort_values("_sq", kind="stable")
+                .drop_duplicates(subset="_chave", keep="last")
+                .drop(columns=["_chave", "_sq"]))
         if args.cargo.upper() != "TODOS":
             base = base[base["DS_CARGO"].astype(str).str.strip().str.upper()
                         == args.cargo.upper()]
