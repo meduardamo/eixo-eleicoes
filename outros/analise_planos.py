@@ -2242,18 +2242,27 @@ def contexto_do_trecho(paginas: list[str], paginas_norm: list[str],
         # A busca acontece no texto sem espaço (como em verificar_trecho), e a
         # posição precisa voltar para o texto original. O mapa liga cada
         # caractere sem espaço ao índice de onde ele veio.
+        # O mapa é construído sobre o texto CRU, um caractere de cada vez, e não
+        # sobre _norm_busca(bruta). A normalização NÃO preserva o comprimento:
+        # ela colapsa cada corrida de pontuação e de espaço num espaço só, e o
+        # índice acumula erro do começo da página até a citação. Medido em
+        # 08/09/2026 na página 5 do plano da Lourdes Melo (PI): 2.701
+        # caracteres crus contra 2.626 normalizados, e a janela saía 70
+        # caracteres antes da frase. Em 57 linhas da base o desvio foi maior
+        # que a janela e o contexto mostrado não continha a própria citação.
         mapa, compacto = [], []
-        for i, c in enumerate(_norm_busca(bruta)):
-            if not c.isspace():
-                compacto.append(c)
-                mapa.append(i)
+        for i, c in enumerate(bruta):
+            for d in unicodedata.normalize("NFD", c.lower()):
+                if unicodedata.category(d) == "Mn":
+                    continue
+                if d.isascii() and d.isalnum():
+                    compacto.append(d)
+                    mapa.append(i)
         pos = "".join(compacto).find(alvo)
         if pos < 0:
             continue
         ini_orig = mapa[pos]
         fim_orig = mapa[min(pos + len(alvo) - 1, len(mapa) - 1)] + 1
-        # A normalização de _norm_busca preserva o comprimento (tira acento,
-        # baixa a caixa), então o índice vale no texto original da página.
         sobra = max(0, chars - (fim_orig - ini_orig))
         ini = max(0, ini_orig - sobra // 2)
         fim = min(len(bruta), fim_orig + sobra // 2)
