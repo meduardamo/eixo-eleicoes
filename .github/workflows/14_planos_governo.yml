@@ -56,6 +56,14 @@ on:
         description: 'Classifica SÓ este tema nos planos já analisados (nome exato, sem subir versão)'
         required: false
         default: ''
+      so_acao:
+        description: 'Afere os "Propõe ação" e rebaixa o que só cita o tema (não toca na citação)'
+        type: choice
+        options:
+          - ''
+          - simular
+          - gravar
+        default: ''
       paralelo:
         description: 'Quantos planos analisar ao mesmo tempo'
         required: false
@@ -132,4 +140,5 @@ jobs:
             ${{ inputs.so_coerencia == true && '--so-coerencia' || '' }} \
             ${{ inputs.so_etapas_tempo_integral == true && '--so-etapas-tempo-integral' || '' }} \
             ${{ inputs.so_tema && format('--so-tema "{0}"', inputs.so_tema) || '' }} \
+            ${{ inputs.so_acao && format('--so-acao {0}', inputs.so_acao) || '' }} \
             ${{ inputs.limpar && format('--limpar-fora-da-base {0}', inputs.limpar) || '' }}

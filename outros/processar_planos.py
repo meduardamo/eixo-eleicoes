@@ -42,7 +42,7 @@ from analise_planos import (  # noqa: E402
     contexto_do_trecho,
     contexto_do_tema, contexto_do_vocabulario, posicoes_do_tema,
     extrair_paginas_url, ocorrencias_ancora, paginas_do_trecho, reanalisar_tema,
-    limpar_ruido_citacao, _normalizar_glifos,
+    limpar_ruido_citacao, _normalizar_glifos, acao_na_citacao,
     normalizar_responsavel, tem_alvo_absoluto, tem_alvo_mensuravel,
     tema_e_item_de_enumeracao,
     verificar_trecho,
@@ -1234,6 +1234,95 @@ def preencher_etapas_tempo_integral(sh, uf: str = "", limite: int = 0,
     return 1 if erros else 0
 
 
+def rebaixar_mencao(sh, uf: str = "", limite: int = 0, paralelo: int = 8,
+                    gravar_de_verdade: bool = False) -> int:
+    """Rebaixa para "Menciona vagamente" o "Propõe ação" que só cita o tema.
+
+    É a classe de erro que a leitura manual de 250 citações mediu em 25/08/2026:
+    10,0% de erro claro dentro de "Propõe ação", ou cerca de 690 linhas na base
+    de hoje. Três peneiras mecânicas já foram reprovadas para achá-la (citação
+    sem termo-âncora, sem verbo de ação, e curta), e a repergunta larga
+    (`reanalisar_tema`) recupera 5 de 20 e estraga mais do que isso, porque
+    recebe o entorno da âncora e não a frase, então devolve OUTRA citação.
+
+    Aqui roda `acao_na_citacao`, que lê a frase gravada e responde só se ela diz
+    o que será feito. Medido em 08/09/2026: recupera 11 dos 20 erros conhecidos
+    e mexe em 4 de 60 linhas sorteadas, das quais 2 estavam certas em rebaixar,
+    1 errada e 1 limítrofe. Razão de dois acertos para um erro.
+
+    **A citação não é tocada**, e é essa a diferença que torna a rodada
+    aceitável: no pior caso a linha desce um degrau e continua com a frase certa
+    do plano, e voltar o nível é uma célula.
+
+    Não baixa PDF nenhum: a pergunta é sobre o texto que já está na planilha.
+    """
+    salvas = ler_aba(sh, ANALISE_ABA)
+    if salvas.empty:
+        print(f"A aba {ANALISE_ABA} está vazia.")
+        return 1
+    alvo = salvas[(salvas["nivel"].astype(str).str.strip() == "Propõe ação")
+                  & (salvas["trecho"].astype(str).str.strip() != "")]
+    if uf:
+        alvo = alvo[alvo["uf"].astype(str).str.strip().str.upper() == uf.upper()]
+    if limite:
+        alvo = alvo.head(limite)
+    print(f"{len(alvo)} linhas em 'Propõe ação' para aferir "
+          f"({'gravando' if gravar_de_verdade else 'simulando'})")
+    if alvo.empty:
+        return 0
+
+    def a1(i):
+        n, letras = i + 1, ""
+        while n:
+            n, r = divmod(n - 1, 26)
+            letras = chr(65 + r) + letras
+        return letras
+
+    def _uma(par):
+        i, r = par
+        try:
+            return i, r, acao_na_citacao(str(r.get("trecho", "")),
+                                         str(r.get("tema", "")),
+                                         TEMAS.get(str(r.get("tema", "")), ""))
+        except Exception:                              # noqa: BLE001
+            return i, r, None
+
+    agora = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M")
+    dados, desceram, ilegiveis, feitos = [], 0, 0, 0
+    inicio = time.time()
+    ws = sh.worksheet(ANALISE_ABA)
+    pool = ThreadPoolExecutor(max_workers=max(1, paralelo))
+    for i, r, resp in pool.map(_uma, list(alvo.iterrows())):
+        feitos += 1
+        if resp is None:
+            ilegiveis += 1
+        elif resp == "mencao":
+            desceram += 1
+            linha = i + 2
+            dados.append({"range": f"{a1(salvas.columns.get_loc('nivel'))}{linha}",
+                          "values": [["Menciona vagamente"]]})
+            dados.append({"range": f"{a1(salvas.columns.get_loc('analisado_em'))}{linha}",
+                          "values": [[agora]]})
+            print(f"  {r.get('uf','')} {str(r.get('candidato',''))[:16]:16s} "
+                  f"{str(r.get('tema',''))[:22]:22s} {str(r.get('trecho',''))[:70]}",
+                  flush=True)
+        if feitos % 250 == 0:
+            print(f"    ... {feitos}/{len(alvo)} aferidas, {desceram} rebaixadas "
+                  f"({time.time() - inicio:.0f}s)", flush=True)
+            if gravar_de_verdade and dados:
+                ws.batch_update(dados, value_input_option="RAW")
+                dados = []
+    pool.shutdown(wait=True)
+    if gravar_de_verdade and dados:
+        ws.batch_update(dados, value_input_option="RAW")
+
+    print(f"\n{feitos} aferidas, {desceram} rebaixadas para 'Menciona vagamente', "
+          f"{ilegiveis} ilegíveis, em {time.time() - inicio:.0f}s.")
+    if not gravar_de_verdade:
+        print("Simulação: use --so-acao gravar para aplicar.")
+    return 0
+
+
 def refazer_contexto(sh, uf: str = "", limite: int = 0) -> int:
     """Recalcula a coluna `contexto` do que já está gravado, sem chamar o modelo.
 
@@ -1431,6 +1520,9 @@ def main() -> int:
     p.add_argument("--so-tema", default="",
                    help="classifica só este tema nos planos já analisados, "
                         "sem refazer os demais nem subir a versão")
+    p.add_argument("--so-acao", choices=["simular", "gravar"], default="",
+                   help="afere se cada 'Propõe ação' propõe mesmo, e rebaixa "
+                        "para 'Menciona vagamente' o que só cita o tema")
     p.add_argument("--so-contexto", action="store_true",
                    help="recalcula a coluna `contexto` do que já está gravado, "
                         "sem chamar o modelo")
@@ -1463,6 +1555,10 @@ def main() -> int:
 
         if args.so_contexto:
             return refazer_contexto(sh, args.uf, args.limite)
+
+        if args.so_acao:
+            return rebaixar_mencao(sh, args.uf, args.limite, args.paralelo,
+                                   args.so_acao == "gravar")
 
         if args.limpar_trechos:
             return limpar_trechos(
