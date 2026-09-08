@@ -599,9 +599,26 @@ def _conferir_citacao_generica(classif: dict, texto: str, texto_norm: str,
             vale = (novo and novo["nivel"] != "Não menciona"
                     and _norm_busca(novo["trecho"]) != chave
                     and citacao_sustenta(paginas_norm, novo["trecho"]))
-            classif[tema] = novo if vale else dict(
-                item, nivel="Não menciona", score=0, trecho="", responsavel="",
-                prazo="", publico_alvo="", programa_nome="")
+            if vale:
+                classif[tema] = novo
+                continue
+            # A repergunta falhar NÃO é prova de que o tema não está no plano.
+            # Ela é uma classificação nova, do zero, que recebe o entorno da
+            # âncora e não a frase julgada — medido em 08/09/2026 numa amostra
+            # de 60: mexeu em 6 e só 1 estava certa. Apagar aqui custou 20
+            # linhas naquele dia, entre elas o "Programa Mãe Estudante: Espaço
+            # Afeto" do Renan Filho, que serve legitimamente a Saúde
+            # Materno-Infantil, Gravidez Infantil e Equidade Educacional, e o
+            # Programa Acolher do Flávio Bolsonaro. Todas viraram "Não
+            # menciona" com a citação zerada.
+            #
+            # Citação que passou em citacao_sustenta é transcrição verificada do
+            # plano. Ela fica, e o tema só cai quando ela NÃO se sustenta.
+            if not citacao_sustenta(paginas_norm, item.get("trecho", "")):
+                classif[tema] = dict(
+                    item, nivel="Não menciona", score=0, trecho="",
+                    responsavel="", prazo="", publico_alvo="",
+                    programa_nome="")
     return classif
 
 
