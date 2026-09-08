@@ -52,6 +52,10 @@ on:
         type: boolean
         required: false
         default: false
+      so_tema:
+        description: 'Classifica SÓ este tema nos planos já analisados (nome exato, sem subir versão)'
+        required: false
+        default: ''
       paralelo:
         description: 'Quantos planos analisar ao mesmo tempo'
         required: false
@@ -127,4 +131,5 @@ jobs:
             ${{ inputs.forcar == true && '--forcar' || '' }} \
             ${{ inputs.so_coerencia == true && '--so-coerencia' || '' }} \
             ${{ inputs.so_etapas_tempo_integral == true && '--so-etapas-tempo-integral' || '' }} \
+            ${{ inputs.so_tema && format('--so-tema "{0}"', inputs.so_tema) || '' }} \
             ${{ inputs.limpar && format('--limpar-fora-da-base {0}', inputs.limpar) || '' }}

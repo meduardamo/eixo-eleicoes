@@ -15,6 +15,7 @@ Uso:
     python -m outros.processar_planos
     python -m outros.processar_planos --uf CE --forcar
     python -m outros.processar_planos --limite 5
+    python -m outros.processar_planos --so-tema "Equidade Educacional" --paralelo 3
 
 Grava em lotes: uma interrupção no meio perde no máximo o lote corrente, e a
 execução seguinte retoma de onde parou.
@@ -229,7 +230,7 @@ def _aba_ou_cria(sh, nome: str, colunas: list[str]):
 
 
 def gravar(sh, nome: str, colunas: list[str], chave: list[str],
-           novas: list[dict]) -> None:
+           novas: list[dict], apagar_do_candidato: bool = True) -> None:
     """Lê a aba, substitui o que é dos candidatos gravados agora e regrava tudo.
 
     Aqui havia um `anexar` que mandava "acrescente no fim" (values.append) e
@@ -260,9 +261,21 @@ def gravar(sh, nome: str, colunas: list[str], chave: list[str],
     sqs = {str(l.get("sq_candidato", "")) for l in novas}
     atual = ler_aba(sh, nome)
     if not atual.empty and "sq_candidato" in atual.columns:
-        # O candidato regravado sai inteiro: reanálise pode devolver menos temas
-        # que a anterior, e sobra de linha antiga viraria tema fantasma.
-        atual = atual[~atual["sq_candidato"].astype(str).isin(sqs)]
+        if apagar_do_candidato:
+            # O candidato regravado sai inteiro: reanálise pode devolver menos temas
+            # que a anterior, e sobra de linha antiga viraria tema fantasma.
+            atual = atual[~atual["sq_candidato"].astype(str).isin(sqs)]
+        else:
+            # Rodada de um tema só (--so-tema): sai apenas o par (candidato,
+            # tema) que está sendo reescrito. Apagar o candidato inteiro aqui
+            # levaria junto os outros 60 temas, que esta rodada nem leu.
+            pares = {(str(l.get("sq_candidato", "")), str(l.get("tema", "")))
+                     for l in novas}
+            fora = pd.Series(
+                list(zip(atual["sq_candidato"].astype(str),
+                         atual.get("tema", pd.Series("", index=atual.index)).astype(str))),
+                index=atual.index).isin(pares)
+            atual = atual[~fora]
     juntas = pd.concat([atual, pd.DataFrame(novas)], ignore_index=True) \
         if not atual.empty else pd.DataFrame(novas)
     # A aba manda no conjunto de colunas, e não o COLS de quem está gravando.
@@ -800,6 +813,184 @@ def refazer_coerencia(sh, uf: str = "", limite: int = 0, sq: str = "") -> int:
     return 1 if erros else 0
 
 
+def analisar_tema(sh, tema: str, uf: str = "", limite: int = 0, sq: str = "",
+                  forcar: bool = False, paralelo: int = 1) -> int:
+    """Classifica UM tema nos planos já analisados, sem refazer os outros 60.
+
+    Por que existe: tema novo só entrava na base subindo a VERSAO_ANALISE, e
+    isso refaz cada plano inteiro, porque `pendentes` compara a versão por
+    candidato e não por tema. Medido em 07/09/2026, com 203 planos gravados:
+    a releitura completa é a rodada de cinco horas do workflow 14, com três em
+    paralelo, e quase tudo é modelo — 61 temas em blocos de 120 mil caracteres,
+    mais a coerência e as etapas do tempo integral. Perguntar por um tema só é
+    uma chamada curta por bloco, e o PDF, que já está no espelho do Drive, sai
+    em 0,5 a 2 segundos nos 168 planos sem página escaneada.
+
+    `classificar_plano` já aceita o dicionário de temas, então a pergunta é a
+    mesma da rodada completa, com um item na lista. As guardas também são as
+    mesmas: `conferir_classificacao` roda sobre o tema sozinho, e o alinhamento
+    de nível por citação recebe os temas já gravados do candidato, senão a
+    frase que sustenta o tema novo poderia valer um degrau diferente do que ela
+    vale nos temas vizinhos.
+
+    O que esta rodada NÃO faz, e é diferença conhecida em relação a subir a
+    versão: os outros 60 temas foram julgados por um prompt em que o tema novo
+    não existia, então citação que agora caberia melhor aqui continua onde
+    está. `_conferir_citacao_generica`, que devolve para reanálise a citação
+    repetida em três temas, também só enxerga o tema da vez.
+    """
+    if tema not in TEMAS:
+        print(f"Tema desconhecido: {tema!r}. Os nomes válidos estão em TEMAS.")
+        return 1
+    salvas = ler_aba(sh, ANALISE_ABA)
+    if salvas.empty:
+        print(f"A aba {ANALISE_ABA} está vazia.")
+        return 1
+    salvas = salvas[salvas["ano"].astype(str).str.strip() == ANO]
+    if uf:
+        salvas = salvas[salvas["uf"].astype(str).str.strip().str.upper() == uf.upper()]
+    if sq:
+        alvos = {x.strip() for x in str(sq).split(",") if x.strip()}
+        salvas = salvas[salvas["sq_candidato"].astype(str).str.strip().isin(alvos)]
+
+    # Um representante por candidato, com o link que a análise usou. A fila sai
+    # da aba de análise, e não da base: o que este comando faz é acrescentar uma
+    # linha ao que já foi analisado, e plano que ainda não passou pelo caminho
+    # completo entra por lá, já com o tema novo na lista.
+    ja_tem = set(salvas[salvas["tema"].astype(str).str.strip() == tema]
+                 ["sq_candidato"].astype(str).str.strip())
+    fila = []
+    vistos = set()
+    for _, l in salvas.iterrows():
+        sq_cand = str(l.get("sq_candidato", "")).strip()
+        if not sq_cand or sq_cand in vistos:
+            continue
+        vistos.add(sq_cand)
+        if sq_cand in ja_tem and not forcar:
+            continue
+        fila.append(l)
+    if limite:
+        fila = fila[:limite]
+
+    print(f"Tema '{tema}' · {len(vistos)} planos na aba · {len(fila)} a classificar")
+    if not fila:
+        print("Nada a fazer: todos os planos já têm este tema.")
+        return 0
+
+    # Os temas já gravados de cada candidato, para o alinhamento por citação.
+    outros_de = {}
+    for _, l in salvas.iterrows():
+        t = str(l.get("tema", "")).strip()
+        if not t or t == tema:
+            continue
+        nivel = NIVEIS_LEGADO.get(str(l.get("nivel", "")).strip(),
+                                  str(l.get("nivel", "")).strip())
+        outros_de.setdefault(str(l.get("sq_candidato", "")).strip(), {})[t] = {
+            "nivel": nivel or "Não menciona",
+            "score": NIVEIS.index(nivel) if nivel in NIVEIS else 0,
+            "trecho": str(l.get("trecho", "")),
+        }
+
+    def _uma(item):
+        n, l = item
+        try:
+            link = str(l.get("link", ""))
+            paginas = extrair_paginas_url(link)
+            texto = " ".join(paginas)
+            paginas_norm = [_norm_busca(p) for p in paginas]
+            chars = len((texto or "").strip())
+            if chars < LIMIAR_CHARS:
+                return n, l, None, 0, f"extração pobre ({chars} caracteres)"
+            try:
+                classif = classificar_plano(texto, {tema: TEMAS[tema]})
+            except RespostaIlegivel:
+                time.sleep(3)
+                classif = classificar_plano(texto, {tema: TEMAS[tema]})
+            classif = conferir_classificacao(classif, texto, paginas_norm)
+            sq_cand = str(l.get("sq_candidato", "")).strip()
+            # O alinhamento roda com os vizinhos por perto e devolve só o tema
+            # da vez: as linhas dos outros não são reescritas por esta rodada.
+            junto = dict(outros_de.get(sq_cand, {}))
+            junto[tema] = classif[tema]
+            classif = {tema: _conferir_nivel_por_citacao(junto)[tema]}
+            res = classif[tema]
+            agora = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M")
+            linha = {
+                "ano": ANO, "sq_candidato": sq_cand,
+                "candidato": l.get("candidato", ""), "partido": l.get("partido", ""),
+                "uf": l.get("uf", ""), "cargo": l.get("cargo", ""), "link": link,
+                "tema": tema, "versao": VERSAO_ANALISE,
+                "nivel": res["nivel"], "trecho": res["trecho"],
+                "contexto": contexto_do_trecho(paginas, paginas_norm, res["trecho"]),
+                "responsavel": res.get("responsavel", ""),
+                "entes": normalizar_responsavel(res.get("responsavel", "")),
+                "prazo": res.get("prazo", ""),
+                "publico_alvo": res.get("publico_alvo", ""),
+                "programa_nome": res.get("programa_nome", ""),
+                "pagina": ", ".join(str(p) for p in
+                                    paginas_do_trecho(paginas_norm, res["trecho"])),
+                "verificacao": verificar_trecho(paginas_norm, res["trecho"]),
+                "chars": chars, "chars_analisados": chars, "analisado_em": agora,
+            }
+            return n, l, linha, chars, ""
+        except Exception as e:                        # noqa: BLE001
+            return n, l, None, 0, f"{type(e).__name__}: {e}"
+        finally:
+            time.sleep(PAUSA_ENTRE_PLANOS)
+
+    buffer, erros, pulados = [], [], []
+    feitos = 0
+    inicio = time.time()
+    pool = ThreadPoolExecutor(max_workers=max(1, paralelo))
+    futuros = [pool.submit(_uma, (n, l)) for n, l in enumerate(fila, 1)]
+    if paralelo > 1:
+        print(f"classificando {paralelo} planos ao mesmo tempo "
+              f"(a gravação continua uma de cada vez)")
+    for fut in as_completed(futuros):
+        n, l, linha, chars, problema = fut.result()
+        nome = str(l.get("candidato", ""))
+        print(f"[{n}/{len(fila)}] {l.get('uf','')} · {nome}...", end=" ", flush=True)
+        if problema:
+            (pulados if "extração pobre" in problema else erros).append(f"{nome} ({problema})")
+            print(problema)
+            continue
+        buffer.append(linha)
+        feitos += 1
+        print(f"{linha['nivel']}"
+              + (f" · pág. {linha['pagina']}" if linha["pagina"] else "")
+              + f" ({linha['verificacao'] or 'sem citação'})")
+        if len(buffer) >= LOTE:
+            gravar(sh, ANALISE_ABA, COLS, ["sq_candidato", "tema"], buffer,
+                   apagar_do_candidato=False)
+            buffer = []
+            print(f"    ... {feitos} gravados ({time.time() - inicio:.0f}s)")
+    pool.shutdown(wait=False, cancel_futures=True)
+    if buffer:
+        gravar(sh, ANALISE_ABA, COLS, ["sq_candidato", "tema"], buffer,
+               apagar_do_candidato=False)
+
+    print(f"\n{feitos} plano(s) classificados em '{tema}' "
+          f"({time.time() - inicio:.0f}s).")
+    try:
+        from analise_planos import _TOKENS
+        inp, out = _TOKENS["in"], _TOKENS["out"]
+        if inp or out:
+            custo = (inp / 1_000_000 * 0.075) + (out / 1_000_000 * 0.30)
+            print(f"[{inp:,} tokens in | {out:,} tokens out | "
+                  f"custo estimado: US$ {custo:.3f}]")
+    except Exception:
+        pass
+    if pulados:
+        print(f"{len(pulados)} sem texto suficiente: {', '.join(pulados[:5])}")
+    if erros:
+        print(f"{len(erros)} com erro: {'; '.join(erros[:5])}")
+    # Rodada que tinha fila e não gravou nada sai vermelha, como a completa.
+    if feitos == 0 and fila:
+        print("Nenhum plano da fila foi classificado. Saindo com erro.")
+        return 1
+    return 1 if erros else 0
+
+
 def _conferir_nivel_por_citacao(classif: dict) -> dict:
     """Alinha o nível dos temas que se apoiam na MESMA citação.
 
@@ -1147,6 +1338,14 @@ def main() -> int:
                                     "caixa alta dos trechos já gravados")
     p.add_argument("--so-etapas-tempo-integral", action="store_true",
                    help="preenche semanticamente a etapa dentro de Tempo Integral")
+    # Tema novo entra na base sem refazer os outros. Subir a VERSAO_ANALISE
+    # continua sendo o caminho quando a taxonomia MUDA de forma (tema que sai de
+    # eixo, tema que se divide em dois, descrição que redesenha a fronteira com
+    # o vizinho): aí a análise antiga está errada e precisa ser refeita. Para
+    # tema que só se acrescenta, esta rodada custa uma pergunta por plano.
+    p.add_argument("--so-tema", default="",
+                   help="classifica só este tema nos planos já analisados, "
+                        "sem refazer os demais nem subir a versão")
     p.add_argument("--so-paginas", action="store_true",
                    help="só preenche a coluna `pagina` do que já está gravado, "
                         "sem chamar o modelo")
@@ -1176,6 +1375,10 @@ def main() -> int:
         if args.so_etapas_tempo_integral:
             return preencher_etapas_tempo_integral(
                 sh, args.uf, args.limite, args.sq, args.forcar)
+
+        if args.so_tema:
+            return analisar_tema(sh, args.so_tema.strip(), args.uf, args.limite,
+                                 args.sq, args.forcar, args.paralelo)
 
         if args.so_coerencia:
             return refazer_coerencia(sh, args.uf, args.limite, args.sq)

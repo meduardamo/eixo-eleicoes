@@ -136,7 +136,7 @@ EIXOS = {
         "Tempo Integral": "educação em tempo integral e jornada escolar ampliada, em qualquer etapa da educação básica: desenho da jornada, vagas, escolas de tempo integral — o conteúdo que ocupa a jornada ampliada, quando é arte ou cultura, é o tema Educação, Arte e Cultura",
         "Educação Profissional": "educação profissional e técnica (EPT, SENAI, SENAC, institutos federais, cursos técnicos)",
         "Valorização Docente": "carreira, salário, piso, concurso, formação continuada e condições de trabalho de professores e demais profissionais da educação",
-        "Educação Inclusiva e EJA": "educação especial e inclusiva, estudante com deficiência, educação de jovens e adultos, educação no campo, indígena e quilombola",
+        "Educação Inclusiva e EJA": "educação especial e inclusiva, estudante com deficiência, educação de jovens e adultos, educação no campo, indígena e quilombola — a desigualdade de aprendizagem entre grupos, a ação afirmativa na educação e a busca ativa de estudante em vulnerabilidade são o tema Equidade Educacional",
         # Entraram em 19/08/2026 a pedido do Itaú:
         "Educação, Arte e Cultura": "integração de arte, cultura e linguagens artísticas no currículo escolar e na educação integral: arte na escola, oficinas e projetos culturais com estudantes — a política cultural fora da escola (fomento, editais, patrimônio, equipamentos) é o tema Cultura, no eixo de Cultura, esporte e turismo",
         "Recomposição das Aprendizagens": "recomposição, recuperação e aceleração de aprendizagens, reforço escolar, correção de fluxo, defasagem idade-série e superação de lacunas pedagógicas, inclusive as herdadas da pandemia — alfabetizar na idade certa é o tema Alfabetização, e a etapa em si é Fundamental ou Ensino Médio",
@@ -144,13 +144,23 @@ EIXOS = {
         # proposta de dinheiro não achava onde cair: no plano da Samara Martins
         # (UP), "10% do PIB para educação" foi classificada em Ciência,
         # Tecnologia e Inovação, e a educação inteira ficou como "Não menciona".
-        "Financiamento da Educação": "financiamento e orçamento da educação: percentual do PIB ou da receita, Fundeb, custo aluno, vinculação de recursos e gratuidade do ensino público",
+        "Financiamento da Educação": "financiamento e orçamento da educação: percentual do PIB ou da receita, Fundeb, custo aluno, vinculação de recursos e gratuidade do ensino público — destinar mais recurso à escola ou ao estudante com mais desvantagem é o tema Equidade Educacional",
         # Entrou em 10/08/2026. Até aqui ensino superior morava na descrição de
         # Ciência, Tecnologia e Inovação, e foi de lá que "Livre acesso à
         # universidade e fim do vestibular (ENEM)", do plano da Samara Martins,
         # saiu classificada como CT&I. Ao criar o tema, a menção some da
         # descrição de CT&I, senão os dois disputam a mesma citação.
         "Ensino Superior": "ensino superior e universidades: acesso e vagas, vestibular e ENEM, gratuidade, expansão de campus, assistência estudantil e permanência",
+        # Entrou em 08/09/2026 a pedido do Felipe Poyares. Os outros temas de
+        # Educação são por etapa ou por instrumento, e nenhum pergunta QUEM fica
+        # para trás: desigualdade de aprendizagem entre grupos não tinha onde
+        # cair, e a única leitura racial da escola morava em Igualdade Racial,
+        # no eixo de Direitos humanos e igualdade, que é política fora da
+        # escola. A fronteira está escrita nos dois lados com "Educação
+        # Inclusiva e EJA", que é o tema por público (deficiência, EJA, campo,
+        # indígena, quilombola), e com "Financiamento da Educação", que é o
+        # desenho do gasto e não o critério de quem recebe mais.
+        "Equidade Educacional": "redução da desigualdade de aprendizagem e de acesso entre grupos de estudantes: resultado da rede aberto por raça, renda, gênero ou território, escolas e regiões que ficam para trás, busca ativa e permanência de estudante em vulnerabilidade, ação afirmativa e cota na educação, educação antirracista e destinação de mais recurso a quem tem mais desvantagem — o estudante com deficiência, a educação especial, a EJA e a educação do campo, indígena e quilombola são o tema Educação Inclusiva e EJA, a política de igualdade racial fora da escola é o tema Igualdade Racial, no eixo de Direitos humanos e igualdade, e o tamanho e a origem do dinheiro da educação são o tema Financiamento da Educação",
     },
     # Entrou em 31/08/2026 a pedido da Fundação Maria Cecilia Souto Vidigal. O
     # tema "Primeira Infância" morava em Educação e cobria de creche a
@@ -243,7 +253,7 @@ EIXOS = {
         "Servidores e Municípios": "servidor público estadual em geral, carreira e concurso, e a relação do estado com os municípios (consórcio, repasse, apoio técnico) — professor e demais profissionais da educação são o tema Valorização Docente, no eixo de Educação",
     },
     "Direitos humanos e igualdade": {
-        "Igualdade Racial": "promoção da igualdade racial, população negra, racismo, cotas e ações afirmativas",
+        "Igualdade Racial": "promoção da igualdade racial, população negra, racismo, cotas e ações afirmativas — a desigualdade racial medida dentro da escola, a educação antirracista e a cota na educação são o tema Equidade Educacional, no eixo de Educação",
         "Mulheres": "políticas para mulheres além do enfrentamento à violência, que é tema próprio: autonomia econômica, cuidado, saúde da mulher — contracepção, planejamento reprodutivo e aborto são temas do eixo de Direitos Reprodutivos",
         "Pessoa com Deficiência": "acessibilidade, direitos e serviços para pessoas com deficiência",
         "Juventude e Pessoa Idosa": "políticas para a juventude e para a pessoa idosa, primeiro emprego, centro de convivência, cuidado",
@@ -317,6 +327,18 @@ TERMOS_ANCORA = {
     "Financiamento da Educação": ["por cento do pib", "% do pib", "do pib para educacao",
                                   "fundeb", "custo aluno", "orcamento da educacao",
                                   "financiamento da educacao", "vinculacao de recursos"],
+    # "equidade" solta fica de fora: aparece em quase todo plano fora da escola
+    # (equidade no SUS, equidade de gênero, equidade territorial) e faria a
+    # guarda de ausência disparar à toa, que é o problema medido do "uti". Aqui
+    # entram só as formas que já dizem que o assunto é a escola. "cotas raciais"
+    # e "acao afirmativa" também ancoram Igualdade Racial de propósito: o termo
+    # é transversal, e quem separa é a descrição de cada tema.
+    "Equidade Educacional": ["equidade educacional", "equidade na educacao",
+                             "equidade escolar", "desigualdade educacional",
+                             "desigualdades educacionais",
+                             "desigualdade de aprendizagem", "busca ativa escolar",
+                             "educacao antirracista", "cotas raciais",
+                             "acao afirmativa"],
     "Educação Infantil": ["educacao infantil", "creche", "pre escola", "bercario",
                           "primeira infancia", "vaga em creche"],
     "Saúde Materno-Infantil": ["pre natal", "mortalidade infantil", "mortalidade materna",
@@ -566,6 +588,22 @@ TERMOS_AUSENCIA = {
         "investimento em educacao", "investimento na educacao",
         "repasse para as escolas", "recursos para as escolas", "pdde",
         "minimo constitucional", "da receita para a educacao",
+    ],
+    "Equidade Educacional": [
+        "equidade educacional", "equidade na educacao", "equidade escolar",
+        "equidade e qualidade", "desigualdade educacional",
+        "desigualdades educacionais", "desigualdade escolar",
+        "desigualdade de aprendizagem", "desigualdade de oportunidades",
+        "hiato de aprendizagem", "busca ativa escolar", "busca ativa",
+        "acao afirmativa", "acoes afirmativas", "cotas raciais",
+        "cotas sociais", "educacao antirracista", "antirracis*",
+        "lei 10639", "historia e cultura afro brasileira",
+        "estudantes negros", "alunos negros", "estudantes em vulnerabilidade",
+        "alunos em vulnerabilidade", "vulnerabilidade social",
+        "permanencia escolar", "evasao de meninas", "gravidez na adolescencia",
+        "escolas mais vulneraveis", "regioes mais vulneraveis",
+        "reducao das desigualdades", "combate as desigualdades",
+        "igualdade de oportunidades", "equidade racial", "equidade de genero",
     ],
 
     # ---------------------------------------------------- Primeira Infância
