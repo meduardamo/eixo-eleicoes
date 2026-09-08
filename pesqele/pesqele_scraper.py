@@ -421,15 +421,17 @@ def go_to_page(
     last_err = None
     for _ in range(max_tries):
         try:
+            if get_active_page(driver, wait, paginator_id) == page_num:
+                return
             pag = wait.until(EC.presence_of_element_located((By.ID, paginator_id)))
             a = pag.find_element(By.CSS_SELECTOR, f"a.ui-paginator-page[aria-label='Page {page_num}']")
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", a)
-            tbody_before = driver.find_element(By.ID, tbody_id)
             driver.execute_script("arguments[0].click();", a)
-            try:
-                wait.until(EC.staleness_of(tbody_before))
-            except TimeoutException:
-                pass
+            # O PrimeFaces troca o conteúdo da tabela no lugar, então o tbody
+            # nunca fica stale. O sinal de que a troca terminou é a página ativa.
+            WebDriverWait(driver, 15).until(
+                lambda drv: get_active_page(drv, wait, paginator_id) == page_num
+            )
             wait.until(EC.presence_of_element_located((By.ID, tbody_id)))
             return
         except (StaleElementReferenceException, ElementClickInterceptedException, TimeoutException) as e:
@@ -464,11 +466,33 @@ def extract_field_by_label(driver: webdriver.Chrome, label_text: str) -> Optiona
     return None
 
 
+# Nem todo Chrome devolve a listagem do bfcache ao voltar do detalhe. Uma vez
+# constatado que não devolve, não vale gastar segundos esperando a cada linha.
+_HISTORICO_RESTAURA = None
+
+
+def esperar_tabela(driver: webdriver.Chrome, timeout: float = 6.0) -> bool:
+    """True se o tbody da listagem reaparecer dentro do timeout."""
+    global _HISTORICO_RESTAURA
+    if _HISTORICO_RESTAURA is False:
+        timeout = 0.6
+    fim = time.time() + timeout
+    while time.time() < fim:
+        if driver.find_elements(By.ID, ID_TBODY):
+            _HISTORICO_RESTAURA = True
+            return True
+        time.sleep(0.2)
+    achou = bool(driver.find_elements(By.ID, ID_TBODY))
+    _HISTORICO_RESTAURA = achou or _HISTORICO_RESTAURA
+    return achou
+
+
 def click_row_lupa_and_get_detail_fields(
     driver: webdriver.Chrome,
     wait: WebDriverWait,
     row_el,
     current_page: Optional[int],
+    restaurar_busca=None,
 ) -> Dict[str, Optional[str]]:
     try:
         lupa = row_el.find_element(By.CSS_SELECTOR, "a[id$=':detalhar']")
@@ -493,6 +517,16 @@ def click_row_lupa_and_get_detail_fields(
 
     driver.back()
     wait_dom_ready(driver)
+
+    # O voltar do navegador nem sempre restaura o resultado da busca: quando o
+    # Chrome não devolve a página do bfcache, a listagem volta sem tabela e as
+    # referências de linha morrem. Nesse caso refaz a consulta.
+    if not esperar_tabela(driver):
+        if restaurar_busca is None:
+            raise PesqElePageError(
+                "Listagem voltou sem tabela após o detalhe e não há como refazer a busca."
+            )
+        restaurar_busca()
     wait_list_page_ready(driver, wait)
 
     if current_page and current_page > 1:
@@ -511,20 +545,41 @@ def parse_current_table_with_details(
     wait: WebDriverWait,
     tbody_id: str,
     days_back: int = DAYS_BACK,
+    restaurar_busca=None,
+    ja_na_planilha: Optional[set] = None,
 ) -> tuple:
     """
     Retorna (linhas_filtradas, deve_parar_paginacao).
     Para a paginação quando encontra linha fora do período.
-    """
-    tbody = driver.find_element(By.ID, tbody_id)
-    rows = tbody.find_elements(By.XPATH, ".//tr")
 
+    A linha é rebuscada a cada volta: abrir o detalhe da pesquisa e voltar
+    troca o documento e invalida as referências de <tr> capturadas antes.
+    """
     out: List[Dict[str, str]] = []
     stop_pagination = False
     current_page = get_active_page(driver, wait, ID_PAGINATOR)
 
-    for r in rows:
-        cols = [c.text.strip() for c in r.find_elements(By.XPATH, "./td")]
+    i = 0
+    stale_retries = 0
+    while True:
+        tbody = wait.until(EC.presence_of_element_located((By.ID, tbody_id)))
+        rows = tbody.find_elements(By.XPATH, ".//tr")
+        if i >= len(rows):
+            break
+
+        try:
+            cols = [c.text.strip() for c in rows[i].find_elements(By.XPATH, "./td")]
+        except StaleElementReferenceException:
+            if stale_retries >= 3:
+                raise
+            stale_retries += 1
+            time.sleep(0.5)
+            continue
+
+        stale_retries = 0
+        r = rows[i]
+        i += 1
+
         if len(cols) < 5:
             continue
 
@@ -536,10 +591,17 @@ def parse_current_table_with_details(
             stop_pagination = True
             break
 
-        try:
-            details = click_row_lupa_and_get_detail_fields(driver, wait, r, current_page)
-        except Exception:
+        # O detalhe custa uma navegação por linha. Quem já está na planilha
+        # seria descartado no dedup de qualquer forma, então nem abre.
+        if ja_na_planilha and cols[0].strip() in ja_na_planilha:
             details = {"data_divulgacao": None, "cargos": None}
+        else:
+            try:
+                details = click_row_lupa_and_get_detail_fields(
+                    driver, wait, r, current_page, restaurar_busca
+                )
+            except Exception:
+                details = {"data_divulgacao": None, "cargos": None}
 
         out.append({
             "numero_identificacao": cols[0],
@@ -551,12 +613,6 @@ def parse_current_table_with_details(
             "cargos": details.get("cargos"),
         })
 
-        try:
-            tbody = driver.find_element(By.ID, tbody_id)
-            rows = tbody.find_elements(By.XPATH, ".//tr")
-        except Exception:
-            pass
-
     return out, stop_pagination
 
 
@@ -566,16 +622,22 @@ def scrape_all_pages_current_query(
     paginator_id: str,
     tbody_id: str,
     days_back: int = DAYS_BACK,
+    restaurar_busca=None,
+    ja_na_planilha: Optional[set] = None,
 ) -> List[Dict[str, str]]:
     pages = get_page_numbers(driver, wait, paginator_id)
     if not pages:
-        rows, _ = parse_current_table_with_details(driver, wait, tbody_id, days_back)
+        rows, _ = parse_current_table_with_details(
+            driver, wait, tbody_id, days_back, restaurar_busca, ja_na_planilha
+        )
         return dedup_by_numero(rows)
 
     all_rows: List[Dict[str, str]] = []
     for p in pages:
         go_to_page(driver, wait, paginator_id, tbody_id, p)
-        rows, stop = parse_current_table_with_details(driver, wait, tbody_id, days_back)
+        rows, stop = parse_current_table_with_details(
+            driver, wait, tbody_id, days_back, restaurar_busca, ja_na_planilha
+        )
         all_rows.extend(rows)
         if stop:
             print(f"  Paginação interrompida na página {p}.")
@@ -694,7 +756,8 @@ def run_one_scope(
     eleicao_text: str,
     uf_text: str,
     days_back: int = DAYS_BACK,
-    max_retries: int = 3
+    max_retries: int = 3,
+    ja_na_planilha: Optional[set] = None,
 ) -> pd.DataFrame:
     for attempt in range(max_retries):
         try:
@@ -705,10 +768,23 @@ def run_one_scope(
             select_one_menu_by_text(driver, wait, ID_UF_LABEL, ID_UF_PANEL, uf_text)
             time.sleep(0.5)
 
+            def refazer_busca():
+                if URL_LISTAR not in driver.current_url:
+                    get_with_retry(driver, URL_LISTAR)
+                    wait_dom_ready(driver)
+                select_one_menu_by_text(driver, wait, ID_ELEICAO_LABEL, ID_ELEICAO_PANEL, eleicao_text)
+                time.sleep(0.3)
+                select_one_menu_by_text(driver, wait, ID_UF_LABEL, ID_UF_PANEL, uf_text)
+                time.sleep(0.3)
+                click_and_wait_table_refresh(driver, wait, ID_BTN_PESQUISAR, ID_TBODY)
+                wait_list_page_ready(driver, wait)
+
             click_and_wait_table_refresh(driver, wait, ID_BTN_PESQUISAR, ID_TBODY)
             wait_list_page_ready(driver, wait)
 
-            rows = scrape_all_pages_current_query(driver, wait, ID_PAGINATOR, ID_TBODY, days_back)
+            rows = scrape_all_pages_current_query(
+                driver, wait, ID_PAGINATOR, ID_TBODY, days_back, refazer_busca, ja_na_planilha
+            )
             df = pd.DataFrame(rows)
 
             df["uf_filtro"] = uf_text
@@ -762,8 +838,11 @@ def run_to_google_sheets_insert_dedup(
 
         if "BRASIL" not in SKIP_SHEETS:
             print(f"Processando BRASIL (últimos {days_back} dias)...")
-            df_brasil = run_one_scope(driver, wait, eleicao_text=eleicao_text, uf_text="BRASIL", days_back=days_back)
             ws_brasil = ensure_worksheet(ss, "BRASIL", rows=2000, cols=max(30, len(COLS_BASE) + 5))
+            df_brasil = run_one_scope(
+                driver, wait, eleicao_text=eleicao_text, uf_text="BRASIL",
+                days_back=days_back, ja_na_planilha=get_existing_keys(ws_brasil),
+            )
             novos = insert_new_rows_top(ws_brasil, df_brasil)
             print(f"BRASIL: {novos} registros novos inseridos")
 
@@ -775,8 +854,11 @@ def run_to_google_sheets_insert_dedup(
                 continue
             try:
                 print(f"Processando {uf} ({i}/{len(ufs)}, últimos {days_back} dias)...")
-                df_uf = run_one_scope(driver, wait, eleicao_text=eleicao_text, uf_text=uf, days_back=days_back)
                 ws = ensure_worksheet(ss, uf, rows=2000, cols=max(30, len(COLS_BASE) + 5))
+                df_uf = run_one_scope(
+                    driver, wait, eleicao_text=eleicao_text, uf_text=uf,
+                    days_back=days_back, ja_na_planilha=get_existing_keys(ws),
+                )
                 novos = insert_new_rows_top(ws, df_uf)
                 print(f"{uf}: {novos} registros novos inseridos")
                 time.sleep(1)
