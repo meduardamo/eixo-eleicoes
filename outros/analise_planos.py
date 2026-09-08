@@ -1694,11 +1694,19 @@ _LIGADURAS = {"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl",
               "ﬅ": "st", "ﬆ": "st"}
 # Invisível que sobra de exportação do Google Docs (largura zero) e de fonte
 # quebrada (controle ASCII). Não muda o sentido e atrapalha a busca no texto.
+# \u202a-\u202e são marcas de direção de texto (embedding e override), que o
+# PDF deixa escapar e não têm desenho: 63 ocorrências na aba.
 _INVISIVEL_CITACAO = re.compile(
-    "[​‌‍﻿­\x00-\x08\x0b-\x1f\x7f-\x9f]")
+    "[​‌‍﻿­\u202a-\u202e\x00-\x08\x0b-\x1f\x7f-\x9f]")
 # Bullets de Wingdings e Symbol, que a extração entrega na área de uso privado
 # do Unicode. Fora da fonte original não têm desenho nenhum.
-_BULLETS_AREA_PRIVADA = "\uf0b7\uf06c\uf0a7\uf076"
+_BULLETS_AREA_PRIVADA = "\uf0b7\uf06c\uf0a7\uf076\uf0d8"
+# Glifos que a diagramação usa como marcador e que, fora da fonte de origem,
+# chegam ao painel como símbolo estranho no meio da frase. Medidos na aba em
+# 08/09/2026: ∪ 47, ☼ 242, ✓ 40. O ∪ é união de conjuntos e o ☼ é um sol; nem
+# um nem outro tem uso em plano de governo, e os três aparecem sempre onde
+# deveria haver um bullet.
+_MARCADORES_ESTRANHOS = "∪☼✓"
 
 # Marca combinante de sobreposição (traço, barra). O português não usa nenhuma
 # delas: acento agudo, grave, circunflexo, til, trema e cedilha são U+0300 a
@@ -1731,7 +1739,7 @@ def _normalizar_glifos(t: str) -> str:
     # O bullet de Wingdings não tem desenho fora da fonte dele: na tela do
     # painel sai como caixinha vazia. Vira "•", que é o que ele é, e aí as
     # regras de lista de limpar_ruido_citacao passam a alcançá-lo.
-    for glifo in _BULLETS_AREA_PRIVADA:
+    for glifo in _BULLETS_AREA_PRIVADA + _MARCADORES_ESTRANHOS:
         t = t.replace(glifo, "•")
     return _INVISIVEL_CITACAO.sub("", t)
 
