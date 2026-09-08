@@ -1697,7 +1697,7 @@ _LIGADURAS = {"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl",
 # \u202a-\u202e são marcas de direção de texto (embedding e override), que o
 # PDF deixa escapar e não têm desenho: 63 ocorrências na aba.
 _INVISIVEL_CITACAO = re.compile(
-    "[​‌‍﻿­\u202a-\u202e\x00-\x08\x0b-\x1f\x7f-\x9f]")
+    "[​‌‍﻿­\u200e\u200f\u202a-\u202e\x00-\x08\x0b-\x1f\x7f-\x9f]")
 # Bullets de Wingdings e Symbol, que a extração entrega na área de uso privado
 # do Unicode. Fora da fonte original não têm desenho nenhum.
 _BULLETS_AREA_PRIVADA = "\uf0b7\uf06c\uf0a7\uf076\uf0d8"

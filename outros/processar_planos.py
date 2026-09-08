@@ -1376,7 +1376,11 @@ def main() -> int:
 
     if not args.planilha:
         raise SystemExit("Informe --planilha ou defina SPREADSHEET_ID_TSE.")
+    # Os três modos de manutenção não chamam o modelo: contar a página, limpar
+    # o texto gravado e tirar da aba quem saiu do universo. Exigir a chave neles
+    # impedia rodar a limpeza de fora de um runner com o secret.
     if (not args.so_paginas and not args.limpar_trechos
+            and not args.limpar_fora_da_base
             and not os.getenv("GEMINI_API_KEY", "").strip()):
         raise SystemExit("Defina GEMINI_API_KEY: é ela que roda a análise.")
 
