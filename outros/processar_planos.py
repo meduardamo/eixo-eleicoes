@@ -1234,6 +1234,68 @@ def preencher_etapas_tempo_integral(sh, uf: str = "", limite: int = 0,
     return 1 if erros else 0
 
 
+def refazer_contexto(sh, uf: str = "", limite: int = 0) -> int:
+    """Recalcula a coluna `contexto` do que já está gravado, sem chamar o modelo.
+
+    Existe porque `contexto_do_trecho` devolvia a janela deslocada: o índice do
+    início vinha de `_norm_busca(bruta)`, que colapsa cada corrida de pontuação
+    num espaço só, então o erro acumulava do começo da página até a citação. Em
+    57 linhas o desvio passou do tamanho da janela e o contexto nem continha a
+    citação; nas outras ele vinha torto, só que menos. Corrigido o mapa, a
+    coluna inteira precisa ser refeita, e isso não custa modelo nenhum.
+
+    Só escreve onde a janela nova contém a citação. Onde não contém, a antiga
+    fica: pior que contexto torto é contexto vazio no lugar de um que servia.
+    """
+    salvas = ler_aba(sh, ANALISE_ABA)
+    if salvas.empty or "contexto" not in salvas.columns:
+        print(f"A aba {ANALISE_ABA} está vazia ou sem a coluna `contexto`.")
+        return 0
+    alvo = salvas[salvas["trecho"].astype(str).str.strip() != ""]
+    if uf:
+        alvo = alvo[alvo["uf"].astype(str).str.strip().str.upper() == uf.upper()]
+    sqs = list(dict.fromkeys(alvo["sq_candidato"].astype(str)))
+    if limite:
+        sqs = sqs[:limite]
+    print(f"{len(alvo)} linhas com citação, em {len(sqs)} planos")
+
+    mudou = total = 0
+    for n, sq in enumerate(sqs, 1):
+        linhas = alvo[alvo["sq_candidato"].astype(str) == sq]
+        link = str(linhas.iloc[0].get("link", "") or "")
+        nome = str(linhas.iloc[0].get("candidato", ""))
+        print(f"[{n}/{len(sqs)}] {linhas.iloc[0].get('uf','')} · {nome}...",
+              end=" ", flush=True)
+        try:
+            paginas = extrair_paginas_url(link)
+        except Exception as e:                        # noqa: BLE001
+            print(f"não abriu ({e})")
+            continue
+        paginas_norm = [_norm_busca(p) for p in paginas]
+        aqui = 0
+        for i, r in linhas.iterrows():
+            trecho = str(r.get("trecho", ""))
+            novo_ctx = contexto_do_trecho(paginas, paginas_norm, trecho)
+            total += 1
+            if not novo_ctx:
+                continue
+            alvo_norm = _sem_espaco(_norm_busca(trecho.split("[...]")[0]))
+            if alvo_norm and alvo_norm[:60] not in _sem_espaco(_norm_busca(novo_ctx)):
+                continue
+            if novo_ctx != str(r.get("contexto", "")):
+                salvas.at[i, "contexto"] = novo_ctx
+                mudou += 1
+                aqui += 1
+        print(f"{aqui} de {len(linhas)} contextos refeitos")
+        if n % 25 == 0:
+            reescrever(sh, ANALISE_ABA, COLS, salvas)
+            print(f"    ... {mudou} gravados")
+
+    reescrever(sh, ANALISE_ABA, COLS, salvas)
+    print(f"\n{mudou} de {total} contextos refeitos.")
+    return 0
+
+
 def preencher_paginas(sh, uf: str = "", limite: int = 0) -> int:
     """Preenche a coluna `pagina` das análises já gravadas, sem chamar o modelo.
 
@@ -1369,6 +1431,9 @@ def main() -> int:
     p.add_argument("--so-tema", default="",
                    help="classifica só este tema nos planos já analisados, "
                         "sem refazer os demais nem subir a versão")
+    p.add_argument("--so-contexto", action="store_true",
+                   help="recalcula a coluna `contexto` do que já está gravado, "
+                        "sem chamar o modelo")
     p.add_argument("--so-paginas", action="store_true",
                    help="só preenche a coluna `pagina` do que já está gravado, "
                         "sem chamar o modelo")
@@ -1380,6 +1445,7 @@ def main() -> int:
     # o texto gravado e tirar da aba quem saiu do universo. Exigir a chave neles
     # impedia rodar a limpeza de fora de um runner com o secret.
     if (not args.so_paginas and not args.limpar_trechos
+            and not args.so_contexto
             and not args.limpar_fora_da_base
             and not os.getenv("GEMINI_API_KEY", "").strip()):
         raise SystemExit("Defina GEMINI_API_KEY: é ela que roda a análise.")
@@ -1394,6 +1460,9 @@ def main() -> int:
     try:
         if args.so_paginas:
             return preencher_paginas(sh, args.uf, args.limite)
+
+        if args.so_contexto:
+            return refazer_contexto(sh, args.uf, args.limite)
 
         if args.limpar_trechos:
             return limpar_trechos(
