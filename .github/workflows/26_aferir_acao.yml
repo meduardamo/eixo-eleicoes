@@ -23,6 +23,13 @@ on:
         type: boolean
         required: false
         default: false
+      modo:
+        description: 'acao = a frase propõe ação? | tema = a frase é sobre este tema?'
+        type: choice
+        options:
+          - acao
+          - tema
+        default: acao
 
 # Mesmo grupo do 14 e do 23, que é onde a planilha de planos é escrita. Este
 # não escreve, mas baixa os mesmos PDFs e não custa nada esperar a fila.
@@ -63,4 +70,5 @@ jobs:
           AFERIR_AMOSTRA: ${{ inputs.amostra }}
           AFERIR_SEMENTE: ${{ inputs.semente || '7' }}
           AFERIR_ESTREITO: ${{ inputs.estreito == true && '1' || '' }}
+          AFERIR_MODO: ${{ inputs.modo || 'acao' }}
         run: python -m outros.aferir_acao

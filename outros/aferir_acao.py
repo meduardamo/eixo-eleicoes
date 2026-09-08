@@ -28,7 +28,7 @@ from collections import Counter
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from outros.analise_planos import (  # noqa: E402
-    TEMAS, acao_na_citacao, RespostaIlegivel, _norm_busca, contexto_do_tema, extrair_paginas_url,
+    TEMAS, acao_na_citacao, tema_na_citacao, RespostaIlegivel, _norm_busca, contexto_do_tema, extrair_paginas_url,
     paginas_do_trecho, reanalisar_tema, verificar_trecho,
 )
 
@@ -89,8 +89,12 @@ def main() -> int:
         vals = aba.get_all_values()
         cab = vals[0]
         col = {c: cab.index(c) for c in cab if c}
+        # No modo atribuição o universo é toda linha com citação, não só
+        # "Propõe ação": o trecho pode estar no tema errado em qualquer nível.
+        _niveis = ({"Propõe ação"} if os.getenv("AFERIR_MODO", "acao") == "acao"
+                   else {"Propõe ação", "Menciona vagamente", "Define meta"})
         pool = [v for v in vals[1:]
-                if v[col["nivel"]].strip() == "Propõe ação"
+                if v[col["nivel"]].strip() in _niveis
                 and v[col["trecho"]].strip()
                 and v[col["link"]].strip().startswith("http")]
         random.seed(int(os.getenv("AFERIR_SEMENTE", "7")))
@@ -126,6 +130,16 @@ def main() -> int:
             # Pergunta estreita: o modelo lê a citação que está na planilha e
             # responde só se ela propõe ação, sem poder trocá-la. Ver
             # acao_na_citacao. É o caminho que não estraga citação boa.
+            if os.getenv("AFERIR_MODO", "") == "tema":
+                r = tema_na_citacao(c["trecho"], tema, TEMAS.get(tema, ""))
+                if r is None:
+                    conta["ilegível"] += 1
+                    continue
+                conta["fora do tema" if r == "nao" else "no tema"] += 1
+                if r == "nao":
+                    print(f"\n{cab} · {tema}")
+                    print(f"   FORA DO TEMA: {c['trecho'][:170]}")
+                continue
             if os.getenv("AFERIR_ESTREITO", "").strip():
                 r = acao_na_citacao(c["trecho"], tema, TEMAS.get(tema, ""))
                 if r is None:

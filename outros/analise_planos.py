@@ -3038,6 +3038,56 @@ def reanalisar_tema(contexto: str, tema: str, desc: str = "") -> dict:
     }
 
 
+def tema_na_citacao(trecho: str, tema: str, desc: str = "") -> str | None:
+    """Pergunta se a citação gravada é MESMO sobre o tema em que está arquivada.
+
+    A classe de erro sem guarda nenhuma: a frase existe no plano, é transcrição
+    literal, e fala de outro assunto. Medida em 14/08/2026 com `--atribuicao`:
+    5 suspeitos em 150, um falso positivo e dois inconclusivos, o que põe a taxa
+    real entre 1,3% e 2,7%.
+
+    Irmã de `acao_na_citacao`: pergunta estreita, citação intocável. O modelo lê
+    a frase e o que o tema cobre, e responde se uma é do outro. Não pode trocar
+    a citação nem reclassificar o nível.
+
+    Devolve "sim", "nao" ou None quando a resposta não dá para ler.
+    """
+    from google.genai import types
+
+    prompt = (
+        "Você é analista sênior de políticas públicas. Abaixo estão UMA frase "
+        "transcrita de um plano de governo e a definição de um tema de política "
+        "pública.\n\n"
+        "Responda uma única pergunta: a frase trata desse tema?\n\n"
+        "  'sim' — a frase é sobre o tema, ainda que de passagem, ainda que o "
+        "tema seja um de vários assuntos dela.\n"
+        "  'nao' — a frase é sobre outro assunto. Ex.: uma frase sobre "
+        "atendimento à pessoa idosa arquivada em Educação Inclusiva e EJA, ou "
+        "uma frase sobre estradas arquivada em Saúde Mental.\n\n"
+        "Seja generoso com o 'sim': o tema não precisa ser o assunto principal "
+        "da frase, basta que ela diga algo sobre ele. Só responda 'nao' quando "
+        "a frase não tiver nada a ver com o tema.\n\n"
+        "Não julgue se a proposta é boa, nem se é vaga, nem se tem meta.\n\n"
+        "Responda APENAS um objeto JSON com a chave 'resposta', valendo 'sim' "
+        "ou 'nao'.\n\n"
+        f"TEMA: {tema}" + (f" — {desc}" if desc else "") + "\n\n"
+        f"FRASE:\n{trecho}"
+    )
+    resp = _gerar(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
+    try:
+        item = _carregar_json(getattr(resp, "text", ""), f"atribuição de {tema!r}")
+    except RespostaIlegivel:
+        return None
+    if not isinstance(item, dict):
+        return None
+    r = str(item.get("resposta", "")).strip().lower()
+    return r if r in ("sim", "nao") else None
+
+
 def acao_na_citacao(trecho: str, tema: str, desc: str = "") -> str | None:
     """Pergunta só se a citação JÁ GRAVADA propõe ação no tema. Não a troca.
 
