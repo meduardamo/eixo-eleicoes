@@ -42,7 +42,7 @@ from analise_planos import (  # noqa: E402
     contexto_do_trecho,
     contexto_do_tema, contexto_do_vocabulario, posicoes_do_tema,
     extrair_paginas_url, ocorrencias_ancora, paginas_do_trecho, reanalisar_tema,
-    limpar_ruido_citacao,
+    limpar_ruido_citacao, _normalizar_glifos,
     normalizar_responsavel, tem_alvo_absoluto, tem_alvo_mensuravel,
     tema_e_item_de_enumeracao,
     verificar_trecho,
@@ -1093,28 +1093,51 @@ def limpar_trechos(sh, uf: str = "", gravar_de_verdade: bool = False) -> int:
             mudancas.append((indice + 2, novo, r.get("candidato", ""),
                              r.get("tema", "")))
 
+    # O `contexto` leva só a normalização de glifo, e não as regras de citação:
+    # ele é o recorte do plano em volta da frase, com a diagramação que o PDF
+    # tem. Tirar dele a numeração de item ou baixar a caixa de um título seria
+    # reescrever o plano; desfazer ligadura e apagar invisível, não.
+    mudancas_ctx = []
+    col_contexto = (salvas.columns.get_loc("contexto")
+                    if "contexto" in salvas.columns else None)
+    if col_contexto is not None:
+        for indice, r in alvo.iterrows():
+            antigo = str(r.get("contexto", "") or "")
+            novo = _normalizar_glifos(antigo)
+            if novo != antigo:
+                mudancas_ctx.append((indice + 2, novo, r.get("candidato", ""),
+                                     r.get("tema", "")))
+
     escopo = uf.upper() if uf else "base inteira"
-    print(f"{escopo}: {len(mudancas)} de {len(alvo)} trechos seriam limpos")
+    print(f"{escopo}: {len(mudancas)} de {len(alvo)} trechos e "
+          f"{len(mudancas_ctx)} contextos seriam limpos")
     for _, novo, candidato, tema in mudancas[:10]:
         print(f"    {candidato} · {tema}: {novo[:120]}")
     if len(mudancas) > 10:
         print(f"    ... e mais {len(mudancas) - 10}")
-    if not gravar_de_verdade or not mudancas:
-        if mudancas:
+    if not gravar_de_verdade or not (mudancas or mudancas_ctx):
+        if mudancas or mudancas_ctx:
             print("Simulação: use --limpar-trechos gravar para aplicar.")
         return 0
 
     # Converte índice de coluna em A1 sem assumir que `trecho` será sempre J.
-    n = col_trecho + 1
-    letras = ""
-    while n:
-        n, resto = divmod(n - 1, 26)
-        letras = chr(65 + resto) + letras
+    def a1(indice_coluna: int) -> str:
+        n = indice_coluna + 1
+        letras = ""
+        while n:
+            n, resto = divmod(n - 1, 26)
+            letras = chr(65 + resto) + letras
+        return letras
+
     ws = sh.worksheet(ANALISE_ABA)
-    dados = [{"range": f"{letras}{linha}", "values": [[novo]]}
+    dados = [{"range": f"{a1(col_trecho)}{linha}", "values": [[novo]]}
              for linha, novo, _, _ in mudancas]
+    if col_contexto is not None:
+        dados += [{"range": f"{a1(col_contexto)}{linha}", "values": [[novo]]}
+                  for linha, novo, _, _ in mudancas_ctx]
     ws.batch_update(dados, value_input_option="RAW")
-    print(f"Gravados {len(mudancas)} trechos limpos em {ANALISE_ABA}.")
+    print(f"Gravados {len(mudancas)} trechos e {len(mudancas_ctx)} contextos "
+          f"limpos em {ANALISE_ABA}.")
     return 0
 
 
