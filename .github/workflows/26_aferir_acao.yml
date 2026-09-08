@@ -9,6 +9,15 @@ name: 26 - Aferir repergunta em "Propõe ação"
 
 on:
   workflow_dispatch:
+    inputs:
+      amostra:
+        description: 'Sortear N "Propõe ação" da base em vez do conjunto de 20 (vazio = conjunto)'
+        required: false
+        default: ''
+      semente:
+        description: 'Semente do sorteio, para repetir a mesma amostra'
+        required: false
+        default: '7'
 
 # Mesmo grupo do 14 e do 23, que é onde a planilha de planos é escrita. Este
 # não escreve, mas baixa os mesmos PDFs e não custa nada esperar a fila.
@@ -43,4 +52,9 @@ jobs:
           PYTHONUNBUFFERED: "1"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SPREADSHEET_ID_TSE: ${{ secrets.SPREADSHEET_ID_TSE }}
+          # Amostra aleatória mede o ESTRAGO: o conjunto fechado de 20 só tem
+          # erro conhecido, então diz quanto se recupera e não quantas linhas
+          # certas a repergunta mexeria à toa.
+          AFERIR_AMOSTRA: ${{ inputs.amostra }}
+          AFERIR_SEMENTE: ${{ inputs.semente || '7' }}
         run: python -m outros.aferir_acao

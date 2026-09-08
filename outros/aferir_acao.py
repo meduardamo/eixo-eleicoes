@@ -70,6 +70,38 @@ def main() -> int:
         print(f"espelho não pôde ser ligado ({str(e)[:120]}); seguindo no TSE\n")
 
     casos = json.loads(CONJUNTO.read_text(encoding="utf-8"))
+    # Amostra ALEATÓRIA da base, em vez do conjunto fechado. O conjunto de 20 é
+    # só de erros conhecidos, então mede recuperação e não diz nada sobre o
+    # estrago: quantas das linhas CERTAS a repergunta mexeria à toa. Sem esse
+    # segundo número não dá para decidir a rodada completa, porque 90% dos
+    # "Propõe ação" da base estão certos. Aqui a amostra sai da aba, sem
+    # julgamento prévio, e o que interessa é a taxa de mudança.
+    if os.getenv("AFERIR_AMOSTRA", "").strip().isdigit():
+        import random
+        import gspread
+        from google.oauth2.service_account import Credentials
+        n = int(os.environ["AFERIR_AMOSTRA"])
+        cr = Credentials.from_service_account_file(
+            "credentials.json",
+            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"])
+        aba = gspread.authorize(cr).open_by_key(
+            os.environ["SPREADSHEET_ID_TSE"]).worksheet("analise_planos")
+        vals = aba.get_all_values()
+        cab = vals[0]
+        col = {c: cab.index(c) for c in cab if c}
+        pool = [v for v in vals[1:]
+                if v[col["nivel"]].strip() == "Propõe ação"
+                and v[col["trecho"]].strip()
+                and v[col["link"]].strip().startswith("http")]
+        random.seed(int(os.getenv("AFERIR_SEMENTE", "7")))
+        casos = [{"sq_candidato": v[col["sq_candidato"]],
+                  "candidato": v[col["candidato"]], "partido": v[col["partido"]],
+                  "uf": v[col["uf"]], "tema": v[col["tema"]],
+                  "nivel": v[col["nivel"]], "trecho": v[col["trecho"]],
+                  "link": v[col["link"]]}
+                 for v in random.sample(pool, min(n, len(pool)))]
+        print(f"amostra aleatória de {len(casos)} 'Propõe ação' "
+              f"de um universo de {len(pool)}\n")
     # Agrupa por plano: baixar e OCRar o PDF é o caro, e dois casos do mesmo
     # candidato não podem custar dois downloads.
     por_plano: dict[str, list[dict]] = {}
