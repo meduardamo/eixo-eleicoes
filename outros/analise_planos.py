@@ -1656,10 +1656,33 @@ _JANELA_TRECHO = 6      # palavras por janela na busca aproximada
 _MIN_ESCORE = 0.25      # abaixo disso o trecho não está no PDF em forma literal
 
 
+# Ligaduras tipográficas que o PDF traz num caractere só. A citação sai como
+# "proﬁssionais" e "deﬁciência" na tela do cliente, e a comparação com o plano
+# passa porque os dois lados têm a mesma ligadura. 173 citações e 375 contextos
+# na aba em 08/09/2026. Trocado à mão, e não por NFKC, que mexeria também em
+# fração, expoente e caractere de largura dupla.
+_LIGADURAS = {"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl",
+              "ﬅ": "st", "ﬆ": "st"}
+# Invisível que sobra de exportação do Google Docs (largura zero) e de fonte
+# quebrada (controle ASCII). Não muda o sentido e atrapalha a busca no texto.
+_INVISIVEL_CITACAO = re.compile(
+    "[​‌‍﻿­\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
 def _norm_busca(t: str) -> str:
     """Texto comparável: sem acento, sem caixa e sem pontuação. A quebra de
-    linha do PDF vira espaço, senão nenhuma frase de duas linhas casa."""
-    t = unicodedata.normalize("NFD", str(t or "").lower())
+    linha do PDF vira espaço, senão nenhuma frase de duas linhas casa.
+
+    Ligadura e invisível saem aqui, dos DOIS lados da comparação. Se saíssem só
+    da citação, limpar "proﬁssionais" para "profissionais" faria a frase deixar
+    de casar com o plano, que continua com a ligadura, e a citação passaria a
+    ser carimbada como "não localizado" — o rótulo que o painel usa para dizer
+    que a frase é redação do modelo."""
+    t = str(t or "")
+    for ligadura, letras in _LIGADURAS.items():
+        t = t.replace(ligadura, letras)
+    t = _INVISIVEL_CITACAO.sub("", t)
+    t = unicodedata.normalize("NFD", t.lower())
     t = "".join(c for c in t if unicodedata.category(c) != "Mn")
     return re.sub(r"[^a-z0-9]+", " ", t).strip()
 
@@ -2252,7 +2275,13 @@ def extrair_plano_diagnostico(url: str, usar_ocr: bool = True) -> dict:
 
 
 _MARCADOR_ITEM_CITACAO = r"\d{1,3}(?:\.\d{1,2})*\s*[-–—.)]"
-_BULLET_CITACAO = r"[•▪●■□◦‣∙]"
+# Os quatro últimos são bullets de Wingdings e Symbol, que a extração entrega
+# como caractere da área de uso privado do Unicode:  é o "•" do Wingdings
+# e  o "". Medido em 08/09/2026 na aba inteira: 53 citações e 242
+# contextos com esses códigos, sempre no lugar de marcador de lista. Não vale
+# limpar a área privada inteira, que também aparece no lugar de letra: aí o que
+# falta é o texto, e apagar esconderia a perda em vez de mostrá-la.
+_BULLET_CITACAO = "[•▪●■□◦‣∙⬤▶◆♦]"
 _PALAVRAS_MINUSCULAS_TITULO = {
     "a", "o", "e", "as", "os", "à", "às", "ao", "aos", "da", "de",
     "do", "das", "dos", "em", "na", "no", "nas", "nos", "por", "para",
@@ -2278,12 +2307,21 @@ def limpar_ruido_citacao(t: str) -> str:
     """Remove artefatos de lista e diagramação trazidos do PDF.
 
     A limpeza é só de apresentação: numeração no começo do item, bullet, hífen
-    separado pela quebra de linha e título inicial em caixa alta. Números no
-    corpo da frase (metas, valores e prazos) não são alterados.
+    separado pela quebra de linha, ligadura tipográfica, invisível de exportação
+    e título inicial em caixa alta. Números no corpo da frase (metas, valores e
+    prazos) não são alterados, e nada que mude o sentido é tocado: onde a fonte
+    do PDF perdeu letra, a citação continua com o buraco à mostra.
     """
-    t = re.sub(r"\s+", " ", t or "").strip()
+    t = t or ""
+    for ligadura, letras in _LIGADURAS.items():
+        t = t.replace(ligadura, letras)
+    # Hífen suave é marca de quebra de linha, não hífen da palavra: junta sem
+    # deixar traço ("susten­ tável" vira "sustentável").
+    t = re.sub(r"­\s*", "", t)
+    t = re.sub(r"\s+", " ", t).strip()
     # Hífen que a extração separou na virada de linha: "pós- graduação".
-    t = re.sub(r"([a-zà-ÿ]{2})-\s+([a-zà-ÿ])", r"\1-\2", t)
+    t = re.sub(r"([a-zà-ÿ]{2})[-‐]\s+([a-zà-ÿ])", r"\1-\2", t)
+    t = _INVISIVEL_CITACAO.sub("", t)
     # Numeração editorial no início da citação ou logo depois de um corte.
     t = re.sub(rf"^\s*{_MARCADOR_ITEM_CITACAO}\s*(?=[A-Za-zÀ-ÿ])", "", t)
     t = re.sub(
