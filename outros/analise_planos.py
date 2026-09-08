@@ -3027,6 +3027,66 @@ def reanalisar_tema(contexto: str, tema: str, desc: str = "") -> dict:
     }
 
 
+def acao_na_citacao(trecho: str, tema: str, desc: str = "") -> str | None:
+    """Pergunta só se a citação JÁ GRAVADA propõe ação no tema. Não a troca.
+
+    Existe porque `reanalisar_tema` é uma classificação nova, do zero: ela
+    recebe o entorno da âncora do tema e NÃO recebe a frase que está sendo
+    julgada, então o modelo responde olhando outro pedaço do plano e devolve
+    outra citação. Medido em 08/09/2026 numa amostra aleatória de 60 "Propõe
+    ação": ela mexeu em 6, e lendo as 6 só uma estava certa. Trocou o "Programa
+    Estadual de Pagamentos por Serviços Ambientais (PSA)" por "Não menciona" e
+    a "Auditoria dos contratos do transporte escolar" por uma frase sobre
+    privatização. Recupera 5 de 20 erros conhecidos e estraga mais do que isso.
+
+    Aqui a pergunta é estreita e a citação é intocável: o modelo lê a frase que
+    está na planilha e responde se ela diz o que será feito NESTE tema. O pior
+    que pode acontecer é errar o degrau; não pode apagar citação boa nem pôr
+    outra no lugar.
+
+    Devolve "acao", "mencao" ou None quando a resposta não dá para ler.
+    """
+    from google.genai import types
+
+    prompt = (
+        "Você é analista sênior de políticas públicas. Abaixo está UMA frase "
+        f"transcrita de um plano de governo, classificada no tema '{tema}'"
+        + (f" ({desc})" if desc else "") + ".\n\n"
+        "Responda uma única pergunta sobre ELA, e só sobre ela: a frase diz o "
+        "que será FEITO neste tema, ou apenas cita o tema?\n\n"
+        "  'acao'   — a frase traz ação, medida, programa ou meta deste tema, "
+        "ainda que sem número. Ex.: 'criar centros de reabilitação', "
+        "'auditoria dos contratos do transporte escolar', 'Programa Estadual "
+        "de Pagamentos por Serviços Ambientais'.\n"
+        "  'mencao' — a frase só nomeia o tema, faz diagnóstico, declara "
+        "intenção sem dizer o meio, é título de seção, ou cita o tema no meio "
+        "de uma proposta sobre OUTRA coisa. Ex.: 'valorizaremos a educação "
+        "profissional', 'a segurança será prioridade', 'PROGRAMA 6 — "
+        "AGROINDÚSTRIA BAIANA', 'reformar as escolas com saneamento, internet, "
+        "esporte, etc.' quando o tema é esporte.\n\n"
+        "Proposta escrita como substantivo é ação ('Criação de Estatal Eólica "
+        "do Ceará'). Frase curta pode ser ação. O que separa não é o tamanho "
+        "nem o verbo: é dizer o COMO, ou nomear o programa.\n\n"
+        "Não julgue se a proposta é boa, nem se tem meta. Responda APENAS um "
+        "objeto JSON com a chave 'resposta', valendo 'acao' ou 'mencao'.\n\n"
+        f"FRASE:\n{trecho}"
+    )
+    resp = _gerar(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
+    try:
+        item = _carregar_json(getattr(resp, "text", ""), f"aferição de {tema!r}")
+    except RespostaIlegivel:
+        return None
+    if not isinstance(item, dict):
+        return None
+    r = str(item.get("resposta", "")).strip().lower()
+    return r if r in ("acao", "mencao") else None
+
+
+
 ETAPAS_TEMPO_INTEGRAL = (
     "Educação Infantil", "Ensino Fundamental", "Ensino Médio")
 ETAPA_NAO_ESPECIFICADA = "Etapa não especificada"

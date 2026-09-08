@@ -28,7 +28,7 @@ from collections import Counter
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from outros.analise_planos import (  # noqa: E402
-    TEMAS, RespostaIlegivel, _norm_busca, contexto_do_tema, extrair_paginas_url,
+    TEMAS, acao_na_citacao, RespostaIlegivel, _norm_busca, contexto_do_tema, extrair_paginas_url,
     paginas_do_trecho, reanalisar_tema, verificar_trecho,
 )
 
@@ -123,6 +123,22 @@ def main() -> int:
 
         for c in itens:
             tema = c["tema"]
+            # Pergunta estreita: o modelo lê a citação que está na planilha e
+            # responde só se ela propõe ação, sem poder trocá-la. Ver
+            # acao_na_citacao. É o caminho que não estraga citação boa.
+            if os.getenv("AFERIR_ESTREITO", "").strip():
+                r = acao_na_citacao(c["trecho"], tema, TEMAS.get(tema, ""))
+                if r is None:
+                    conta["ilegível"] += 1
+                    print(f"{cab} · {tema}: resposta ilegível")
+                    continue
+                novo_nivel = "Propõe ação" if r == "acao" else "Menciona vagamente"
+                conta[f"{c['nivel']} -> {novo_nivel}"] += 1
+                if novo_nivel != c["nivel"]:
+                    conta["mudou"] += 1
+                    print(f"\n{cab} · {tema}")
+                    print(f"   {c['nivel']} -> {novo_nivel}: {c['trecho'][:150]}")
+                continue
             contexto = contexto_do_tema(texto, texto_norm, tema)
             origem = "âncora"
             if not contexto:

@@ -18,6 +18,11 @@ on:
         description: 'Semente do sorteio, para repetir a mesma amostra'
         required: false
         default: '7'
+      estreito:
+        description: 'Pergunta estreita: julga a citação gravada sem poder trocá-la'
+        type: boolean
+        required: false
+        default: false
 
 # Mesmo grupo do 14 e do 23, que é onde a planilha de planos é escrita. Este
 # não escreve, mas baixa os mesmos PDFs e não custa nada esperar a fila.
@@ -57,4 +62,5 @@ jobs:
           # certas a repergunta mexeria à toa.
           AFERIR_AMOSTRA: ${{ inputs.amostra }}
           AFERIR_SEMENTE: ${{ inputs.semente || '7' }}
+          AFERIR_ESTREITO: ${{ inputs.estreito == true && '1' || '' }}
         run: python -m outros.aferir_acao
