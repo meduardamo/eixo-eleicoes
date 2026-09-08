@@ -1483,7 +1483,7 @@ def _extrair_paginas(doc, usar_ocr: bool, min_chars: int) -> list[str]:
                 raw = ocr
         # Depois do OCR: a duplicata pode vir da camada de texto ou da leitura,
         # e a decisão de OCRar olha o texto como o PDF entrega.
-        partes.append(desduplicar_linhas(raw))
+        partes.append(_normalizar_glifos(desduplicar_linhas(raw)))
     
     cortadas = max(0, precisam_ocr - PAGINAS_OCR_MAX)
     return PaginasExtraidas(partes, len(partes), precisam_ocr, cortadas)
@@ -1669,20 +1669,26 @@ _INVISIVEL_CITACAO = re.compile(
     "[​‌‍﻿­\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
-def _norm_busca(t: str) -> str:
-    """Texto comparável: sem acento, sem caixa e sem pontuação. A quebra de
-    linha do PDF vira espaço, senão nenhuma frase de duas linhas casa.
+def _normalizar_glifos(t: str) -> str:
+    """Desfaz ligadura e tira invisível do texto extraído do PDF.
 
-    Ligadura e invisível saem aqui, dos DOIS lados da comparação. Se saíssem só
-    da citação, limpar "proﬁssionais" para "profissionais" faria a frase deixar
-    de casar com o plano, que continua com a ligadura, e a citação passaria a
-    ser carimbada como "não localizado" — o rótulo que o painel usa para dizer
-    que a frase é redação do modelo."""
-    t = str(t or "")
+    Fica aqui, na extração, e não na citação: o modelo copia deste texto, o
+    `contexto` é recortado dele e a conferência compara contra ele. Limpar só a
+    citação faria "proﬁssionais" virar "profissionais" de um lado e continuar
+    ligado do outro, e a frase passaria a ser carimbada "não localizado", que é
+    o rótulo de citação inventada pelo modelo.
+
+    Também não vai para `_norm_busca`, que `contexto_do_trecho` usa como se
+    preservasse o comprimento para voltar do texto normalizado ao original.
+    """
     for ligadura, letras in _LIGADURAS.items():
         t = t.replace(ligadura, letras)
-    t = _INVISIVEL_CITACAO.sub("", t)
-    t = unicodedata.normalize("NFD", t.lower())
+    return _INVISIVEL_CITACAO.sub("", t)
+
+def _norm_busca(t: str) -> str:
+    """Texto comparável: sem acento, sem caixa e sem pontuação. A quebra de
+    linha do PDF vira espaço, senão nenhuma frase de duas linhas casa."""
+    t = unicodedata.normalize("NFD", str(t or "").lower())
     t = "".join(c for c in t if unicodedata.category(c) != "Mn")
     return re.sub(r"[^a-z0-9]+", " ", t).strip()
 
