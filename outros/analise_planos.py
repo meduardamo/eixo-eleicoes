@@ -1707,6 +1707,14 @@ _BULLETS_AREA_PRIVADA = "\uf0b7\uf06c\uf0a7\uf076\uf0d8"
 # um nem outro tem uso em plano de governo, e os três aparecem sempre onde
 # deveria haver um bullet.
 _MARCADORES_ESTRANHOS = "∪☼✓"
+# O escape do glifo chegando como texto, em vez do caractere. Medido em
+# 08/09/2026: três citações trazem "_222a" literal, cinco caracteres ASCII, no
+# lugar do ∪ que a diagramação usava como bullet ("audiências públicas digitais
+# e presenciais; _222a delegacias digitais"). Exige o prefixo \ ou _ ou u: sem
+# ele, "2022" solto casaria, e 2022 é ano em toda parte destes planos.
+_ESCAPE_GLIFO = re.compile(
+    r"(?<![A-Za-z0-9])[\\_]u?(?:222a|f0b7|f06c|f0a7|f076|f0d8|2022|25cf|25aa"
+    r"|2b24|2611|263c|2713|25e6)(?![A-Za-z0-9])", re.I)
 
 # Marca combinante de sobreposição (traço, barra). O português não usa nenhuma
 # delas: acento agudo, grave, circunflexo, til, trema e cedilha são U+0300 a
@@ -1741,6 +1749,7 @@ def _normalizar_glifos(t: str) -> str:
     # regras de lista de limpar_ruido_citacao passam a alcançá-lo.
     for glifo in _BULLETS_AREA_PRIVADA + _MARCADORES_ESTRANHOS:
         t = t.replace(glifo, "•")
+    t = _ESCAPE_GLIFO.sub("•", t)
     return _INVISIVEL_CITACAO.sub("", t)
 
 def _norm_busca(t: str) -> str:
@@ -2385,9 +2394,11 @@ def limpar_ruido_citacao(t: str) -> str:
     prazos) não são alterados, e nada que mude o sentido é tocado: onde a fonte
     do PDF perdeu letra, a citação continua com o buraco à mostra.
     """
-    t = t or ""
-    for ligadura, letras in _LIGADURAS.items():
-        t = t.replace(ligadura, letras)
+    # A mesma normalização de glifo do texto extraído, para a citação não ficar
+    # com bullet de fonte símbolo, escape mangled ou ligadura que o plano já não
+    # tem mais. Sem isto os dois lados divergem e a citação deixa de casar com o
+    # plano na hora de calcular página, verificação e entorno.
+    t = _normalizar_glifos(t or "")
     # Hífen suave é marca de quebra de linha, não hífen da palavra: junta sem
     # deixar traço ("susten­ tável" vira "sustentável").
     t = re.sub(r"­\s*", "", t)
