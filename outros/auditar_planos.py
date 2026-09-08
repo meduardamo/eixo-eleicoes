@@ -40,8 +40,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
 from analise_planos import (  # noqa: E402
     NIVEIS, NIVEIS_LEGADO, PlanoIndisponivel,
-    _norm_busca, citacao_sustenta, extrair_paginas_url, normalizar_responsavel,
-    ocorrencias_ancora, paginas_do_trecho, posicoes_do_tema, verificar_trecho,
+    _norm_busca, citacao_sustenta, contexto_do_trecho, extrair_paginas_url,
+    normalizar_responsavel, ocorrencias_ancora, paginas_do_trecho,
+    posicoes_do_tema, verificar_trecho,
 )
 from processar_planos import (  # noqa: E402
     ANALISE_ABA, LIMIAR_VOCABULARIO, cliente, conferir_classificacao,
@@ -220,6 +221,14 @@ def main() -> int:
                 "pagina": ", ".join(str(x) for x in
                                     paginas_do_trecho(paginas_norm, novo["trecho"])),
                 "verificacao": verificar_trecho(paginas_norm, novo["trecho"]),
+                # `contexto` faltava aqui, e é o entorno da citação. Quando a
+                # guarda trocava ou apagava a citação, o entorno da anterior
+                # ficava na célula: em 08/09/2026, 20 linhas rebaixadas para
+                # "Não menciona" apareceram no painel sem citação nenhuma e com
+                # um parágrafo do plano embaixo, como se fosse evidência de uma
+                # ausência. Trecho vazio agora zera o entorno junto.
+                "contexto": contexto_do_trecho(paginas, paginas_norm,
+                                               novo["trecho"]),
                 "analisado_em": agora,
             }
             for nome, valor in campos.items():
