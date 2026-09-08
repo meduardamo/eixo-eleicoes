@@ -1467,19 +1467,48 @@ def _extrair_paginas(doc, usar_ocr: bool, min_chars: int) -> list[str]:
     # deles trava por conta.
     with _LOCK_MUPDF:
         total_paginas = len(doc)
+    # Primeira passagem: só o texto como o PDF entrega. A decisão de OCR de uma
+    # página passou a depender do documento inteiro, então ela vem depois.
+    brutos = []
     for i in range(total_paginas):
         with _LOCK_MUPDF:
             page = doc.load_page(i)
-        raw = _texto_da_pagina(page)
+        brutos.append(_texto_da_pagina(page))
+    # Fonte que perde letra é defeito do ARQUIVO, não da página: quando o
+    # documento acumula marcas de sobreposição, qualquer página que tenha uma
+    # já está com letra faltando. No plano do Allyson (RN), 24 das 44 páginas
+    # passam de três ocorrências e outras 8 ficam em uma ou duas — pelo corte
+    # por página, essas oito guardariam palavra quebrada.
+    fonte_quebrada = (sum(len(_OVERLAY_COMBINANTE.findall(t)) for t in brutos)
+                      >= OVERLAY_POR_DOCUMENTO)
+    for i, raw in enumerate(brutos):
         # OCR quando a página está sem texto OU quando a camada de texto veio
         # embaralhada (codificação de fonte quebrada).
-        precisa = len(raw.strip()) < min_chars or _frac_invalido(raw) > 0.03
+        # A terceira condição pega a fonte que perde LETRA sem sujar a página:
+        # a marca combinante ocupa o lugar do caractere e o _frac_invalido fica
+        # em 0,7%, longe do corte de 3%. O texto sai legível e errado, que é
+        # pior do que sair ilegível.
+        precisa = (len(raw.strip()) < min_chars
+                   or _frac_invalido(raw) > 0.03
+                   or (fonte_quebrada and _OVERLAY_COMBINANTE.search(raw)))
         if precisa:
             precisam_ocr += 1
         if usar_ocr and precisa and ocradas < PAGINAS_OCR_MAX:
+            with _LOCK_MUPDF:
+                page = doc.load_page(i)
             ocr = _ocr_pagina(page)
             ocradas += 1
-            if len(ocr.strip()) > len(raw.strip()):
+            # Página de fonte quebrada não pode ser decidida por tamanho. A
+            # camada de texto dela está quase inteira, só sem uma letra, e o
+            # OCR quase sempre sai um pouco menor: na página 18 do plano do
+            # Allyson são 2.711 caracteres com 19 marcas contra 2.676 sem
+            # nenhuma, e pela regra do maior a versão errada ganhava. Vale a
+            # troca quando o OCR desfaz as marcas sem perder conteúdo.
+            if fonte_quebrada and _OVERLAY_COMBINANTE.search(raw):
+                if (not _OVERLAY_COMBINANTE.search(ocr)
+                        and len(ocr.strip()) >= 0.9 * len(raw.strip())):
+                    raw = ocr
+            elif len(ocr.strip()) > len(raw.strip()):
                 raw = ocr
         # Depois do OCR: a duplicata pode vir da camada de texto ou da leitura,
         # e a decisão de OCRar olha o texto como o PDF entrega.
@@ -1667,6 +1696,22 @@ _LIGADURAS = {"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl",
 # quebrada (controle ASCII). Não muda o sentido e atrapalha a busca no texto.
 _INVISIVEL_CITACAO = re.compile(
     "[​‌‍﻿­\x00-\x08\x0b-\x1f\x7f-\x9f]")
+# Bullets de Wingdings e Symbol, que a extração entrega na área de uso privado
+# do Unicode. Fora da fonte original não têm desenho nenhum.
+_BULLETS_AREA_PRIVADA = "\uf0b7\uf06c\uf0a7\uf076"
+
+# Marca combinante de sobreposição (traço, barra). O português não usa nenhuma
+# delas: acento agudo, grave, circunflexo, til, trema e cedilha são U+0300 a
+# U+0327. Quando aparecem, é fonte com mapa quebrado pondo a marca no lugar de
+# uma letra. Medido em 08/09/2026: o plano do Allyson (RN) tem 414 ocorrências,
+# todas onde deveria haver "r" ("No̵ te" por "Norte", "mat̵ ícula" por
+# "matrícula"), e nenhum outro plano da base tem uma sequer.
+_OVERLAY_COMBINANTE = re.compile("[\u0334-\u0338]")
+# A partir de quantas no DOCUMENTO a camada de texto é considerada quebrada.
+# Três, e não uma: a marca pode aparecer solta num símbolo sem que o arquivo
+# esteja perdido. Medido em 26 planos (25 sorteados e o do Allyson): só o dele
+# dispara, e nos outros 25 não há uma única ocorrência.
+OVERLAY_POR_DOCUMENTO = 3
 
 
 def _normalizar_glifos(t: str) -> str:
@@ -1683,6 +1728,11 @@ def _normalizar_glifos(t: str) -> str:
     """
     for ligadura, letras in _LIGADURAS.items():
         t = t.replace(ligadura, letras)
+    # O bullet de Wingdings não tem desenho fora da fonte dele: na tela do
+    # painel sai como caixinha vazia. Vira "•", que é o que ele é, e aí as
+    # regras de lista de limpar_ruido_citacao passam a alcançá-lo.
+    for glifo in _BULLETS_AREA_PRIVADA:
+        t = t.replace(glifo, "•")
     return _INVISIVEL_CITACAO.sub("", t)
 
 def _norm_busca(t: str) -> str:
