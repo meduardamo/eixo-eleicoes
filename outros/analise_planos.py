@@ -1350,15 +1350,24 @@ def _decodificar_linha(linha: str) -> str:
 def _texto_da_pagina(page) -> str:
     """Texto de uma página, tentando os modos do PyMuPDF em ordem de qualidade.
     Uma página quebrada não pode derrubar o documento inteiro."""
-    for modo in ("text", "blocks"):
+    for modo in ("text", "blocks", "words"):
         try:
             with _LOCK_MUPDF:
-                bruto = page.get_text(modo)
+                if modo == "words":
+                    bruto = " ".join(w[4] for w in page.get_text("words"))
+                else:
+                    bruto = page.get_text(modo)
         except Exception:
             continue
         if modo == "blocks":
             bruto = " ".join(b[4] for b in (bruto or []) if len(b) > 4 and isinstance(b[4], str))
         if (bruto or "").strip():
+            if modo == "text":
+                import re
+                texto_limpo = re.sub(r'https?://\S+|www\.\S+', '', bruto)
+                texto_limpo = re.sub(r'[-/|,]', ' ', texto_limpo)
+                if any(len(p) > 40 for p in texto_limpo.split()):
+                    continue  # Abandona "text" e tenta "blocks" ou "words" (que força os espaços)
             return "\n".join(_decodificar_linha(linha) for linha in bruto.splitlines())
     return ""
 
