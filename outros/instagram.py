@@ -90,24 +90,17 @@ CABECALHO_SHEETS = [
 
 ATOR_INSTAGRAM_PERFIS_LOWCOST = os.getenv("ATOR_INSTAGRAM_PERFIS_LOWCOST", "sones/instagram-posts-scraper-lowcost")
 POSTS_POR_PERFIL_LOWCOST = int(os.getenv("POSTS_POR_PERFIL_LOWCOST", "12"))
-# Grupo de proxy do Apify passado explicitamente ao ator. Sem isso o ator escolhe
-# sozinho: o build de 02/08/2026 pediu o grupo residencial, avisou que caiu para
-# datacenter e mesmo assim estourou no _checkAccess nos 79 perfis. O grupo datacenter
-# desta conta chama BUYPROXIES94952 (5 IPs, EUA); SHADER, o nome usado como padrão em
-# exemplo do Apify, não existe aqui. Vazio devolve a escolha para o ator.
-GRUPO_PROXY_APIFY = os.getenv("GRUPO_PROXY_APIFY", "BUYPROXIES94952")
-# Versao fixa do ator. O autor publicou a 1.5.5 em 02/08/2026 as 17:25 UTC, 35 min
-# antes da rodada daquele dia, e ela estoura no _checkAccess do proxy antes de
-# buscar qualquer post, mesmo com o grupo passado explicitamente. Fixamos entao a
-# 1.5.3, a ultima que coletou (01/08).
-#
-# Em 06/08/2026 as 12:30 UTC o autor mexeu no ator de novo: apagou a 1.5.3 e a
-# 1.5.5 e apontou a tag latest de volta para a 1.5.2, de 21/07. So restaram a
-# 1.5.1 e a 1.5.2, entao o pin passou a nao existir e os 79 perfis falharam com
-# "Build with number 1.5.3 was not found". A 1.5.2 e a mais nova que existe, e e
-# anterior a que quebrou. Vazio volta a seguir a tag "latest", hoje a propria
-# 1.5.2, mas seguir a tag foi o que trouxe a 1.5.5 quebrada sem aviso.
-BUILD_ATOR_LOWCOST = os.getenv("BUILD_ATOR_LOWCOST", "1.5.2")
+# Grupo de proxy do Apify passado explicitamente ao ator. No v1.5 (04/09/2026),
+# o autor reescreveu o gerenciamento de proxy do ator para usar Apify Proxy
+# automático (residencial para plano free, com fallback automático). Passar
+# BUYPROXIES94952 causava "empty preferred proxy access-check error". Vazio
+# ativa {"useApifyProxy": True}, a configuração padrão e testada do ator.
+GRUPO_PROXY_APIFY = os.getenv("GRUPO_PROXY_APIFY", "")
+# Versão fixa do ator. Em 04/09/2026 o autor publicou a v1.5 (tag latest)
+# corrigindo as mudanças que o Instagram fez no endpoint de feed e removeu
+# as builds antigas (a 1.5.2 foi removida e gerava "Build with number 1.5.2
+# was not found" em cada um dos perfis). Vazio usa a tag "latest" diretamente.
+BUILD_ATOR_LOWCOST = os.getenv("BUILD_ATOR_LOWCOST", "")
 # Fração de perfis que pode falhar na coleta antes da rodada inteira ser considerada
 # quebrada (e sair com código != 0, para o Actions marcar vermelho).
 LIMIAR_FALHA_PERFIS = float(os.getenv("LIMIAR_FALHA_PERFIS", "0.2"))
@@ -196,7 +189,7 @@ MARCA_MIDIA_EXPIRADA = "(mídia expirada, não analisado)"
 # para cerca de um terço. O áudio (32 tokens/s) não muda, então a transcrição
 # continua igual; o que piora é o detalhe visual do frame.
 RESOLUCAO_MIDIA_BAIXA = os.getenv("RESOLUCAO_MIDIA_BAIXA", "").strip().lower() in ("1", "true", "sim")
-# Tarifas do gemini-3.6-flash (ai.google.dev/gemini-api/docs/pricing, 14/08/2026),
+# Tarifas do gemini-3.7-flash (ai.google.dev/gemini-api/docs/pricing, 14/08/2026),
 # por 1M de tokens. Servem só para a estimativa impressa no fim da rodada. Subiram
 # junto com a troca de modelo: no 2.5-flash eram 0.30 e 2.50, ou seja, a entrada
 # ficou 2,5x mais cara, e entrada é quase toda a conta quando tem vídeo.
@@ -340,9 +333,39 @@ def carregar_credenciais_google(caminho: str = "credentials.json") -> Credential
     return Credentials.from_service_account_file(caminho_arquivo, scopes=scopes)
 
 
-def gs_client_from_file(caminho: str = "credentials.json") -> gspread.Client:
-    """Autentica no Google Sheets usando a conta de serviço em credentials.json."""
-    return gspread.authorize(carregar_credenciais_google(caminho))
+def gs_client_from_file(caminho: str = "credentials.json", tentativas: int = 5) -> gspread.Client:
+    """Autentica no Google Sheets usando a conta de serviço em credentials.json, com retry em falhas transitórias."""
+    from requests.adapters import HTTPAdapter
+    from urllib3.util import Retry
+
+    gc = gspread.authorize(carregar_credenciais_google(caminho))
+    retry = Retry(
+        total=tentativas,
+        backoff_factor=1.5,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=None,
+        raise_on_status=False,
+    )
+    sessao = getattr(getattr(gc, "http_client", None), "session", None) or getattr(gc, "session", None)
+    if sessao is not None:
+        sessao.mount("https://", HTTPAdapter(max_retries=retry))
+    return gc
+
+
+def abrir_planilha_com_retry(gc: gspread.Client, spreadsheet_id: str, tentativas: int = 5) -> gspread.Spreadsheet:
+    """Abre a planilha com retentativa exponencial em caso de erro 503/500/timeout da API."""
+    ultimo_erro = None
+    for tentativa in range(1, tentativas + 1):
+        try:
+            return gc.open_by_key(spreadsheet_id)
+        except Exception as e:
+            ultimo_erro = e
+            if tentativa == tentativas:
+                raise
+            espera = 2 ** tentativa
+            print(f"  Aviso ao abrir planilha {spreadsheet_id}: {e}. Tentando novamente em {espera}s ({tentativa}/{tentativas})...", flush=True)
+            time.sleep(espera)
+    raise ultimo_erro
 
 
 def obter_aba(sh: gspread.Spreadsheet, nome_aba: str, cabecalho: list[str]) -> gspread.Worksheet:
@@ -417,7 +440,7 @@ def ordenar_por_data(aba: gspread.Worksheet) -> None:
 def salvar_no_sheets(url: str, item: dict, eh_video: bool, resultado: str) -> None:
     """Adiciona uma linha com o resultado da análise na planilha do Google Sheets."""
     gc = gs_client_from_file()
-    sh = gc.open_by_key(SPREADSHEET_ID)
+    sh = abrir_planilha_com_retry(gc, SPREADSHEET_ID)
     aba = obter_aba(sh, NOME_ABA_SHEETS, CABECALHO_SHEETS)
     secoes = dividir_resultado(resultado)
 
@@ -586,6 +609,8 @@ def coletar_itens_perfil_lowcost(
         run_input["newerThan"] = apenas_apos
     if GRUPO_PROXY_APIFY:
         run_input["proxy"] = {"useApifyProxy": True, "apifyProxyGroups": [GRUPO_PROXY_APIFY]}
+    else:
+        run_input["proxy"] = {"useApifyProxy": True}
 
     ator = client.actor(ATOR_INSTAGRAM_PERFIS_LOWCOST)
     if BUILD_ATOR_LOWCOST:
@@ -627,7 +652,7 @@ def obter_perfis_instagram(
         spreadsheetId=spreadsheet_id,
         ranges=[f"'{aba}'!{coluna}2:{coluna}"],
         fields="sheets.data.rowData.values(formattedValue,hyperlink)",
-    ).execute()
+    ).execute(num_retries=3)
 
     linhas = resp["sheets"][0]["data"][0].get("rowData", [])
     perfis = []
@@ -762,7 +787,7 @@ def rodar_automacao_perfis(data_minima: str, limite_perfis: int | None = None, p
     client = ApifyClient(apify_token)
 
     gc = gs_client_from_file()
-    sh_resultados = gc.open_by_key(SPREADSHEET_ID)
+    sh_resultados = abrir_planilha_com_retry(gc, SPREADSHEET_ID)
     aba_resultados = obter_aba(sh_resultados, ABA_RESULTADOS_PERFIS, CABECALHO_RESULTADOS_PERFIS)
     garantir_colunas(aba_resultados, CABECALHO_RESULTADOS_PERFIS)
     ids_processados = obter_ids_processados(aba_resultados)
@@ -957,7 +982,8 @@ def rodar_analise_pendentes(limite: int | None = None) -> None:
     gem = genai.Client(api_key=gemini_api_key)
 
     gc = gs_client_from_file()
-    aba = obter_aba(gc.open_by_key(SPREADSHEET_ID), ABA_RESULTADOS_PERFIS, CABECALHO_RESULTADOS_PERFIS)
+    sh_resultados = abrir_planilha_com_retry(gc, SPREADSHEET_ID)
+    aba = obter_aba(sh_resultados, ABA_RESULTADOS_PERFIS, CABECALHO_RESULTADOS_PERFIS)
     garantir_colunas(aba, CABECALHO_RESULTADOS_PERFIS)
 
     pendentes = linhas_pendentes(aba)
@@ -1155,7 +1181,7 @@ def analisar_com_gemini(gem: genai.Client, eh_video: bool, caminho: str, legenda
         conteudo = [types.Part.from_bytes(data=dados, mime_type="image/jpeg"), prompt]
 
     resp = com_retry(
-        lambda: gem.models.generate_content(model="gemini-3.6-flash", contents=conteudo, config=config),
+        lambda: gem.models.generate_content(model="gemini-3.7-flash", contents=conteudo, config=config),
         f"análise de {os.path.basename(caminho)}",
     )
     uso = resp.usage_metadata
