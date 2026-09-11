@@ -184,7 +184,7 @@ EIXOS = {
     # então a separação está escrita nas duas descrições, como manda a regra que
     # Ensino Superior e CT&I já tinham quebrado.
     "Conectividade e Infraestrutura Digital": {
-        "Conectividade Escolar": "internet e rede nas escolas: universalização do acesso, velocidade e banda por aluno, wi-fi na sala de aula, dispositivos para estudantes, inclusão digital escolar e Estratégia Nacional de Escolas Conectadas — o que se faz pedagogicamente com essas ferramentas é o tema Tecnologia na Educação",
+        "Conectividade Escolar": "internet e rede nas escolas: universalização do acesso, velocidade e banda por aluno, wi-fi na sala de aula, dispositivos para estudantes, inclusão digital escolar e Estratégia Nacional de Escolas Conectadas — o que se faz pedagogicamente com essas ferramentas é o tema Tecnologia na Educação, e a internet e a inclusão digital da população fora da escola são o tema Inclusão Digital",
         "Tecnologia na Educação": "uso pedagógico da tecnologia na escola: plataforma de ensino e aprendizagem, inteligência artificial em sala, ensino híbrido, letramento digital, formação do professor para tecnologia e regra de uso de celular — a rede, o acesso à internet e o dispositivo em si são o tema Conectividade Escolar, e o sistema de gestão escolar e os dados da rede são o tema Dados e Sistemas Educacionais",
         "Financiamento e Governança da Conectividade": "financiamento e governança da conectividade escolar: FUST e seu Conselho Gestor, editais e seleções públicas operadas pelo BNDES, contratação de serviço de internet pelas redes de ensino e custeio do link — o uso pedagógico é o tema Tecnologia na Educação",
         # Entrou em 01/09/2026 a pedido da MegaEdu, a partir do guia de
@@ -197,8 +197,16 @@ EIXOS = {
         # "sistema de gestão escolar integrado" ia para Tecnologia na Educação,
         # que é uso com o estudante, ou para Governo Digital, que é atendimento
         # ao cidadão.
-        "Dados e Sistemas Educacionais": "dados e sistemas da gestão educacional: sistema de gestão escolar ou educacional (SIGED, SGE), matrícula e diário de classe digitais, boletim e carteirinha estudantil digitais, identificador único do estudante e matrícula única entre redes, acompanhamento da trajetória do estudante, painel de indicadores da rede, busca ativa e alerta de evasão apoiados em dados, Censo Escolar e EducaCenso, INDE e EducaDados, Conjunto Mínimo de Dados da Educação Básica e interoperabilidade entre as bases da educação — o uso pedagógico da tecnologia com o estudante é o tema Tecnologia na Educação, a rede e o dispositivo em si são Conectividade Escolar, e a interoperabilidade fora da educação é Infraestrutura Pública Digital",
-        "Infraestrutura Pública Digital": "infraestrutura pública digital como bem público: identidade digital, pagamento instantâneo, cadastros e dados interoperáveis, interoperabilidade entre sistemas e bases públicas, padrões de troca de dados, redes e data centers públicos — a digitalização do atendimento ao cidadão é o tema Governo Digital, a proteção de dados e a LGPD são o tema Regulação de Plataformas Digitais, os dois no eixo de Gestão pública e transparência, e os sistemas e dados da educação são o tema Dados e Sistemas Educacionais",
+        "Dados e Sistemas Educacionais": "dados e sistemas da gestão educacional: sistema de gestão escolar ou educacional (SIGED, SGE), matrícula e diário de classe digitais, boletim e carteirinha estudantil digitais, identificador único do estudante e matrícula única entre redes, acompanhamento da trajetória do estudante, painel de indicadores da rede, busca ativa e alerta de evasão apoiados em dados, Censo Escolar e EducaCenso, INDE e EducaDados, Conjunto Mínimo de Dados da Educação Básica, Sistema Nacional de Educação (SNE) e suas comissões intergestores, e interoperabilidade entre as bases da educação — o uso pedagógico da tecnologia com o estudante é o tema Tecnologia na Educação, a rede e o dispositivo em si são Conectividade Escolar, e a interoperabilidade fora da educação é Infraestrutura Pública Digital",
+        "Infraestrutura Pública Digital": "infraestrutura pública digital como bem público: identidade digital, pagamento instantâneo, cadastros e dados interoperáveis, interoperabilidade entre sistemas e bases públicas, padrões de troca de dados, data centers e nuvem públicos — a digitalização do atendimento ao cidadão é o tema Governo Digital, a proteção de dados, a LGPD e a segurança cibernética são o tema Regulação de Plataformas Digitais, os dois no eixo de Gestão pública e transparência, os sistemas e dados da educação são o tema Dados e Sistemas Educacionais, e a rede que leva internet à população é o tema Inclusão Digital",
+        # Entrou em 11/09/2026 a pedido da MegaEdu, do bloco "Inclusão Digital"
+        # do guia de palavras-chave deles. Conectividade Escolar só aceita a
+        # internet da escola, e a da população não tinha tema: "Conecta MA",
+        # de Orleans Brandão (MDB/MA), levar internet "para o povo maranhense em
+        # áreas urbanas e rurais", ficava "Não menciona". A rede pública de
+        # internet (infovia, fibra) saiu de Infraestrutura Pública Digital, que
+        # ficou com identidade, pagamento e dados, e veio para cá.
+        "Inclusão Digital": "internet e inclusão digital da população fora da escola: expansão de rede, fibra óptica e sinal de celular para municípios, zona rural, comunidades isoladas e periferias, infovias e redes públicas de internet, pontos públicos de acesso e wi-fi livre, programas como Wi-Fi Brasil e Norte Conectado, e letramento, capacitação e acessibilidade digital da população — a internet, a rede e o dispositivo dentro da escola são o tema Conectividade Escolar, o letramento digital do estudante é o tema Tecnologia na Educação, e a digitalização do atendimento ao cidadão é o tema Governo Digital, no eixo de Gestão pública e transparência",
     },
     "Saúde": {
         "Atenção Primária": "atenção primária, saúde da família, UBS, agentes comunitários de saúde — pré-natal, aleitamento, puericultura e vacinação da criança pequena são o tema Saúde Materno-Infantil, no eixo de Primeira Infância",
@@ -248,8 +256,8 @@ EIXOS = {
     "Gestão pública e transparência": {
         "Eficiência e Gasto Público": "reforma administrativa, corte de gasto, teto de despesa, equilíbrio fiscal, eficiência orçamentária e gestão de emendas parlamentares/impositivas",
         "Transparência e Combate à Corrupção": "transparência, controle interno, dados abertos, combate à corrupção, integridade pública, fiscalização de emendas parlamentares e orçamento secreto",
-        "Regulação de Plataformas Digitais": "regulação de plataformas digitais e redes sociais, moderação de conteúdo, combate à desinformação e fake news, soberania digital, proteção de dados e inteligência artificial — a infraestrutura digital construída como bem público é o tema Infraestrutura Pública Digital, no eixo de Conectividade e Infraestrutura Digital",
-        "Governo Digital": "digitalização de serviços, atendimento ao cidadão, governo eletrônico — a infraestrutura digital de base (identidade digital, pagamento instantâneo, cadastros interoperáveis) é o tema Infraestrutura Pública Digital e os sistemas e dados da educação são o tema Dados e Sistemas Educacionais, os dois no eixo de Conectividade e Infraestrutura Digital",
+        "Regulação de Plataformas Digitais": "regulação de plataformas digitais e redes sociais, moderação de conteúdo, combate à desinformação e fake news, soberania digital, proteção de dados, segurança cibernética e inteligência artificial — a infraestrutura digital construída como bem público é o tema Infraestrutura Pública Digital, no eixo de Conectividade e Infraestrutura Digital",
+        "Governo Digital": "digitalização de serviços, atendimento ao cidadão, governo eletrônico — a infraestrutura digital de base (identidade digital, pagamento instantâneo, cadastros interoperáveis) é o tema Infraestrutura Pública Digital, os sistemas e dados da educação são o tema Dados e Sistemas Educacionais e o acesso da população à internet é o tema Inclusão Digital, os três no eixo de Conectividade e Infraestrutura Digital",
         "Servidores e Municípios": "servidor público estadual em geral, carreira e concurso, e a relação do estado com os municípios (consórcio, repasse, apoio técnico) — professor e demais profissionais da educação são o tema Valorização Docente, no eixo de Educação",
     },
     "Direitos humanos e igualdade": {
@@ -354,11 +362,13 @@ TERMOS_ANCORA = {
                                         "plano pela primeira infancia", "orcamento crianca",
                                         "comite intersetorial"],
     "Conectividade Escolar": ["conectividade*", "internet nas escolas", "escolas conectadas",
-                              "banda larga", "wi fi", "wifi", "inclusao digital",
-                              "computador", "tablet"],
+                              "escola conectada", "banda larga", "wi fi", "wifi",
+                              "inclusao digital escolar", "computador", "tablet"],
     "Tecnologia na Educação": ["tecnologia na educacao", "tecnologia educacional",
                                "laboratorio de informatica", "plataforma de ensino",
-                               "ensino hibrido", "letramento digital", "transformacao digital"],
+                               "ensino hibrido", "letramento digital",
+                               "transformacao digital na educacao",
+                               "transformacao digital da educacao"],
     "Financiamento e Governança da Conectividade": ["fust", "conselho gestor do fust",
                                                     "universalizacao dos servicos de telecomunicacoes",
                                                     "contratacao de internet"],
@@ -374,9 +384,15 @@ TERMOS_ANCORA = {
                                      "identificador unico do estudante",
                                      "censo escolar", "educacenso", "educadados",
                                      "conjunto minimo de dados",
-                                     "dados educacionais", "alerta de evasao"],
+                                     "dados educacionais", "alerta de evasao",
+                                     "sistema nacional de educacao"],
     "Infraestrutura Pública Digital": ["infraestrutura publica digital", "identidade digital",
                                        "bens publicos digitais", "pagamento instantaneo"],
+    # "inclusao digital" saiu de Conectividade Escolar em 11/09/2026: sozinha, ela
+    # quase sempre é a da população ("inclusão digital para o povo maranhense").
+    "Inclusão Digital": ["inclusao digital", "exclusao digital", "inclusao tecnologica",
+                         "infovia*", "wi fi livre", "wifi livre", "internet gratuita",
+                         "wi fi brasil", "norte conectado", "pontos de acesso a internet"],
     "Aborto Legal e Interrupção da Gestação": ["aborto*", "interrupcao da gestacao",
                                                "interrupcao legal", "misoprostol", "cytotec",
                                                "citotec", "mifepristona", "assistolia fetal",
@@ -453,7 +469,8 @@ TERMOS_ANCORA = {
                                             "controle interno", "orcamento secreto", "emendas parlamentares"],
     "Regulação de Plataformas Digitais": ["redes sociais", "plataformas digitais", "desinformacao",
                                           "fake news", "soberania digital", "moderacao de conteudo",
-                                          "big techs", "inteligencia artificial"],
+                                          "big techs", "inteligencia artificial",
+                                          "seguranca cibernetica", "ciberseguranca"],
     "Governo Digital": ["governo digital", "digitalizacao*", "servico digital",
                         "governo eletronico", "atendimento ao cidadao"],
     "Servidores e Municípios": ["servidor publico", "concurso publico", "plano de carreira",
@@ -648,8 +665,8 @@ TERMOS_AUSENCIA = {
         "conectividade*", "internet nas escolas", "escolas conectadas",
         "internet", "banda larga", "wi fi", "wifi", "inclusao digital",
         "acesso a internet", "computador*", "tablet*", "chromebook",
-        "dispositivo*", "fibra otica", "sinal de internet",
-        "universalizacao do acesso", "exclusao digital",
+        "dispositivo*", "fibra otica", "fibra optica", "sinal de internet",
+        "universalizacao do acesso", "exclusao digital", "escola conectada",
     ],
     "Tecnologia na Educação": [
         "tecnologia na educacao", "tecnologia educacional",
@@ -658,6 +675,7 @@ TERMOS_AUSENCIA = {
         "inteligencia artificial na educacao", "recursos educacionais digitais",
         "celular na escola", "proibicao de celular", "ensino a distancia",
         "educacao a distancia", "robotica", "pensamento computacional",
+        "educacao digital", "tecnologia na escola", "tecnologias na escola",
     ],
     "Financiamento e Governança da Conectividade": [
         "fust", "conselho gestor do fust",
@@ -677,12 +695,27 @@ TERMOS_AUSENCIA = {
         "dados educacionais", "dados da educacao", "alerta de evasao",
         "monitoramento de evasao", "busca ativa escolar",
         "painel de indicadores", "painel de gestao",
+        "sistema nacional de educacao", "sne", "sus da educacao",
+        "comissao intergestores",
     ],
     "Infraestrutura Pública Digital": [
         "infraestrutura publica digital", "identidade digital",
         "bens publicos digitais", "interoperabilidade", "data center",
         "nuvem publica", "pix", "pagamento instantaneo", "cadastro base",
         "base de dados publica", "soberania digital", "software publico",
+        "infraestrutura de dados", "integracao de dados", "integracao de sistemas",
+        "governanca de dados", "carteira de identidade nacional",
+    ],
+    "Inclusão Digital": [
+        "inclusao digital", "exclusao digital", "inclusao tecnologica", "infovia*",
+        "acesso a internet", "internet gratuita", "internet de qualidade",
+        "banda larga", "fibra optica", "fibra otica", "sinal de internet",
+        "sinal de celular", "telefonia movel", "cobertura de internet", "4g", "5g",
+        "wi fi livre", "wifi livre", "wi fi brasil", "norte conectado",
+        "pontos de acesso", "telecentro*", "letramento digital",
+        "alfabetizacao digital", "capacitacao digital", "competencias digitais",
+        "acessibilidade digital", "autonomia digital", "cidadania digital",
+        "infraestrutura digital", "areas remotas", "comunidades isoladas",
     ],
 
     # -------------------------------------------------------------- Saúde
@@ -897,12 +930,16 @@ TERMOS_AUSENCIA = {
         "moderacao de conteudo", "big tech", "big techs", "marco civil da internet",
         "inteligencia artificial", "liberdade de expressao nas redes", "discurso de odio",
         "algoritmos", "crimes virtuais", "seguranca digital", "dados pessoais", "lgpd",
+        "seguranca cibernetica", "ciberseguranca", "ataques ciberneticos",
+        "ataque cibernetico", "incidentes ciberneticos",
     ],
     "Governo Digital": [
         "governo digital", "governo eletronico", "digitalizacao*",
         "servico digital", "servicos online", "atendimento ao cidadao",
         "aplicativo*", "plataforma digital", "gov br", "assinatura digital",
         "interoperabilidade", "balcao unico", "autoatendimento",
+        "servicos digitais", "servicos publicos digitais", "atendimento multicanal",
+        "estado digital",
     ],
     "Servidores e Municípios": [
         "servidor publico", "servidores", "concurso publico", "plano de carreira",
