@@ -16,6 +16,7 @@ Rodar sempre da raiz do repositório, na ordem:
 | 6 | `python -m outros.novos_eleitos.e6_insumos --universo pre --publicar` | agora (`pre`) e depois da 5 (`eleitos`) | Autoria e temas na Câmara, autoria e relatoria no Senado, plano de governo, redes declaradas. `pre` é o que a Manu pediu antes da urna: competitivos do Senado que não disputam reeleição, quem hoje senta no Senado ou numa assembleia e disputa a Câmara, e quem hoje senta no Senado ou na Câmara e disputa uma assembleia |
 | 7 | `python -m outros.novos_eleitos.e7_estreantes --universo pre` | depois da 6 | Fila de pesquisa manual dos estreantes, preservando o que a equipe digitou |
 | 8 | `python -m outros.novos_eleitos.e8_assembleias_iu_marcela --universo pre` | depois da 4 ou da 5 | Assembleias cruzadas com o levantamento do IU e com a planilha da Marcela |
+| 9 | `python -m outros.novos_eleitos.e9_organogramas --universo pre` | depois da 4 ou da 5 | Nomes que aparecem nos organogramas das secretarias estaduais de educação (pasta IN da Marcela, nov/2024). Todo casamento é "a conferir" |
 
 ## Variáveis de ambiente
 
@@ -27,6 +28,7 @@ O repositório é público: nenhum id de planilha vai no código.
 - `SPREADSHEET_ID_NOVOS_ELEITOS`: planilha "Pré mapeamento", onde todas as abas desta pasta são gravadas
 - `SPREADSHEET_ID_IU_ESTADUAIS`: levantamento de deputados estaduais do Instituto Unibanco (etapa 8)
 - `SPREADSHEET_ID_CE_ASSEMBLEIAS`: Composição CE - Assembleias, da Marcela (etapa 8)
+- `DRIVE_PASTA_ORGANOGRAMAS`: pasta "IN/Estaduais" da Marcela (etapa 9); precisa estar compartilhada com a conta de serviço
 - `NOVOS_ELEITOS_DADOS` (padrão `dados_novos_eleitos/`): CSVs intermediários e cache de API
 - `TSE_CACHE` (padrão `dados_novos_eleitos/tse/`): zips do consulta_cand de 2006 a 2026
 
