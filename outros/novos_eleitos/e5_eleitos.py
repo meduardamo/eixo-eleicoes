@@ -12,9 +12,8 @@ Cuidados:
 
 Teste antes da urna: python -m outros.novos_eleitos.e5_eleitos --ciclo ele2022
     confere contagem de cadeiras e o casamento sqcand x consulta_cand de 2022, sem publicar.
-Na apuração: python -m outros.novos_eleitos.e5_eleitos --ciclo ele2026 [--publicar] [--parcial]
-Saída: eleitos_<ciclo>.csv e, em 2026, novos_eleitos.csv e abas "Novos eleitos Senado",
-"Novos eleitos Câmara" e "Novos eleitos Assembleias".
+Na apuração: python -m outros.novos_eleitos.e5_eleitos --ciclo ele2026 [--parcial]
+Saída: eleitos_<ciclo>.csv e, em 2026, novos_eleitos.csv, que a etapa 10 publica na aba "Eleitos".
 """
 import argparse
 import html
@@ -90,7 +89,6 @@ def conferir_vagas(eleitos, ano):
 def main():
     args = argparse.ArgumentParser()
     args.add_argument("--ciclo", required=True)
-    args.add_argument("--publicar", action="store_true")
     args.add_argument("--parcial", action="store_true")
     a = args.parse_args()
     ano = int(a.ciclo.replace("ele", ""))
@@ -118,19 +116,6 @@ def main():
     novos = novos.rename(columns={"votos": "Votos", "situacao_totalizacao": "Situação na totalização"})
     print(novos.groupby(["casa", "Reeleição, volta ou novo"]).size().to_string())
     c.salvar_csv(novos, "novos_eleitos.csv")
-
-    if a.publicar:
-        destino = c.planilha_destino()
-        colunas = [col for col in pre.columns if col not in ("titulo", "Situação do registro")]
-        colunas.insert(colunas.index("Reeleição, volta ou novo") + 1, "Votos")
-        colunas.insert(colunas.index("Votos") + 1, "Situação na totalização")
-        ordem = {"Novo na Casa": 0, "Volta à Casa": 1, "Reeleição": 2}
-        for casa, aba in (("Senado", "Novos eleitos Senado"), ("Câmara", "Novos eleitos Câmara"),
-                          ("Assembleia", "Novos eleitos Assembleias")):
-            parte = novos[novos.casa == casa][colunas]
-            parte = parte.sort_values(["Reeleição, volta ou novo", "UF", "Nome"],
-                                      key=lambda s: s.map(ordem) if s.name == "Reeleição, volta ou novo" else s)
-            c.gravar_aba(destino, aba, parte)
 
 
 if __name__ == "__main__":

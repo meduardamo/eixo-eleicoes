@@ -14,13 +14,11 @@ Os tipos de origem dizem onde buscar os temas (etapa 6). O texto é fato de base
 "Prefeito eleito em 2024" não afirma que a pessoa ainda está no cargo, porque quem
 disputa outro cargo teve de renunciar.
 
-Saída: pre_mapeamento.csv. Com --publicar, abas "Pré-mapeamento Senado", "Pré-mapeamento
-Câmara" e "Pré-mapeamento Assembleias" na planilha "Pré mapeamento" (SPREADSHEET_ID_NOVOS_ELEITOS).
-CPF e título ficam só no CSV local, nunca na planilha.
-Rodar: python -m outros.novos_eleitos.e4_pre_mapeamento [--publicar]
+Saída: pre_mapeamento.csv, que a etapa 10 publica na aba "Mapeamento". CPF e título ficam só
+no CSV local, nunca na planilha.
+Rodar: python -m outros.novos_eleitos.e4_pre_mapeamento
 """
 import re
-import sys
 
 import pandas as pd
 
@@ -256,20 +254,6 @@ def main():
     print(pre.groupby(["Casa disputada", "Tipo de origem"]).size().to_string())
     conferir(pre, c.ler_csv("composicao_atual.csv"))
     c.salvar_csv(pre, "pre_mapeamento.csv")
-
-    if "--publicar" in sys.argv:
-        destino = c.planilha_destino()
-        publico = pre.drop(columns=["titulo"])
-        for casa, aba in (("Senado", "Pré-mapeamento Senado"), ("Câmara", "Pré-mapeamento Câmara"),
-                          ("Assembleia", "Pré-mapeamento Assembleias")):
-            parte = publico[publico["Casa disputada"] == casa]
-            if casa != "Senado":
-                parte = parte.drop(columns=["É competitivo? (Senado)", "Código no Senado"] if casa == "Assembleia"
-                                   else ["É competitivo? (Senado)"])
-            ordem = {"Novo na Casa": 0, "Volta à Casa": 1, "Reeleição": 2}
-            parte = parte.sort_values(["Reeleição, volta ou novo", "UF", "Nome"],
-                                      key=lambda s: s.map(ordem) if s.name == "Reeleição, volta ou novo" else s)
-            c.gravar_aba(destino, aba, parte)
 
 
 if __name__ == "__main__":

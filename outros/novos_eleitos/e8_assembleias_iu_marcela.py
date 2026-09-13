@@ -13,9 +13,8 @@ confirma quando o nome não é idêntico; a planilha grava a data sem padrão de
 então as duas leituras são aceitas.
 
 Universo: --universo pre (candidaturas às Assembleias no pré-mapeamento) ou eleitos.
-Saída: assembleias_iu_marcela_<universo>.csv; com --publicar, aba "Assembleias, IU e Marcela
-(pré-mapeados)" ou "(eleitos)" na planilha "Pré mapeamento".
-Rodar: python -m outros.novos_eleitos.e8_assembleias_iu_marcela --universo pre [--publicar]
+Saída: assembleias_iu_marcela_<universo>.csv, que a etapa 10 junta na aba "Mapeamento" ou "Eleitos".
+Rodar: python -m outros.novos_eleitos.e8_assembleias_iu_marcela --universo pre
 """
 import argparse
 from datetime import date
@@ -65,10 +64,9 @@ def casar(linha, tabela, col_nome, col_uf, nascimento=None, col_nasc=None):
 def main():
     args = argparse.ArgumentParser()
     args.add_argument("--universo", choices=["pre", "eleitos"], required=True)
-    args.add_argument("--publicar", action="store_true")
     a = args.parse_args()
 
-    fonte = c.ler_csv("pre_mapeamento.csv" if a.universo == "pre" else "novos_eleitos.csv")
+    fonte =c.ler_csv("pre_mapeamento.csv" if a.universo == "pre" else "novos_eleitos.csv")
     base = fonte[fonte["Casa disputada"] == "Assembleia"].copy()
     nasc = c.ler_csv("candidaturas_2026.csv").set_index("sq_candidato").nascimento
 
@@ -94,11 +92,6 @@ def main():
     com_dado = df[(df[list(COLUNAS_IU.values())] != "").any(axis=1) | (df[list(COLUNAS_MARCELA.values())] != "").any(axis=1)]
     print(f"{len(base)} nomes; IU casou {casou_iu} de {len(iu)}; Marcela casou {casou_marcela} de {len(marcela)}")
     c.salvar_csv(com_dado, f"assembleias_iu_marcela_{a.universo}.csv")
-    if not a.publicar:
-        return
-    rotulo = {"pre": "pré-mapeados", "eleitos": "eleitos"}[a.universo]
-    c.gravar_aba(c.planilha_destino(), f"Assembleias, IU e Marcela ({rotulo})",
-                 com_dado.sort_values(["UF", "Nome"]))
 
 
 if __name__ == "__main__":

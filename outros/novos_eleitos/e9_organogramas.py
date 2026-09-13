@@ -19,9 +19,8 @@ Casar só primeiro e último nome ou só nome de urna de duas palavras foi testa
 A pasta tem que estar compartilhada com eixoraspagem@raspagemdou.iam.gserviceaccount.com.
 
 Entrada: pre_mapeamento.csv (--universo pre) ou novos_eleitos.csv (--universo eleitos).
-Saída: organogramas_<universo>.csv; com --publicar, aba "Organogramas das Seducs (<universo>)"
-na planilha "Pré mapeamento".
-Rodar: python -m outros.novos_eleitos.e9_organogramas --universo pre [--publicar]
+Saída: organogramas_<universo>.csv, que a etapa 10 junta na aba "Mapeamento" ou "Eleitos".
+Rodar: python -m outros.novos_eleitos.e9_organogramas --universo pre
 Variável: DRIVE_PASTA_ORGANOGRAMAS (id da pasta Estaduais).
 """
 import argparse
@@ -36,7 +35,6 @@ from googleapiclient.http import MediaIoBaseDownload
 
 from outros.novos_eleitos import comum as c
 
-ROTULO_UNIVERSO = {"pre": "pré-mapeados", "eleitos": "eleitos"}
 IGUAL, CONTIDO, CITADO = ("Nome do organograma igual ao nome civil", "Nome do organograma contido no nome civil",
                           "Citado no texto do organograma")
 # palavra de cargo ou setor: linha que tem uma dessas não é nome de pessoa
@@ -143,7 +141,6 @@ def casar(civil, urna, linhas, nomes, texto_tokens):
 def main():
     args = argparse.ArgumentParser()
     args.add_argument("--universo", choices=["pre", "eleitos"], required=True)
-    args.add_argument("--publicar", action="store_true")
     a = args.parse_args()
 
     base = c.ler_csv("pre_mapeamento.csv" if a.universo == "pre" else "novos_eleitos.csv")
@@ -173,8 +170,6 @@ def main():
                         key=lambda s: s.map(ordem) if s.name == "Como o nome casou (a conferir)" else s)
     print(df.groupby(["Como o nome casou (a conferir)", "Casa disputada"]).size().to_string())
     c.salvar_csv(df, f"organogramas_{a.universo}.csv")
-    if a.publicar:
-        c.gravar_aba(c.planilha_destino(), f"Organogramas das Seducs ({ROTULO_UNIVERSO[a.universo]})", df)
 
 
 if __name__ == "__main__":

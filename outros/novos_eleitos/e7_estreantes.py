@@ -19,7 +19,7 @@ import argparse
 from outros.novos_eleitos import comum as c
 
 MANUAIS = ["Teve mandato antes de 2006?", "Cargo não eletivo anterior (ex.: secretário de pasta)", "Pasta ou área", "Período",
-           "Temática principal", "Fonte da informação", "Monitorar Instagram?", "Observações"]
+           "Temática principal", "Fonte da informação", "Observações"]
 
 
 def main():
@@ -45,7 +45,8 @@ def main():
         return
     rotulo = {"pre": "pré-mapeados", "eleitos": "eleitos"}[a.universo]
     c.gravar_aba(c.planilha_destino(), f"Estreantes, pesquisa manual ({rotulo})",
-                 fila, preservar=MANUAIS, chave="SQ_CANDIDATO")
+                 fila, preservar=MANUAIS, chave="SQ_CANDIDATO", congelar_colunas=2,
+                 largura_minima={col: 220 for col in MANUAIS})
 
 
 if __name__ == "__main__":

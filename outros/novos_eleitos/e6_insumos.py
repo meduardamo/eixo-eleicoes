@@ -17,9 +17,8 @@ O que é buscado, conforme o tipo de origem:
 - Todos: redes sociais declaradas no registro de 2026.
 Assembleia e Câmara Municipal não têm API única: a coluna "De onde puxar os temas" diz o caminho.
 
-Saída: insumos_<universo>.csv; com --publicar, aba "Insumos por origem (pré-mapeados)" ou
-"(eleitos)" na planilha "Pré mapeamento".
-Rodar: python -m outros.novos_eleitos.e6_insumos --universo pre [--publicar]
+Saída: insumos_<universo>.csv, que a etapa 10 junta na aba "Mapeamento" ou "Eleitos".
+Rodar: python -m outros.novos_eleitos.e6_insumos --universo pre
 """
 import argparse
 from collections import Counter
@@ -31,7 +30,6 @@ import requests
 
 from outros.novos_eleitos import comum as c
 
-ROTULO_UNIVERSO = {"pre": "pré-mapeados", "eleitos": "eleitos"}
 TIPOS_CAMARA = ("PL", "PLP", "PEC", "PDL")
 SIGLAS_SENADO = {"PL", "PLS", "PLP", "PLC", "PEC", "PDL", "PDS"}
 DESDE = 2019
@@ -159,7 +157,6 @@ def planos(ficha):
 def main():
     args = argparse.ArgumentParser()
     args.add_argument("--universo", choices=["pre", "eleitos"], required=True)
-    args.add_argument("--publicar", action="store_true")
     a = args.parse_args()
 
     base = universo(a.universo)
@@ -195,8 +192,6 @@ def main():
              "Instagram", "Outras redes declaradas", "SQ_CANDIDATO"]
     df = pd.DataFrame(linhas).reindex(columns=ordem).fillna("")
     c.salvar_csv(df, f"insumos_{a.universo}.csv")
-    if a.publicar:
-        c.gravar_aba(c.planilha_destino(), f"Insumos por origem ({ROTULO_UNIVERSO[a.universo]})", df)
 
 
 if __name__ == "__main__":

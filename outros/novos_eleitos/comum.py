@@ -366,7 +366,7 @@ def campo(linha, *nomes):
     return ""
 
 
-def gravar_aba(planilha_id, aba, df, preservar=None, chave=None):
+def gravar_aba(planilha_id, aba, df, preservar=None, chave=None, congelar_colunas=1, largura_minima=None):
     """Apaga e reescreve a aba a partir da origem, em RAW (USER_ENTERED transforma
     "19,6%" e datas). Colunas de `preservar` são preenchidas à mão pela equipe: o valor
     que já estava na aba volta, casado por `chave`."""
@@ -385,16 +385,68 @@ def gravar_aba(planilha_id, aba, df, preservar=None, chave=None):
         ws.clear()
     except gspread.WorksheetNotFound:
         ws = sh.add_worksheet(title=aba, rows=len(df) + 10, cols=max(len(df.columns), 1))
-    ws.resize(rows=len(df) + 10, cols=len(df.columns))
+    ws.resize(rows=len(df) + 1, cols=len(df.columns))
     valores = [list(df.columns)] + df.values.tolist()
-    for inicio in range(0, len(valores), 5000):
-        ws.update(values=valores[inicio:inicio + 5000], range_name=f"A{inicio + 1}",
+    for inicio in range(0, len(valores), 3000):
+        ws.update(values=valores[inicio:inicio + 3000], range_name=f"A{inicio + 1}",
                   value_input_option="RAW")
-    ws.freeze(rows=1)
-    ws.format("1:1", {"textFormat": {"bold": True, "fontFamily": "Montserrat", "fontSize": 10},
-                      "backgroundColor": {"red": 0.882, "green": 0.882, "blue": 0.882},
-                      "wrapStrategy": "WRAP"})
+    formatar(sh, ws, df, congelar_colunas, largura_minima)
     print(f"aba '{aba}' gravada: {len(df)} linhas")
+
+
+def cor(hexa):
+    hexa = hexa.lstrip("#")
+    return {"red": int(hexa[0:2], 16) / 255, "green": int(hexa[2:4], 16) / 255, "blue": int(hexa[4:6], 16) / 255}
+
+
+def largura(coluna, valores):
+    """Largura em pixels entre 70 e 340. O conteúdo manda: percentil 80 das células
+    preenchidas, porque coluna quase vazia (Instagram só em 191 de 19 mil linhas) daria zero.
+    O cabeçalho quebra em até três linhas nos 54 px, então pesa só um terço do tamanho.
+    Célula longa não estica a linha: o corpo é cortado na largura."""
+    tamanhos = valores.astype(str).str.len()
+    tamanhos = tamanhos[tamanhos > 0]
+    conteudo = float(tamanhos.quantile(0.8)) if len(tamanhos) else 0
+    cabecalho = len(coluna) / 2.6
+    return int(min(340, max(70, 7 * max(conteudo, cabecalho) + 16)))
+
+
+def formatar(sh, ws, df, congelar_colunas=1, largura_minima=None):
+    """Identidade das abas de dado do Radar: cabeçalho de 54 px em Montserrat 10 negrito sobre
+    #E1E1E1, corpo de 21 px em Montserrat 9 sobre #F4F3EF, borda #DADAD4, primeira linha e
+    primeiras colunas congeladas. Tudo numa chamada só, para não estourar a cota de escrita."""
+    linhas, colunas = len(df) + 1, len(df.columns)
+    borda = {"style": "SOLID", "color": cor("#DADAD4")}
+    pedidos = [
+        {"updateSheetProperties": {"properties": {"sheetId": ws.id, "gridProperties": {
+            "frozenRowCount": 1, "frozenColumnCount": min(congelar_colunas, colunas)}},
+            "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"}},
+        {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1},
+                        "cell": {"userEnteredFormat": {
+                            "backgroundColor": cor("#E1E1E1"), "wrapStrategy": "WRAP", "verticalAlignment": "MIDDLE",
+                            "textFormat": {"fontFamily": "Montserrat", "fontSize": 10, "bold": True}}},
+                        "fields": "userEnteredFormat(backgroundColor,wrapStrategy,verticalAlignment,textFormat)"}},
+        {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": linhas},
+                        "cell": {"userEnteredFormat": {
+                            "backgroundColor": cor("#F4F3EF"), "wrapStrategy": "CLIP", "verticalAlignment": "MIDDLE",
+                            "textFormat": {"fontFamily": "Montserrat", "fontSize": 9, "bold": False}}},
+                        "fields": "userEnteredFormat(backgroundColor,wrapStrategy,verticalAlignment,textFormat)"}},
+        {"updateBorders": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": linhas,
+                                     "startColumnIndex": 0, "endColumnIndex": colunas},
+                           "innerHorizontal": borda, "innerVertical": borda, "bottom": borda, "right": borda}},
+        {"updateDimensionProperties": {"range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
+                                       "properties": {"pixelSize": 54}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": 1,
+                                                 "endIndex": linhas},
+                                       "properties": {"pixelSize": 21}, "fields": "pixelSize"}},
+    ]
+    for i, col in enumerate(df.columns):
+        pedidos.append({"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
+            # coluna de preenchimento manual nasce vazia e precisa de espaço para digitar
+            "properties": {"pixelSize": max(largura(col, df[col]), (largura_minima or {}).get(col, 0))},
+            "fields": "pixelSize"}})
+    sh.batch_update({"requests": pedidos})
 
 
 def falhar_se(condicao, mensagem):
