@@ -2,3 +2,6 @@ credentials.json
 __pycache__/
 outros/testes/_planos/
 transcricoes/
+
+# mapeamento de novos eleitos: CSVs com CPF e título, e cache de API
+dados_novos_eleitos/
