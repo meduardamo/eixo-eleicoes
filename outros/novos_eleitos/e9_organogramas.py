@@ -10,7 +10,7 @@ só na foto de nov/2024. O casamento é por nome dentro da UF, e nome parecido n
 mais forte para a mais fraca:
   1. a linha de nome do organograma é igual ao nome civil do registro;
   2. a linha de nome está contida no nome civil, com a mesma primeira palavra e pelo menos
-     três palavras (com duas, a última também tem que bater): "Aberson Carvalho de Sousa";
+     três palavras ("Igor de Alvarenga Oliveira"), ou é igual ao nome de urna ("Eliel Faustino");
   3. o nome é citado numa frase do organograma, em geral a biografia do secretário
      ("substituindo Faisal Karam"). Governador citado como chefe do secretário cai aqui.
 Casar só primeiro e último nome ou só nome de urna de duas palavras foi testado em
@@ -118,8 +118,9 @@ def casar(civil, urna, linhas, nomes, texto_tokens):
         t = c.chave_nome(nome).split()
         if t == civil:
             return IGUAL, janela(linhas, i)
-        mesmo_fim = len(t) >= 3 or t[-1] == civil[-1]
-        contido = len(civil) >= 2 and t[0] == civil[0] and set(t) <= set(civil) and mesmo_fim
+        # linha de duas palavras só casa pelo nome de urna: "José de Sousa" casava com José
+        # Wilson Oliveira Sousa (Samaritano da Ripa, RR) só pelo primeiro e último nome
+        contido = len(t) >= 3 and t[0] == civil[0] and set(t) <= set(civil)
         # linha igual ao nome de urna, com as palavras no nome civil: "Eliel Faustino"
         de_urna = len(urna) >= 2 and t == urna and set(urna) <= set(civil)
         if melhor is None and (contido or de_urna):
