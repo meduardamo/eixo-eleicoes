@@ -6,8 +6,10 @@ pelo SQ_CANDIDATO e só quando o CSV existir: insumos por origem (etapa 6), IU e
 (etapa 8) e organogramas das Seducs (etapa 9). Onde não se aplica, a célula fica vazia.
 A fila de estreantes (etapa 7) fica em aba própria, porque é a única preenchida à mão.
 
-Saída: mapeamento_<universo>.csv. Com --publicar, aba "Mapeamento" ou "Eleitos" na planilha
-"Pré mapeamento", e as abas de antes da consolidação são apagadas. CPF e título não saem.
+Saída: mapeamento_<universo>.csv com as três Casas. Com --publicar, uma aba por Casa na
+planilha "Pré mapeamento" ("Mapeamento Senado", "Mapeamento Câmara", "Mapeamento Assembleias",
+ou "Eleitos ..." depois da urna), cada uma só com as colunas pertinentes, e as abas de antes
+são apagadas. CPF e título não saem.
 Rodar: python -m outros.novos_eleitos.e10_consolidar --universo pre [--publicar]
 """
 import argparse
@@ -17,14 +19,31 @@ import gspread
 from outros.novos_eleitos import comum as c
 
 ABA = {"pre": "Mapeamento", "eleitos": "Eleitos"}
-# abas separadas que existiram antes de 13/09/2026 e que esta etapa substitui
-ABAS_ANTIGAS = ["Página1", "Pré-mapeamento Senado", "Pré-mapeamento Câmara", "Pré-mapeamento Assembleias",
-                "Novos eleitos Senado", "Novos eleitos Câmara", "Novos eleitos Assembleias"] + [
+ABAS_POR_CASA = {"Senado": "Senado", "Câmara": "Câmara", "Assembleia": "Assembleias"}
+# abas que existiram antes em 13/09/2026 e que esta etapa substitui (inclusive a versão
+# com as três Casas juntas, que ela preferiu separar)
+ABAS_ANTIGAS = ["Página1", "Mapeamento", "Eleitos", "Pré-mapeamento Senado", "Pré-mapeamento Câmara",
+                "Pré-mapeamento Assembleias", "Novos eleitos Senado", "Novos eleitos Câmara",
+                "Novos eleitos Assembleias"] + [
     f"{nome} ({rotulo})" for nome in ("Insumos por origem", "Assembleias, IU e Marcela", "Organogramas das Seducs")
     for rotulo in ("pré-mapeados", "eleitos")]
 ORDEM_CASA = {"Senado": 0, "Câmara": 1, "Assembleia": 2}
 ORDEM_CLASSE = {"Novo na Casa": 0, "Volta à Casa": 1, "Reeleição": 2}
 NO_FIM = ["ID na Câmara", "Código no Senado", "SQ_CANDIDATO"]
+
+
+def colunas_da_casa(parte, casa):
+    """Só as colunas que fazem sentido para a Casa: IU e Marcela só nas assembleias,
+    competitividade só no Senado, e sai toda coluna vazia em todas as linhas da Casa (autoria
+    no Senado continua nas assembleias só se alguém ali vier do Senado)."""
+    fora = {"Casa disputada"}
+    if casa != "Senado":
+        fora.add("É competitivo? (Senado)")
+    if casa != "Assembleia":
+        fora |= {col for col in parte.columns if col.startswith(("IU:", "Marcela:"))}
+    manter = [col for col in parte.columns
+              if col not in fora and (col == "SQ_CANDIDATO" or (parte[col].astype(str) != "").any())]
+    return parte[manter]
 
 
 def juntar(df, arquivo, renomear=None):
@@ -73,7 +92,9 @@ def main():
 
     if a.publicar:
         destino = c.planilha_destino()
-        c.gravar_aba(destino, ABA[u], df, congelar_colunas=2)  # Casa disputada e Nome
+        for casa, nome_aba in ABAS_POR_CASA.items():
+            parte = colunas_da_casa(df[df["Casa disputada"] == casa], casa)
+            c.gravar_aba(destino, f"{ABA[u]} {nome_aba}", parte, congelar_colunas=1)  # Nome
         sh = c.cliente().open_by_key(destino)
         for aba in ABAS_ANTIGAS:
             try:

@@ -17,7 +17,7 @@ Rodar sempre da raiz do repositório, na ordem:
 | 7 | `python -m outros.novos_eleitos.e7_estreantes --universo pre --publicar` | depois da 6 | Aba "Estreantes, pesquisa manual": fila dos sem mandato, preservando o que a equipe digitou |
 | 8 | `python -m outros.novos_eleitos.e8_assembleias_iu_marcela --universo pre` | depois da 4 ou da 5 | Assembleias cruzadas com o levantamento do IU e com a planilha da Marcela |
 | 9 | `python -m outros.novos_eleitos.e9_organogramas --universo pre` | depois da 4 ou da 5 | Nomes que aparecem nos organogramas das secretarias estaduais de educação (pasta IN da Marcela, nov/2024). Todo casamento é "a conferir" |
-| 10 | `python -m outros.novos_eleitos.e10_consolidar --universo pre --publicar` | por último | Junta 4, 6, 8 e 9 pelo SQ_CANDIDATO numa aba só: "Mapeamento" (`pre`) ou "Eleitos" (`eleitos`) |
+| 10 | `python -m outros.novos_eleitos.e10_consolidar --universo pre --publicar` | por último | Junta 4, 6, 8 e 9 pelo SQ_CANDIDATO e publica uma aba por Casa, só com as colunas pertinentes: "Mapeamento Senado/Câmara/Assembleias" (`pre`) ou "Eleitos Senado/Câmara/Assembleias" (`eleitos`) |
 
 Só as etapas 7 e 10 gravam na planilha "Pré mapeamento". As outras geram CSV em `dados_novos_eleitos/`.
 Toda aba sai com o padrão das abas de dado do Radar: cabeçalho de 54 px, linhas de 21 px, Montserrat,
