@@ -42,7 +42,7 @@ A origem define onde buscar os temas:
 
 | Tipo de origem | Onde buscar |
 |---|---|
-| Câmara | API da Câmara: autoria, coautoria e tema oficial de cada proposição |
+| Câmara | API da Câmara: autoria, coautoria e tema oficial de cada proposição; relatoria pelos arquivos anuais de proposições (2003 em diante), que só dão o relator do último andamento, não o histórico |
 | Senado | API do Senado: autoria e relatoria |
 | Governo estadual, prefeitura | Plano de governo no TSE e notícias |
 | Assembleia | Dados abertos da assembleia ou Inteligov; levantamentos IU e Marcela |

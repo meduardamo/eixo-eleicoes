@@ -24,8 +24,10 @@ Rodar: python -m outros.novos_eleitos.e6_insumos --universo pre [--publicar]
 import argparse
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 
 import pandas as pd
+import requests
 
 from outros.novos_eleitos import comum as c
 
@@ -64,6 +66,52 @@ def camara(id_camara):
     return {"Câmara: proposições desde 2019 (autoria ou coautoria)": str(len(props)),
             "Câmara: temas mais frequentes": "; ".join(f"{t} ({n})" for t, n in temas.most_common(5)),
             "Câmara: proposições mais recentes": "; ".join(recentes)}
+
+
+_RELATORIAS = None
+
+
+def relatorias_camara():
+    """id do deputado -> proposições em que ele é o relator no último andamento.
+
+    A API da Câmara não tem consulta de relatorias por deputado. O que existe é o relator
+    do último andamento de cada proposição (ultimoStatus_uriRelator), nos arquivos anuais
+    de proposições. Isso é o relator de hoje, não o histórico: quem relatou e foi trocado
+    não aparece. Os arquivos vão de 2003 em diante porque proposição antiga também ganha
+    relator novo (o PL 7419/2006 tem relator em 2026)."""
+    global _RELATORIAS
+    if _RELATORIAS is not None:
+        return _RELATORIAS
+    pasta = c.caminho("camara_proposicoes")
+    pasta.mkdir(exist_ok=True)
+    partes = []
+    for ano in range(2003, date.today().year + 1):
+        arquivo = pasta / f"proposicoes-{ano}.csv"
+        if not arquivo.exists():
+            r = requests.get(f"https://dadosabertos.camara.leg.br/arquivos/proposicoes/csv/proposicoes-{ano}.csv",
+                             timeout=600)
+            r.raise_for_status()
+            arquivo.write_bytes(r.content)
+        d = pd.read_csv(arquivo, sep=";", dtype=str, keep_default_na=False,
+                        usecols=["id", "siglaTipo", "numero", "ano", "ultimoStatus_dataHora",
+                                 "ultimoStatus_uriRelator", "ultimoStatus_siglaOrgao"])
+        partes.append(d[d.siglaTipo.isin(TIPOS_CAMARA) & (d.ultimoStatus_uriRelator != "")])
+    todas = pd.concat(partes, ignore_index=True)
+    todas["id_relator"] = todas.ultimoStatus_uriRelator.str.rsplit("/", n=1).str[-1]
+    todas = todas.sort_values("ultimoStatus_dataHora", ascending=False)
+    _RELATORIAS = {k: g for k, g in todas.groupby("id_relator")}
+    return _RELATORIAS
+
+
+def relatoria(id_camara):
+    g = relatorias_camara().get(id_camara)
+    if g is None or g.empty:
+        return {"Câmara: relator atual (último andamento)": "0"}
+    orgaos = Counter(g.ultimoStatus_siglaOrgao)
+    return {"Câmara: relator atual (último andamento)": str(len(g)),
+            "Câmara: onde estão as proposições que relata": "; ".join(f"{o} ({n})" for o, n in orgaos.most_common(5)),
+            "Câmara: relatorias com andamento mais recente": "; ".join(
+                f"{t} {n}/{a}" for t, n, a in zip(g.siglaTipo[:3], g.numero[:3], g.ano[:3]))}
 
 
 def senado(cod):
@@ -124,6 +172,7 @@ def main():
                                          "Origem", "Tipo de origem", "De onde puxar os temas"]}
         for id_camara in [x for x in str(r["ID na Câmara"]).split(";") if x]:
             saida.update(camara(id_camara))
+            saida.update(relatoria(id_camara))
         for cod in [x for x in str(r.get("Código no Senado", "")).split(";") if x]:
             saida.update(senado(cod))
         ficha = ficha_2026(r, eleicao_2026, cands)
@@ -139,6 +188,8 @@ def main():
     ordem = ["Casa disputada", "Nome", "Partido", "UF", "Reeleição, volta ou novo", "Origem", "Tipo de origem",
              "De onde puxar os temas", "Câmara: proposições desde 2019 (autoria ou coautoria)",
              "Câmara: temas mais frequentes", "Câmara: proposições mais recentes",
+             "Câmara: relator atual (último andamento)", "Câmara: onde estão as proposições que relata",
+             "Câmara: relatorias com andamento mais recente",
              "Senado: matérias de autoria desde 2019", "Senado: matérias de autoria mais recentes",
              "Senado: relatorias desde 2019", "Senado: comissões em que relatou", "Plano de governo",
              "Instagram", "Outras redes declaradas", "SQ_CANDIDATO"]
