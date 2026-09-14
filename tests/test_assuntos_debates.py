@@ -49,8 +49,9 @@ CASOS = [
     ("Um carro que é seu, que é do patrimônio do cidadão", [], []),
 
     # ------------------------------------- o que não pode ter sido derrubado
+    # Desde 14/09/2026 a rede na escola é o tema Conectividade, em Educação.
     ("vamos levar internet nas escolas de todo o estado",
-     ["Educação"], ["Tecnologia na Educação"]),
+     ["Educação"], ["Conectividade"]),
     ("crédito rural para o produtor rural do estado",
      ["Economia e emprego"], ["Agropecuária"]),
     # MG 1:12:12, a única ocorrência de patrimônio que era cultura de verdade.
