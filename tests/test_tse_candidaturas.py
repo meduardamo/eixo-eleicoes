@@ -4,7 +4,7 @@
 import pandas as pd
 import pytest
 
-from outros.tse_candidaturas import consolidar, montar_deputados_federais
+from outros.tse_candidaturas import base_da_aba, consolidar, montar_deputados_federais
 
 
 @pytest.fixture
@@ -94,3 +94,22 @@ def test_status_deputado_segue_tse_e_preserva_texto_da_equipe():
     assert saida["Fulano"] == "Indeferido"
     assert saida["Cicrano"] == "ver com a Manu"
     assert saida["Beltrano"] == "Renúncia"
+
+
+def test_base_da_aba_renova_situacao_e_mantem_link(df_api):
+    # Como a aba volta do Sheets: tudo texto, com as colunas da API já dentro.
+    existente = pd.DataFrame([
+        {"SQ_CANDIDATO": "101", "NM_URNA_CANDIDATO": "CANDIDATO UM", "LINK_PLANO": "http://manual/101.pdf",
+         "SITUACAO_TEMPO_REAL": "Aguardando julgamento", "FOTO_URL": ""},
+        {"SQ_CANDIDATO": "102", "NM_URNA_CANDIDATO": "CANDIDATO DOIS", "LINK_PLANO": "",
+         "SITUACAO_TEMPO_REAL": "Aguardando julgamento", "FOTO_URL": ""},
+    ])
+    df_api = df_api.copy()
+    df_api.loc[df_api["sq_candidato"] == 101, "situacao"] = "Indeferido"
+    res = consolidar(df_api, base_da_aba(existente), existente).set_index("SQ_CANDIDATO")
+    assert len(res) == 2
+    assert "SITUACAO_TEMPO_REAL_x" not in res.columns
+    assert res.loc[101, "SITUACAO_TEMPO_REAL"] == "Indeferido"
+    assert res.loc[102, "SITUACAO_TEMPO_REAL"] == "Deferido"
+    assert res.loc[101, "LINK_PLANO"] == "http://manual/101.pdf"
+    assert res.loc[102, "LINK_PLANO"] == "http://divulgacand/plano102.pdf"

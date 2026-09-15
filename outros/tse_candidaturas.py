@@ -144,6 +144,17 @@ def carregar_base(csv_path):
     return pd.read_csv(csv_path, encoding="ISO-8859-1", sep=";", low_memory=False)
 
 
+def base_da_aba(existente):
+    """A própria aba base_dadosabertos no papel do CSV, para quando o CDN do TSE
+    recusa o download (o runner do GitHub leva 403). Tira as colunas que vêm da
+    API, que o consolidar põe de novo com o valor da rodada, e devolve o
+    SQ_CANDIDATO como número, que é como a API manda."""
+    da_api = ["LINK_PLANO", "SITUACAO_TEMPO_REAL", "FOTO_URL"]
+    base = existente.drop(columns=[c for c in da_api if c in existente.columns])
+    base["SQ_CANDIDATO"] = pd.to_numeric(base["SQ_CANDIDATO"], errors="coerce")
+    return base.dropna(subset=["SQ_CANDIDATO"]).astype({"SQ_CANDIDATO": "int64"})
+
+
 def consolidar(df_api, csv_path, df_existente=None):
     """Base-mãe: junta o CSV oficial (perfil completo) com a tabela da API
     (link do plano + situação em tempo real), pelo SQ_CANDIDATO.
@@ -595,10 +606,17 @@ if __name__ == '__main__':
     # A base oficial só sai depois que o período de registro avança. Enquanto não
     # existe, a coleta pela API já vale por si e não faz sentido derrubar a rodada.
     csv = baixar_base_oficial()
+    existente = ler_aba("base_dadosabertos") if len(df) else pd.DataFrame()
     if csv and len(df):
-        existente = ler_aba("base_dadosabertos")
         base = consolidar(df, csv, existente)
         print(f"base consolidada: {base.shape[0]} linhas")
+        salvar_no_sheets(base, "base_dadosabertos")
+    elif len(df) and "SQ_CANDIDATO" in existente.columns:
+        # Sem o CSV, o perfil fica o da última base baixada e só a situação e o
+        # link do plano são renovados. Candidatura que entrou no TSE depois
+        # disso só aparece quando a etapa rodar fora do Actions.
+        base = consolidar(df, base_da_aba(existente), existente)
+        print(f"base sem CSV novo: {base.shape[0]} linhas, situação renovada pela API")
         salvar_no_sheets(base, "base_dadosabertos")
     else:
         print("base_dadosabertos não gerada nesta rodada")
