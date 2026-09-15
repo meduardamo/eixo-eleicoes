@@ -104,7 +104,10 @@ def baixar_base_oficial(ano=ANO):
     atual = None
     for tentativa in range(1, 4):
         try:
-            head = requests.head(url, headers=HEADERS, timeout=30)
+            # Sem impersonate o Akamai do CDN responde 403 (desde a troca para
+            # curl_cffi, a base parou de ser regravada sem erro nenhum).
+            head = requests.head(url, headers=HEADERS, timeout=30,
+                                 impersonate="chrome")
             if head.status_code == 200:
                 atual = head.headers.get("Last-Modified")
                 break
@@ -120,7 +123,7 @@ def baixar_base_oficial(ano=ANO):
         return PASTA / f"consulta_cand_{ano}_BRASIL.csv"
 
     try:
-        r = requests.get(url, headers=HEADERS, timeout=120)
+        r = requests.get(url, headers=HEADERS, timeout=120, impersonate="chrome")
         r.raise_for_status()
     except requests.RequestException as e:
         print(f"falha ao baixar a base oficial ({str(e)[:80]}); seguindo só com a API")
@@ -473,12 +476,34 @@ def _preenchido_a_mao(ws):
     return extras, guardadas
 
 
+# Situações que o DivulgaCand devolve em descricaoSituacao. Status com um destes
+# valores veio do TSE e pode ser trocado pelo atual; qualquer outro é da equipe.
+SITUACOES_TSE = {
+    "aguardando julgamento", "pendente de julgamento", "deferido",
+    "deferido com recurso", "indeferido",
+    "indeferido em prazo recursal ou com recurso", "renuncia",
+    "pedido nao conhecido", "cancelado", "falecido", "cassado",
+}
+
+
+def _status(anterior, situacao):
+    anterior = str(anterior or "").strip()
+    situacao = str(situacao or "").strip()
+    if situacao in ("", "None", "nan"):
+        return anterior
+    if anterior and _chave(anterior) not in SITUACOES_TSE:
+        return anterior
+    return situacao
+
+
 def montar_deputados_federais(df, atuais, guardadas=None, extras=()):
     """Uma linha por candidatura a deputado federal, nas colunas da planilha de
     trabalho. Ordena por UF, partido e nome, que é como a equipe lê a lista.
 
-    Status sai vazio na candidatura nova: é campo de preenchimento da equipe, não
-    da coleta. Candidatura que já estava na aba mantém o que foi escrito lá.
+    Status leva a situação do registro no DivulgaCand. A equipe preenchia à mão
+    com os mesmos termos do TSE e a coluna ficou parada (6.498 "Aguardando
+    julgamento" em 15/09, contra 88 na API). Valor que é termo do TSE é
+    atualizado a cada rodada; texto próprio da equipe continua valendo.
     """
     guardadas = guardadas or {}
     dep = df[df["cargo"] == CARGOS[6]] if len(df) else df
@@ -495,7 +520,7 @@ def montar_deputados_federais(df, atuais, guardadas=None, extras=()):
             "UF": uf,
             "Partido": _partido_publicado(c.get("partido_listagem")),
             "Candidato": nome,
-            "Status": anterior.get("Status", ""),
+            "Status": _status(anterior.get("Status", ""), c.get("situacao")),
             "Situação Atual": "Reeleição" if reeleicao else "Novo",
         }
         for coluna in extras:

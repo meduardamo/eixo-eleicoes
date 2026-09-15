@@ -4,7 +4,7 @@
 import pandas as pd
 import pytest
 
-from outros.tse_candidaturas import consolidar
+from outros.tse_candidaturas import consolidar, montar_deputados_federais
 
 
 @pytest.fixture
@@ -75,3 +75,22 @@ def test_consolidar_sem_existente(base_csv, df_api):
 
     p101 = res[res["SQ_CANDIDATO"] == 101].iloc[0]
     assert pd.isna(p101["LINK_PLANO"]) or p101["LINK_PLANO"] in (None, "", "None")
+
+
+def test_status_deputado_segue_tse_e_preserva_texto_da_equipe():
+    df = pd.DataFrame([
+        {"cargo": "DEPUTADO FEDERAL", "ue": "SP", "nome_urna": "FULANO", "nome_completo": "FULANO DE TAL",
+         "partido_listagem": "PT", "situacao": "Indeferido"},
+        {"cargo": "DEPUTADO FEDERAL", "ue": "SP", "nome_urna": "CICRANO", "nome_completo": "CICRANO",
+         "partido_listagem": "PL", "situacao": "Deferido"},
+        {"cargo": "DEPUTADO FEDERAL", "ue": "RJ", "nome_urna": "BELTRANO", "nome_completo": "BELTRANO",
+         "partido_listagem": "PSD", "situacao": "Renúncia"},
+    ])
+    guardadas = {
+        ("SP", "fulano"): {"Status": "Aguardando julgamento"},
+        ("SP", "cicrano"): {"Status": "ver com a Manu"},
+    }
+    saida = montar_deputados_federais(df, {}, guardadas).set_index("Candidato")["Status"]
+    assert saida["Fulano"] == "Indeferido"
+    assert saida["Cicrano"] == "ver com a Manu"
+    assert saida["Beltrano"] == "Renúncia"
