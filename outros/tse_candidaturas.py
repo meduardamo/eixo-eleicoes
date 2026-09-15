@@ -104,8 +104,9 @@ def baixar_base_oficial(ano=ANO):
     atual = None
     for tentativa in range(1, 4):
         try:
-            # Sem impersonate o Akamai do CDN responde 403 (desde a troca para
-            # curl_cffi, a base parou de ser regravada sem erro nenhum).
+            # Sem impersonate o Akamai do CDN responde 403. Com ele passa numa
+            # máquina local, mas do runner do GitHub continua 403 (15/09/2026):
+            # ali a base só é regravada rodando esta etapa fora do Actions.
             head = requests.head(url, headers=HEADERS, timeout=30,
                                  impersonate="chrome")
             if head.status_code == 200:
