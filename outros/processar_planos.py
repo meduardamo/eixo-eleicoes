@@ -173,7 +173,7 @@ ABA_BASE = "base_dadosabertos"
 # Abas que os painéis leem desta planilha. Publicadas em Parquet no Drive pelo
 # _publicar_cache_parquet; `planos_arquivos` é escrita pelo workflow 24, que
 # roda 15 min antes deste, então o que sai aqui já é a versão do dia.
-ABAS_CACHE = (ANALISE_ABA, COERENCIA_ABA, "planos_arquivos", ABA_BASE)
+ABAS_CACHE = (ANALISE_ABA, COERENCIA_ABA, "planos_arquivos", ABA_BASE, "chapas_divulgacand")
 LOTE = 5           # candidatos entre uma gravação e outra
 # Segundos entre um candidato e outro. Até 02/08/2026 a fila tinha 1 candidato por
 # rodada e a pausa não fazia falta. Quando a versão subiu para 2 e os 16 entraram
