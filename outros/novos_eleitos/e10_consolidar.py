@@ -33,14 +33,13 @@ NO_FIM = ["ID na Câmara", "Código no Senado", "SQ_CANDIDATO"]
 
 
 def colunas_da_casa(parte, casa):
-    """Só as colunas que fazem sentido para a Casa: IU e Marcela só nas assembleias,
-    competitividade só no Senado, e sai toda coluna vazia em todas as linhas da Casa (autoria
-    no Senado continua nas assembleias só se alguém ali vier do Senado)."""
+    """Só as colunas que fazem sentido para a Casa: competitividade só no Senado, e sai toda
+    coluna vazia em todas as linhas da Casa (autoria no Senado continua nas assembleias só se
+    alguém ali vier do Senado; IU e Marcela aparecem na Câmara e no Senado para quem vem de
+    assembleia)."""
     fora = {"Casa disputada"}
     if casa != "Senado":
         fora.add("É competitivo? (Senado)")
-    if casa != "Assembleia":
-        fora |= {col for col in parte.columns if col.startswith(("IU:", "Marcela:"))}
     manter = [col for col in parte.columns
               if col not in fora and (col == "SQ_CANDIDATO" or (parte[col].astype(str) != "").any())]
     return parte[manter]

@@ -6,14 +6,16 @@ planilha de comissões de educação da Marcela.
   educação e cargos anteriores (ex-vereador, ex-secretário de educação...). A linha 2 é a
   instrução de uso do mapa, não dado.
 - Marcela: aba "nomes relevantes p/ ISG" de "Composição CE - Assembleias".
-Os dois só cobrem quem já é deputado estadual: servem para reeleição e volta à Casa.
+Os dois só cobrem quem já é deputado estadual: servem para reeleição e volta à Casa, e para
+quem sai da assembleia para disputar a Câmara ou o Senado (tipo de origem "Assembleia").
 
 Nenhuma das duas tem CPF. O casamento é nome dentro da UF. No IU a data de nascimento
 confirma quando o nome não é idêntico; a planilha grava a data sem padrão de dia e mês,
 então as duas leituras são aceitas.
 
-Universo: --universo pre (candidaturas às Assembleias no pré-mapeamento) ou eleitos.
-Saída: assembleias_iu_marcela_<universo>.csv, que a etapa 10 junta na aba "Mapeamento" ou "Eleitos".
+Universo: --universo pre (candidaturas às Assembleias e candidaturas de qualquer Casa vindas de
+assembleia, no pré-mapeamento) ou eleitos.
+Saída: assembleias_iu_marcela_<universo>.csv, que a etapa 10 junta nas abas de cada Casa.
 Rodar: python -m outros.novos_eleitos.e8_assembleias_iu_marcela --universo pre
 """
 import argparse
@@ -67,7 +69,7 @@ def main():
     a = args.parse_args()
 
     fonte =c.ler_csv("pre_mapeamento.csv" if a.universo == "pre" else "novos_eleitos.csv")
-    base = fonte[fonte["Casa disputada"] == "Assembleia"].copy()
+    base = fonte[(fonte["Casa disputada"] == "Assembleia") | (fonte["Tipo de origem"] == "Assembleia")].copy()
     nasc = c.ler_csv("candidaturas_2026.csv").set_index("sq_candidato").nascimento
 
     iu_bruto = c.ler_aba(c.id_planilha("SPREADSHEET_ID_IU_ESTADUAIS"), "Elements")
@@ -91,6 +93,8 @@ def main():
     df = pd.DataFrame(linhas)
     com_dado = df[(df[list(COLUNAS_IU.values())] != "").any(axis=1) | (df[list(COLUNAS_MARCELA.values())] != "").any(axis=1)]
     print(f"{len(base)} nomes; IU casou {casou_iu} de {len(iu)}; Marcela casou {casou_marcela} de {len(marcela)}")
+    print(base.assign(IU=df["IU: temas"].ne("").values).groupby(["Casa disputada", "Tipo de origem"]).IU
+          .agg(["size", "sum"]).rename(columns={"size": "nomes", "sum": "com IU"}).to_string())
     c.salvar_csv(com_dado, f"assembleias_iu_marcela_{a.universo}.csv")
 
 
