@@ -130,16 +130,44 @@ NIVEIS_LEGADO = {
 # temas juntos, então 22 temas custam praticamente o mesmo que 6.
 EIXOS = {
     "Educação": {
-        "Alfabetização": "alfabetização de crianças na idade certa (PNAIC, PNA, Compromisso Nacional Criança Alfabetizada ou equivalente) — creche e pré-escola são o tema Educação Infantil, no eixo de Primeira Infância",
-        "Fundamental": "ensino fundamental anos iniciais (2º ao 5º ano) e anos finais (6º ao 9º ano) — exclui alfabetização do 1º ano, que é tema próprio",
-        "Ensino Médio": "ensino médio regular da rede estadual: matrícula, evasão, novo ensino médio, currículo e resultado de aprendizagem — o tempo integral é tema próprio",
+        # Ordem de 14/09/2026: primeiro os temas que os clientes acompanham
+        # (Tempo Integral, Alfabetização, Educação Profissional, os dois do Itaú e
+        # os dois da MegaEdu), depois os demais. É a ordem em que o painel lista
+        # os temas; a análise salva é indexada por nome e não muda.
         "Tempo Integral": "educação em tempo integral e jornada escolar ampliada, em qualquer etapa da educação básica: desenho da jornada, vagas, escolas de tempo integral — o conteúdo que ocupa a jornada ampliada, quando é arte ou cultura, é o tema Educação, Arte e Cultura",
+        "Alfabetização": "alfabetização de crianças na idade certa (PNAIC, PNA, Compromisso Nacional Criança Alfabetizada ou equivalente) — creche e pré-escola são o tema Educação Infantil, no eixo de Primeira Infância",
         "Educação Profissional": "educação profissional e técnica (EPT, SENAI, SENAC, institutos federais, cursos técnicos)",
-        "Valorização Docente": "carreira, salário, piso, concurso, formação continuada e condições de trabalho de professores e demais profissionais da educação",
-        "Educação Inclusiva e EJA": "educação especial e inclusiva, estudante com deficiência, educação de jovens e adultos, educação no campo, indígena e quilombola — a desigualdade de aprendizagem entre grupos, a ação afirmativa na educação e a busca ativa de estudante em vulnerabilidade são o tema Equidade Educacional",
         # Entraram em 19/08/2026 a pedido do Itaú:
         "Educação, Arte e Cultura": "integração de arte, cultura e linguagens artísticas no currículo escolar e na educação integral: arte na escola, oficinas e projetos culturais com estudantes — a política cultural fora da escola (fomento, editais, patrimônio, equipamentos) é o tema Cultura, no eixo de Cultura, esporte e turismo",
         "Recomposição das Aprendizagens": "recomposição, recuperação e aceleração de aprendizagens, reforço escolar, correção de fluxo, defasagem idade-série e superação de lacunas pedagógicas, inclusive as herdadas da pandemia — alfabetizar na idade certa é o tema Alfabetização, e a etapa em si é Fundamental ou Ensino Médio",
+        # Os dois temas abaixo entraram em 14/09/2026 no lugar do eixo
+        # "Conectividade e Infraestrutura Digital" (31/08 a 14/09), a pedido da
+        # MegaEdu, que não queria eixo e sim dois temas dentro de Educação. São
+        # duas áreas lá dentro e cada tema segue o material de uma delas:
+        # Conectividade, a lista de 65 termos mandada ao Felipe (itens 1 a 42);
+        # IPD, o guia "Palavras chaves para mapear campanhas", que é todo da área
+        # de IPD apesar do título, mais os itens 43 a 65 da lista.
+        #
+        # Quando um termo conta veio das respostas da Gabrielle (MegaEdu) em
+        # 14/09: termo que está nas duas listas conta só em IPD; internet fora da
+        # escola é IPD; o bloco de Estado do guia (governo digital, dados abertos,
+        # identidade digital, Pix, CIN, LGPD...) só conta ligado à educação; as
+        # siglas da educação (Censo, SAEB, Fundeb, Pé-de-Meia...) e o bloco de
+        # metas de equidade só contam ligados a dado, sistema ou monitoramento;
+        # gestão educacional conta sempre.
+        #
+        # Termo que já tinha tema (Governo Digital, Regulação de Plataformas,
+        # Transparência, Tecnologia na Educação, os temas de etapa) continua lá e
+        # conta também aqui: a MegaEdu lê, por plano, se trata ou não de cada um
+        # dos dois, e termo que só caísse no vizinho sairia como ausência.
+        # tests/test_termos_megaedu.py confere que todo termo das duas listas
+        # está no vocabulário do tema de destino.
+        "Conectividade": "conectividade e tecnologia nas escolas e na rede de ensino: internet, banda larga, fibra óptica, rede e wi-fi nas escolas, inclusive nas escolas rurais, conexão das escolas e escolas conectadas, velocidade e universalização do acesso à internet escolar; computadores, tablets, dispositivos e equipamentos tecnológicos para escolas e estudantes e laboratório de informática; tecnologia educacional e tecnologias digitais na educação, inovação educacional, educação digital, transformação digital na educação, cultura digital escolar, ensino híbrido, recursos e ferramentas digitais educacionais e inclusão digital escolar; e os programas e fundos que levam conectividade às escolas: PIEC (Programa Interministerial de Conectividade), EACE (Estratégia de Aceleração da Conectividade nas Escolas), FUST, Programa Escolas Conectadas, Estratégia Nacional de Escolas Conectadas, Wi-Fi Brasil e Internet para Todos. Só conta o que é da escola ou da rede de ensino. A internet e a inclusão digital da população fora da escola, os sistemas de gestão escolar e os dados da educação são o tema Infraestrutura Pública Digital. O uso pedagógico da tecnologia conta aqui e também no tema Tecnologia na Educação. Internet, rede ou tecnologia citadas sem relação com a escola não são este tema: nesse caso o nível é Não menciona",
+        "Infraestrutura Pública Digital": "infraestrutura pública digital e dados da educação, e internet para a população. Conta sempre: sistemas de gestão escolar e educacional (SGE, SIGED, software de gestão acadêmica, sistema de administração ou de registro escolar, plataforma de gestão escolar ou pedagógica, sistema de informação educacional), gestão escolar digital, modernização e digitalização da gestão escolar e da gestão pública educacional; matrícula, cadastro, diário de classe, boletim e carteirinha estudantil digitais; identificador único do estudante, CPF na educação, matrícula única e cadastro único do aluno; jornada, trajetória e percurso do estudante acompanhados entre redes; painel de gestão e de indicadores educacionais e dados de gestão escolar; INDE e EducaDados, Conjunto Mínimo de Dados da Educação Básica (CMDEB) e Sistema Nacional de Educação (SNE); gestão educacional, capacidade estatal e maturidade de gestão das secretarias de educação; e a internet e a inclusão digital da população fora da escola: expansão de rede, fibra e sinal para municípios, zona rural, comunidades isoladas e periferias, infovias, pontos públicos de acesso e wi-fi livre, Wi-Fi Brasil, Internet para Todos, FUST e Norte Conectado voltados à população, letramento, capacitação, autonomia e acessibilidade digital. Conta só quando ligado à educação: governo digital, Estado digital e transformação digital do Estado, infraestrutura digital e de dados, interoperabilidade e integração de dados e de sistemas, padrões de troca de dados, dados abertos e dados públicos, serviços públicos digitais, identidade digital e CPF como identificador único, segurança cibernética, proteção de dados pessoais, LGPD, soberania digital e governança de dados, e Pix, Carteira de Identidade Nacional e saúde digital citados como modelo para a educação. Conta só quando ligado a dado, sistema, indicador ou monitoramento: Censo Escolar e Educacenso, SAEB, IDEB, PNE, Novo PAR, Fundeb, VAAR, Pé-de-Meia, recomposição de aprendizagem, evasão e abandono escolar (por exemplo, sistema de alerta de evasão), e metas e indicadores de equidade com resultado aberto por raça, território ou gênero, integração entre políticas e participação multissetorial. Internet, dispositivos e tecnologia dentro da escola são o tema Conectividade. Governo digital sem ligação com a educação é o tema Governo Digital, no eixo de Gestão pública e transparência. Termo condicionado que aparece sem a ligação pedida (telemedicina ou Pix sem falar de educação, IDEB ou Fundeb citados sem dado, sistema ou monitoramento) não é este tema: nesse caso o nível é Não menciona",
+        "Fundamental": "ensino fundamental anos iniciais (2º ao 5º ano) e anos finais (6º ao 9º ano) — exclui alfabetização do 1º ano, que é tema próprio",
+        "Ensino Médio": "ensino médio regular da rede estadual: matrícula, evasão, novo ensino médio, currículo e resultado de aprendizagem — o tempo integral é tema próprio",
+        "Valorização Docente": "carreira, salário, piso, concurso, formação continuada e condições de trabalho de professores e demais profissionais da educação",
+        "Educação Inclusiva e EJA": "educação especial e inclusiva, estudante com deficiência, educação de jovens e adultos, educação no campo, indígena e quilombola — a desigualdade de aprendizagem entre grupos, a ação afirmativa na educação e a busca ativa de estudante em vulnerabilidade são o tema Equidade Educacional",
         # Entrou em 10/08/2026. Os outros temas de educação são por etapa, então
         # proposta de dinheiro não achava onde cair: no plano da Samara Martins
         # (UP), "10% do PIB para educação" foi classificada em Ciência,
@@ -166,30 +194,6 @@ EIXOS = {
         # Infraestrutura Digital", que acabou, e o recorte não mudou: continua só
         # o uso pedagógico, então a análise gravada continua valendo.
         "Tecnologia na Educação": "uso pedagógico da tecnologia na escola: plataforma de ensino e aprendizagem, inteligência artificial em sala, ensino híbrido, letramento digital, formação do professor para tecnologia e regra de uso de celular. A rede, o acesso à internet e o dispositivo em si são o tema Conectividade, que também conta a tecnologia na escola, e o sistema de gestão escolar e os dados da rede são o tema Infraestrutura Pública Digital",
-        # Os dois temas abaixo entraram em 14/09/2026 no lugar do eixo
-        # "Conectividade e Infraestrutura Digital" (31/08 a 14/09), a pedido da
-        # MegaEdu, que não queria eixo e sim dois temas dentro de Educação. São
-        # duas áreas lá dentro e cada tema segue o material de uma delas:
-        # Conectividade, a lista de 65 termos mandada ao Felipe (itens 1 a 42);
-        # IPD, o guia "Palavras chaves para mapear campanhas", que é todo da área
-        # de IPD apesar do título, mais os itens 43 a 65 da lista.
-        #
-        # Quando um termo conta veio das respostas da Gabrielle (MegaEdu) em
-        # 14/09: termo que está nas duas listas conta só em IPD; internet fora da
-        # escola é IPD; o bloco de Estado do guia (governo digital, dados abertos,
-        # identidade digital, Pix, CIN, LGPD...) só conta ligado à educação; as
-        # siglas da educação (Censo, SAEB, Fundeb, Pé-de-Meia...) e o bloco de
-        # metas de equidade só contam ligados a dado, sistema ou monitoramento;
-        # gestão educacional conta sempre.
-        #
-        # Termo que já tinha tema (Governo Digital, Regulação de Plataformas,
-        # Transparência, Tecnologia na Educação, os temas de etapa) continua lá e
-        # conta também aqui: a MegaEdu lê, por plano, se trata ou não de cada um
-        # dos dois, e termo que só caísse no vizinho sairia como ausência.
-        # tests/test_termos_megaedu.py confere que todo termo das duas listas
-        # está no vocabulário do tema de destino.
-        "Conectividade": "conectividade e tecnologia nas escolas e na rede de ensino: internet, banda larga, fibra óptica, rede e wi-fi nas escolas, inclusive nas escolas rurais, conexão das escolas e escolas conectadas, velocidade e universalização do acesso à internet escolar; computadores, tablets, dispositivos e equipamentos tecnológicos para escolas e estudantes e laboratório de informática; tecnologia educacional e tecnologias digitais na educação, inovação educacional, educação digital, transformação digital na educação, cultura digital escolar, ensino híbrido, recursos e ferramentas digitais educacionais e inclusão digital escolar; e os programas e fundos que levam conectividade às escolas: PIEC (Programa Interministerial de Conectividade), EACE (Estratégia de Aceleração da Conectividade nas Escolas), FUST, Programa Escolas Conectadas, Estratégia Nacional de Escolas Conectadas, Wi-Fi Brasil e Internet para Todos. Só conta o que é da escola ou da rede de ensino. A internet e a inclusão digital da população fora da escola, os sistemas de gestão escolar e os dados da educação são o tema Infraestrutura Pública Digital. O uso pedagógico da tecnologia conta aqui e também no tema Tecnologia na Educação. Internet, rede ou tecnologia citadas sem relação com a escola não são este tema: nesse caso o nível é Não menciona",
-        "Infraestrutura Pública Digital": "infraestrutura pública digital e dados da educação, e internet para a população. Conta sempre: sistemas de gestão escolar e educacional (SGE, SIGED, software de gestão acadêmica, sistema de administração ou de registro escolar, plataforma de gestão escolar ou pedagógica, sistema de informação educacional), gestão escolar digital, modernização e digitalização da gestão escolar e da gestão pública educacional; matrícula, cadastro, diário de classe, boletim e carteirinha estudantil digitais; identificador único do estudante, CPF na educação, matrícula única e cadastro único do aluno; jornada, trajetória e percurso do estudante acompanhados entre redes; painel de gestão e de indicadores educacionais e dados de gestão escolar; INDE e EducaDados, Conjunto Mínimo de Dados da Educação Básica (CMDEB) e Sistema Nacional de Educação (SNE); gestão educacional, capacidade estatal e maturidade de gestão das secretarias de educação; e a internet e a inclusão digital da população fora da escola: expansão de rede, fibra e sinal para municípios, zona rural, comunidades isoladas e periferias, infovias, pontos públicos de acesso e wi-fi livre, Wi-Fi Brasil, Internet para Todos, FUST e Norte Conectado voltados à população, letramento, capacitação, autonomia e acessibilidade digital. Conta só quando ligado à educação: governo digital, Estado digital e transformação digital do Estado, infraestrutura digital e de dados, interoperabilidade e integração de dados e de sistemas, padrões de troca de dados, dados abertos e dados públicos, serviços públicos digitais, identidade digital e CPF como identificador único, segurança cibernética, proteção de dados pessoais, LGPD, soberania digital e governança de dados, e Pix, Carteira de Identidade Nacional e saúde digital citados como modelo para a educação. Conta só quando ligado a dado, sistema, indicador ou monitoramento: Censo Escolar e Educacenso, SAEB, IDEB, PNE, Novo PAR, Fundeb, VAAR, Pé-de-Meia, recomposição de aprendizagem, evasão e abandono escolar (por exemplo, sistema de alerta de evasão), e metas e indicadores de equidade com resultado aberto por raça, território ou gênero, integração entre políticas e participação multissetorial. Internet, dispositivos e tecnologia dentro da escola são o tema Conectividade. Governo digital sem ligação com a educação é o tema Governo Digital, no eixo de Gestão pública e transparência. Termo condicionado que aparece sem a ligação pedida (telemedicina ou Pix sem falar de educação, IDEB ou Fundeb citados sem dado, sistema ou monitoramento) não é este tema: nesse caso o nível é Não menciona",
     },
     # Entrou em 31/08/2026 a pedido da Fundação Maria Cecilia Souto Vidigal. O
     # tema "Primeira Infância" morava em Educação e cobria de creche a
