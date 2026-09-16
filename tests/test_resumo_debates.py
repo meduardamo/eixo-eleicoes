@@ -328,3 +328,43 @@ def test_travessao_de_rotulo_em_negrito_vira_dois_pontos():
 def test_rotulo_que_ja_usa_dois_pontos_nao_muda():
     original = "**Educação:** o candidato citou o Propag."
     assert sem_travessao(original) == original
+
+
+def test_criar_docx_timbrado_novo_modelo(tmp_path):
+    from pathlib import Path
+    import zipfile
+    import re
+    from outros.resumo_debates import criar_docx_timbrado
+
+    template_path = Path(__file__).parent.parent / "outros" / "templates" / "timbrado_eleicoes.docx"
+    assert template_path.exists(), "Template timbrado_eleicoes.docx não encontrado"
+
+    saida = tmp_path / "teste_resumo.docx"
+    texto = "# Resumo Geral\nTexto com **destaque** de teste.\n---\nOutro parágrafo."
+    resultado = criar_docx_timbrado(texto, "Título Teste", "Subtítulo Teste", template_path, saida)
+
+    assert resultado is not None
+    assert saida.exists()
+
+    with zipfile.ZipFile(saida, "r") as z:
+        assert "word/document.xml" in z.namelist()
+        assert "word/header1.xml" in z.namelist()
+        assert "word/_rels/header1.xml.rels" in z.namelist()
+        assert "word/media/image1.png" in z.namelist()
+        assert "word/media/image2.png" in z.namelist()
+
+        rels = z.read("word/_rels/header1.xml.rels").decode("utf-8")
+        m_r1 = re.search(r'Id="rId1"[^>]*Target="([^"]+)"', rels) or re.search(r'Target="([^"]+)"[^>]*Id="rId1"', rels)
+        m_r2 = re.search(r'Id="rId2"[^>]*Target="([^"]+)"', rels) or re.search(r'Target="([^"]+)"[^>]*Id="rId2"', rels)
+
+        assert m_r1 is not None, "rId1 não encontrado em header1.xml.rels"
+        assert m_r2 is not None, "rId2 não encontrado em header1.xml.rels"
+
+        target_r1 = m_r1.group(1)
+        target_r2 = m_r2.group(1)
+
+        # No novo modelo, o header é image2.png e o footer é image1.png
+        assert target_r1 == "media/image2.png", f"Esperado header image2.png, obteve {target_r1}"
+        assert target_r2 == "media/image1.png", f"Esperado footer image1.png, obteve {target_r2}"
+        assert target_r1 != target_r2, "Header e footer não podem apontar para a mesma imagem"
+

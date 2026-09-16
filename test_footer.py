@@ -18,7 +18,7 @@ def test_fix_footer():
                     # Find all drawings
                     for m in re.finditer(r"<w:p\b.*?</w:p>", doc_xml_str):
                         p_xml = m.group(0)
-                        if "<w:drawing>" in p_xml and "image2.png" in p_xml:
+                        if "<w:drawing>" in p_xml:
                             drawings_xml += p_xml
                     
                     # Create a sample document body
@@ -31,8 +31,10 @@ def test_fix_footer():
                     footer_xml = conteudo.decode("utf-8")
                     
                     if drawings_xml:
-                        # Change rId7 to rId1 for the footer relationships
-                        drawing_footer = drawings_xml.replace('r:embed="rId7"', 'r:embed="rId1"')
+                        m_embed = re.search(r'<a:blip[^>]*r:embed="([^"]+)"', drawings_xml)
+                        orig_rid = m_embed.group(1) if m_embed else "rId7"
+                        # Change orig_rid to rId1 for the footer relationships
+                        drawing_footer = drawings_xml.replace(f'r:embed="{orig_rid}"', 'r:embed="rId1"')
                         
                         # Insert before the last </w:ftr>
                         if "</w:ftr>" in footer_xml:
@@ -45,9 +47,18 @@ def test_fix_footer():
                     
             if drawings_xml:
                 # Need to write word/_rels/footer1.xml.rels
-                rels_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                m_embed = re.search(r'<a:blip[^>]*r:embed="([^"]+)"', drawings_xml)
+                orig_rid = m_embed.group(1) if m_embed else "rId7"
+                footer_target = "media/image1.png"
+                with zipfile.ZipFile(template_path, "r") as z_chk:
+                    if "word/_rels/document.xml.rels" in z_chk.namelist():
+                        drels = z_chk.read("word/_rels/document.xml.rels").decode("utf-8")
+                        mt = re.search(rf'Id="{orig_rid}"[^>]*Target="([^"]+)"', drels) or re.search(rf'Target="([^"]+)"[^>]*Id="{orig_rid}"', drels)
+                        if mt:
+                            footer_target = mt.group(1)
+                rels_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image2.png"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="{footer_target}"/>
 </Relationships>"""
                 z_out.writestr("word/_rels/footer1.xml.rels", rels_xml)
 

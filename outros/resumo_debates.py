@@ -875,8 +875,19 @@ def criar_docx_timbrado(texto_md: str, titulo: str, subtitulo: str, template_pat
     if "word/header1.xml" in file_dict and drawings_xml:
         header_xml = file_dict["word/header1.xml"].decode("utf-8")
         
-        # Troca rId7 (do document.xml) para rId2 (do header1.xml)
-        drawing_footer = drawings_xml.replace('r:embed="rId7"', 'r:embed="rId2"')
+        # Identifica dinamicamente o rId usado no desenho do footer e seu arquivo de mídia correspondente
+        m_embed = re.search(r'<a:blip[^>]*r:embed="([^"]+)"', drawings_xml)
+        orig_rid = m_embed.group(1) if m_embed else "rId7"
+
+        footer_target = "media/image1.png"
+        if "word/_rels/document.xml.rels" in file_dict:
+            doc_rels = file_dict["word/_rels/document.xml.rels"].decode("utf-8")
+            m_target = re.search(rf'Id="{orig_rid}"[^>]*Target="([^"]+)"', doc_rels) or re.search(rf'Target="([^"]+)"[^>]*Id="{orig_rid}"', doc_rels)
+            if m_target:
+                footer_target = m_target.group(1)
+
+        # Troca o embed do document.xml para rId2 (do header1.xml)
+        drawing_footer = drawings_xml.replace(f'r:embed="{orig_rid}"', 'r:embed="rId2"')
         
         if "</w:hdr>" in header_xml:
             header_xml = header_xml.replace("</w:hdr>", drawing_footer + "</w:hdr>")
@@ -886,7 +897,7 @@ def criar_docx_timbrado(texto_md: str, titulo: str, subtitulo: str, template_pat
         if "word/_rels/header1.xml.rels" in file_dict:
             rels_xml = file_dict["word/_rels/header1.xml.rels"].decode("utf-8")
             if "</Relationships>" in rels_xml:
-                rels_xml = rels_xml.replace("</Relationships>", '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image2.png"/></Relationships>')
+                rels_xml = rels_xml.replace("</Relationships>", f'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="{footer_target}"/></Relationships>')
             file_dict["word/_rels/header1.xml.rels"] = rels_xml.encode("utf-8")
 
     novo_doc = f"""<?xml version="1.0"
