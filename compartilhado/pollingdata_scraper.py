@@ -3276,6 +3276,8 @@ def reconstruir_resultados_bi(gc, sheet_id: str):
     df_resultados_all = carregar_df_da_aba(aba_resultados)
     df_pesquisas_all = carregar_df_da_aba(aba_pesquisas)
     df_resultados_bi = construir_resultados_bi(df_resultados_all, df_pesquisas_all)
+    from compartilhado.filtro_candidaturas import aplicar as tirar_sem_candidatura
+    df_resultados_bi = tirar_sem_candidatura(gc, df_resultados_bi)
     sobrescrever_aba(aba_resultados_bi, df_resultados_bi)
     print(f"[+] resultados_bi: {len(df_resultados_bi)} linhas consolidadas para Looker")
 
@@ -3366,6 +3368,8 @@ def salvar_tudo(gc, spreadsheet_id: str, df_p: pd.DataFrame, df_r: pd.DataFrame)
     df_resultados_all = carregar_df_da_aba(aba_resultados)
     df_pesquisas_all = carregar_df_da_aba(aba_pesquisas)
     df_resultados_bi = construir_resultados_bi(df_resultados_all, df_pesquisas_all)
+    from compartilhado.filtro_candidaturas import aplicar as tirar_sem_candidatura
+    df_resultados_bi = tirar_sem_candidatura(gc, df_resultados_bi)
     sobrescrever_aba(aba_resultados_bi, df_resultados_bi)
     print(f"[+] resultados_bi: {len(df_resultados_bi)} linhas consolidadas para Looker")
 
