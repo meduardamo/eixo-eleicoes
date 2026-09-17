@@ -41,12 +41,12 @@ def pnorm(p):
 
 # casos que o nome sozinho não resolve, conferidos um a um no nome completo do TSE
 MANUAL = {
-    ("SP", "GUILHERME DERRITE"): "Capitão Derrite (PL)",      # GUILHERME MURARO DERRITE
-    ("AL", "MARINA JHC"): "Marina Cândia (PL)",               # MARINA ANTUNES CANDIA E FIGUEIREDO
-    ("CE", "LUIZIANNE"): "Luizianne Lins (PT)",               # LUIZIANNE DE OLIVEIRA LINS
-    ("AL", "ALEXANDRE FLEMING"): "Fleming (SEM PARTIDO)",     # ALEXANDRE FLEMING VASQUES BASTOS
-    ("RN", "CLÓVIS COSTA DO COLETIVO NÓS"): "Clóvis Costa (SEM PARTIDO)",
-    ("TO", "HELIO RODRIGUES BOLSONARO"): "Hélio Bolsonaro (SEM PARTIDO)",
+    ("SP", "GUILHERME DERRITE"): "Capitão Derrite (PP)",      # GUILHERME MURARO DERRITE
+    ("AL", "MARINA JHC"): "Marina Cândia (PSDB)",             # MARINA ANTUNES CANDIA E FIGUEIREDO
+    ("CE", "LUIZIANNE"): "Luizianne Lins (REDE)",             # LUIZIANNE DE OLIVEIRA LINS
+    ("AL", "ALEXANDRE FLEMING"): "Fleming (UP)",              # ALEXANDRE FLEMING VASQUES BASTOS
+    ("RN", "CLÓVIS COSTA DO COLETIVO NÓS"): "Clóvis Costa (AGIR)",
+    ("TO", "HELIO RODRIGUES BOLSONARO"): "Hélio Bolsonaro (PL)",
 }
 
 ch = pd.read_csv("chapas.csv")
@@ -74,13 +74,17 @@ for _, t in tse.iterrows():
     pool = s[s.uf == t.uf]
     manual = MANUAL.get((t.uf, t.titular))
     if manual is not None:
-        x = pool[pool.candidato_partido == manual].iloc[0]
-        out.append(dict(uf=t.uf, candidato=str(t.titular).title(), partido=t.titular_partido,
-                        sq=str(t.sq_titular), situacao_registro=t.situacao, mm=round(float(x.mm), 1),
-                        nome_na_pesquisa=x.candidato_partido,
-                        n_pesq=int(npesq.get((t.uf, x.nb), 0)), data_ult=x.d,
-                        score=1.0, nota_casamento="conferido no nome completo do TSE"))
-        continue
+        m = pool[pool.candidato_partido == manual]
+        if m.empty:
+            m = pool[pool.nb == norm(manual)]
+        if not m.empty:
+            x = m.iloc[0]
+            out.append(dict(uf=t.uf, candidato=str(t.titular).title(), partido=t.titular_partido,
+                            sq=str(t.sq_titular), situacao_registro=t.situacao, mm=round(float(x.mm), 1),
+                            nome_na_pesquisa=x.candidato_partido,
+                            n_pesq=int(npesq.get((t.uf, x.nb), 0)), data_ult=x.d,
+                            score=1.0, nota_casamento="conferido no nome completo do TSE"))
+            continue
     cand = sorted(((max(sim(a, x.nb), sim(b, x.nb)), x) for _, x in pool.iterrows()),
                   key=lambda z: -z[0])
     achados = [(sc, x) for sc, x in cand if sc >= FRACO]
