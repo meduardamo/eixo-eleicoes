@@ -760,6 +760,7 @@ SCORE_INSTITUTO = {
 }
 
 MEIA_VIDA_AGREGADORES_DIAS = 30
+DIAS_MAX_INATIVIDADE_CANDIDATO = 60
 COLUNA_MODELO_AMOSTRAL = "media_amostral_30d"
 COLUNA_MODELO_HIBRIDO = "media_hibrida_30d"
 
@@ -2011,6 +2012,8 @@ def adicionar_media_movel_13d_resultados_bi(df: pd.DataFrame) -> pd.DataFrame:
 
         chave_escopo = chave_serie[:len(chaves_escopo)] if isinstance(chave_serie, tuple) else (chave_serie,)
         data_final_escopo = datas_finais_por_escopo.get(chave_escopo, datas_validas.iloc[-1])
+        data_limite_cand = datas_validas.iloc[-1] + pd.Timedelta(days=DIAS_MAX_INATIVIDADE_CANDIDATO)
+        data_final_escopo = min(data_final_escopo, data_limite_cand)
         faixa_datas = pd.date_range(datas_validas.iloc[0], data_final_escopo, freq="D")
         base_datas = pd.DataFrame({"_data_campo_dt": faixa_datas})
 
@@ -2388,6 +2391,8 @@ def _calcular_serie_agregada_30d(
             continue
         chave_escopo = chave[:len(chaves_escopo)]
         data_final = datas_finais.get(chave_escopo, grupo["_data_disponivel"].max())
+        data_limite_cand = grupo["_data_disponivel"].max() + pd.Timedelta(days=DIAS_MAX_INATIVIDADE_CANDIDATO)
+        data_final = min(data_final, data_limite_cand)
         for data_ref in pd.date_range(grupo["_data_disponivel"].min(), data_final, freq="D"):
             disponiveis = grupo[grupo["_data_disponivel"].le(data_ref)].copy()
             idade = (data_ref - disponiveis["_data_peso"]).dt.days.clip(lower=0)

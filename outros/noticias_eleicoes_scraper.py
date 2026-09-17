@@ -1493,7 +1493,7 @@ ROTULO_TEMA = {
 }
 
 PAINEL_URL = os.getenv("PAINEL_NOTICIAS_URL",
-                       "https://painel-eleitoral-interno.streamlit.app/Notícias")
+                       "https://painel-eixo.streamlit.app/Notícias")
 
 
 def _esc(v):

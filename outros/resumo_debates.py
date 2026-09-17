@@ -669,7 +669,7 @@ COLUNA_META = "resumo_meta"
 # Doc. O nome vem do arquivo pages/4_Debates_e_Sabatinas.py.
 PAINEL_DEBATES_URL = os.getenv(
     "PAINEL_DEBATES_URL",
-    "https://painel-eleitoral-interno.streamlit.app/Debates_e_Sabatinas")
+    "https://painel-eixo.streamlit.app/Debates_e_Sabatinas")
 
 # Limite de uma célula do Sheets é 50 mil caracteres. O resumo mais longo até
 # agora tem cerca de 9 mil, mas a célula que estoura derruba a escrita da linha
