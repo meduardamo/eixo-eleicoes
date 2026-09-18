@@ -28,7 +28,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install gspread requests pandas curl_cffi
+      # pyarrow: o fim da rodada republica o cache Parquet das abas que ela escreve
+      - run: pip install gspread requests pandas curl_cffi pyarrow
 
       - name: Escrever credentials.json
         run: printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json

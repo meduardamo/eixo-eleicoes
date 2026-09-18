@@ -620,3 +620,18 @@ if __name__ == '__main__':
         salvar_no_sheets(base, "base_dadosabertos")
     else:
         print("base_dadosabertos não gerada nesta rodada")
+
+    # Republicar o Parquet aqui, e não esperar o workflow dos planos passar depois.
+    # Os dois crons ficavam a 20 min de distância, mas esta rodada leva de 21 a 26
+    # min e o cron do Actions atrasa de 25 a 250: em 18/09/2026 o Parquet saiu às
+    # 17:50 e esta escrita só terminou às 18:04, então o cache guardou a aba no meio
+    # da gravação (29 células de SITUACAO_TEMPO_REAL diferentes). Publicando no fim
+    # da própria rodada, a ordem deixa de depender de sorte.
+    # Falhar aqui não pode derrubar a coleta, que é o que alimenta todo o resto.
+    try:
+        from compartilhado.cache_parquet import publicar_abas
+        if SHEETS_ID and CREDS_FILE.exists():
+            publicar_abas(gspread.service_account(filename=str(CREDS_FILE)),
+                          SHEETS_ID, ("base_dadosabertos", "chapas_divulgacand"))
+    except Exception as e:
+        print(f"cache Parquet não republicado: {str(e)[:160]}")
