@@ -6,9 +6,15 @@ name: 20 - Resumo de Debates
 # que a transcrição não tem.
 on:
   schedule:
-    - cron: '47 * * * *'   # Roda de hora em hora (no minuto 47)
+    - cron: '47 * * * *'   # Roda de hora em hora (no minuto 47) para consolidar texto e painel (sem email)
+    - cron: '0 14,19 * * *' # Rodadas de email às 11h e 16h BRT (14h e 19h UTC)
   workflow_dispatch:
     inputs:
+      disparar_email:
+        description: 'Disparar rodada de email agora com os resumos pendentes de notificação'
+        type: boolean
+        required: false
+        default: false
       id:
         description: 'Id do debate na planilha (vazio = todos os que estão "pronto" e ainda não têm resumo)'
         required: false
@@ -130,20 +136,13 @@ jobs:
         run: python -m outros.resumo_debates --testar-email
 
       - name: Gerar os resumos
-        if: inputs.preencher_texto != true && inputs.preencher_meta != true && inputs.testar_email != true
+        if: inputs.preencher_texto != true && inputs.preencher_meta != true && inputs.testar_email != true && inputs.disparar_email != true && github.event.schedule != '0 14 * * *' && github.event.schedule != '0 19 * * *'
         env:
           PYTHONUNBUFFERED: "1"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ inputs.modelo || 'gemini-3.6-flash' }}
           SPREADSHEET_ID_DEBATES: ${{ secrets.SPREADSHEET_ID_DEBATES }}
           PASTA_DRIVE_DEBATES: ${{ secrets.PASTA_DRIVE_DEBATES }}
-          # Aviso de rodada para a lista. Sem BREVO_API_KEY/EMAIL a rodada
-          # segue igual, só não manda nada. DESTINATARIOS_DEBATES é a lista
-          # desta rotina; sem ela cai na geral (DESTINATARIOS).
-          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
-          EMAIL: ${{ secrets.EMAIL }}
-          DESTINATARIOS_DEBATES: ${{ secrets.DESTINATARIOS_DEBATES }}
-          DESTINATARIOS: ${{ secrets.DESTINATARIOS }}
         run: |
           python -m outros.resumo_debates --fila \
             ${{ inputs.sabatina == true && '--sabatina' || '' }} \
@@ -151,8 +150,22 @@ jobs:
             --eixos ${{ inputs.eixos || '6' }} \
             ${{ inputs.refazer == true && '--refazer' || '' }} \
             ${{ inputs.sem_modelo == true && '--sem-modelo' || '' }} \
-            ${{ inputs.sem_email == true && '--sem-email' || '' }} \
+            --sem-email \
             ${{ (inputs.drive == true || github.event_name == 'repository_dispatch' || github.event_name == 'schedule') && '--drive' || '' }}
+
+      # Dispara email consolidado às 11h e 16h (horário de Brasília = 14h e 19h UTC),
+      # ou quando disparado manualmente. Se não houver resumo novo pronto, não envia nada.
+      - name: Disparar rodada de email (11h e 16h)
+        if: inputs.disparar_email == true || (github.event_name == 'schedule' && (github.event.schedule == '0 14 * * *' || github.event.schedule == '0 19 * * *'))
+        env:
+          PYTHONUNBUFFERED: "1"
+          SPREADSHEET_ID_DEBATES: ${{ secrets.SPREADSHEET_ID_DEBATES }}
+          PASTA_DRIVE_DEBATES: ${{ secrets.PASTA_DRIVE_DEBATES }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          EMAIL: ${{ secrets.EMAIL }}
+          DESTINATARIOS_DEBATES: ${{ secrets.DESTINATARIOS_DEBATES }}
+          DESTINATARIOS: ${{ secrets.DESTINATARIOS }}
+        run: python -m outros.resumo_debates --disparar-rodada-email
 
       - name: Resumo na página do run
         if: always()

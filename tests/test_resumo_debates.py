@@ -279,6 +279,31 @@ def test_html_do_aviso_escapa_o_que_veio_da_planilha():
     assert "&amp;" in html
 
 
+def test_email_da_rodada_agrupado_por_cargo_e_tipo():
+    """Eventos da rodada saem agrupados por cargo (Presidente, Governador) e subseção (Debates, Sabatinas)."""
+    eventos = [
+        {"titulo": "Resumo do 1º debate ao governo de São Paulo", "quando": "09/08/2026",
+         "emissora": "Band", "participantes": ["Tarcísio", "Haddad"], "link": "http://link1",
+         "atualizado": False, "cargo": "Governador", "tipo": "Debate"},
+        {"titulo": "Resumo da sabatina ao governo do DF", "quando": "15/09/2026",
+         "emissora": "TV Globo", "participantes": ["Celina Leão"], "link": "http://link2",
+         "atualizado": False, "cargo": "Governador", "tipo": "Sabatina"},
+        {"titulo": "Resumo do debate presidencial", "quando": "10/08/2026",
+         "emissora": "Band", "participantes": ["Lula", "Bolsonaro"], "link": "http://link3",
+         "atualizado": False, "cargo": "Presidente", "tipo": "Debate"},
+    ]
+    assunto, html = email_da_rodada(eventos, "2026-09-21 11:00")
+    assert assunto == "3 resumos de debates prontos"
+    assert "Presidente" in html
+    assert "Governador" in html
+    assert "Debates (1)" in html
+    assert "Sabatinas (1)" in html
+    # Garante que Presidente vem antes de Governador na ordem de seções
+    pos_pres = html.index("Presidente")
+    pos_gov = html.index("Governador")
+    assert pos_pres < pos_gov
+
+
 # A regra do travessão está no prompt desde sempre e o modelo desobedece: o
 # resumo da sabatina do Lula de 27/08/2026 saiu com inciso entre travessões.
 # Estes casos prendem a limpeza determinística que roda depois do modelo.

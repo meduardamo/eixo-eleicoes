@@ -37,7 +37,7 @@ import sys
 import time
 from pathlib import Path
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
 TENTATIVAS = 3
 
 # Quantos eixos ganham parágrafo próprio. Seis é o que coube no resumo que a
@@ -665,6 +665,10 @@ COLUNA_TEXTO = "resumo_md"
 # vira número aqui.
 COLUNA_META = "resumo_meta"
 
+# Registro da data e hora em que o evento foi incluído no email da rodada (11h ou 16h),
+# para garantir que nenhum evento seja notificado duas vezes e que emails só saiam se houver novidades.
+COLUNA_EMAIL = "email_notificado_em"
+
 # Página do painel interno onde o resumo aparece para quem não quer abrir o
 # Doc. O nome vem do arquivo pages/4_Debates_e_Sabatinas.py.
 PAINEL_DEBATES_URL = os.getenv(
@@ -1068,39 +1072,97 @@ def _esc(v):
 def email_da_rodada(feitos, agora):
     """Assunto e corpo do aviso de que saiu resumo novo.
 
-    Um email por rodada, e não por evento: numa leva como a das seis sabatinas
-    da Globo seriam seis emails seguidos para a mesma lista. O corpo é aviso,
-    não o resumo: quem lê abre o Doc timbrado, que é o que circula fora daqui.
+    Organizado por cargo (Presidente, Governador, etc.) e tipo (Debate vs Sabatina).
+    Um email por rodada, e não por evento: numa leva como a das sabatinas da Globo,
+    as mensagens saem consolidadas em seções temáticas para não poluir a caixa de entrada.
+    O corpo é aviso com links diretos para os Docs timbrados.
 
     Função pura, para o texto poder ser conferido em teste sem mandar email.
     """
     from compartilhado.email_utils import EIXO_MARINHO
 
     # O titulo() já vem como 'Resumo do 1º debate ao governo de São Paulo,
-    # Band, 09/08/2026', então não precisa de prefixo na linha de assunto.
+    # Band, 09/08/2026', então não precisa de prefixo na linha de assunto quando for unitário.
     assunto = (feitos[0]["titulo"] if len(feitos) == 1
                else f"{len(feitos)} resumos de debates prontos")
 
-    blocos = []
+    ORDEM_CARGOS = ["Presidente", "Governador", "Senador", "Prefeito", "Deputado Federal", "Deputado Estadual"]
+    cargos_map = {}
     for f in feitos:
-        linhas = [f"{f['quando']} · {f['emissora']}" if f["emissora"] else f["quando"]]
-        if f["participantes"]:
-            linhas.append("Participantes: " + ", ".join(f["participantes"]))
-        detalhes = "".join(
-            f'<div style="color:#374151;font-size:13px;margin:2px 0">{_esc(l)}</div>'
-            for l in linhas if l.strip())
-        selo = ('<span style="font-size:12px;color:#6b7280"> (atualizado)</span>'
-                if f["atualizado"] else "")
-        blocos.append(f"""
-      <div style="border-left:3px solid {EIXO_MARINHO};padding:8px 12px;margin:0 0 14px 0;background:#f6f7fa">
-        <div style="font-weight:bold;color:{EIXO_MARINHO}">{_esc(f['titulo'])}{selo}</div>
-        {detalhes}
-        <a href="{_esc(f['link'])}" style="color:{EIXO_MARINHO};font-size:12px">abrir o resumo</a>
+        cargo = (f.get("cargo") or "").strip()
+        if not cargo:
+            t_low = f["titulo"].lower()
+            if "presid" in t_low:
+                cargo = "Presidente"
+            elif "governo" in t_low or "governador" in t_low:
+                cargo = "Governador"
+            elif "senad" in t_low:
+                cargo = "Senador"
+            elif "prefeit" in t_low:
+                cargo = "Prefeito"
+            else:
+                cargo = "Geral"
+        cargo = cargo.title()
+
+        tipo_raw = (f.get("tipo") or "").strip()
+        if not tipo_raw:
+            tipo_raw = "Sabatina" if "sabatina" in f["titulo"].lower() else "Debate"
+        tipo = "Sabatinas" if "sabatina" in tipo_raw.lower() else "Debates"
+
+        if cargo not in cargos_map:
+            cargos_map[cargo] = {"Debates": [], "Sabatinas": []}
+        cargos_map[cargo][tipo].append(f)
+
+    cargos_ordenados = sorted(
+        cargos_map.keys(),
+        key=lambda c: ORDEM_CARGOS.index(c) if c in ORDEM_CARGOS else 99
+    )
+
+    secoes_html = []
+    for cargo in cargos_ordenados:
+        subsecoes = []
+        for tipo_nome in ["Debates", "Sabatinas"]:
+            itens = cargos_map[cargo][tipo_nome]
+            if not itens:
+                continue
+            cards = []
+            for f in itens:
+                linhas = [f"{f['quando']} · {f['emissora']}" if f.get("emissora") else f.get("quando", "")]
+                if f.get("participantes"):
+                    linhas.append("Participantes: " + ", ".join(f["participantes"]))
+                detalhes = "".join(
+                    f'<div style="color:#374151;font-size:13px;margin:2px 0">{_esc(l)}</div>'
+                    for l in linhas if l.strip())
+                selo = ('<span style="font-size:12px;color:#6b7280"> (atualizado)</span>'
+                        if f.get("atualizado") else "")
+                cards.append(f"""
+          <div style="border-left:3px solid {EIXO_MARINHO};padding:8px 12px;margin:0 0 10px 0;background:#f6f7fa">
+            <div style="font-weight:bold;color:{EIXO_MARINHO}">{_esc(f['titulo'])}{selo}</div>
+            {detalhes}
+            <a href="{_esc(f['link'])}" style="color:{EIXO_MARINHO};font-size:12px">abrir o resumo</a>
+          </div>""")
+
+            subsecoes.append(f"""
+        <div style="margin:12px 0 8px 0">
+          <div style="font-size:12px;font-weight:bold;color:#475569;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">
+            {tipo_nome} ({len(itens)})
+          </div>
+          {"".join(cards)}
+        </div>""")
+
+        secoes_html.append(f"""
+      <div style="margin-top:20px;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:bold;color:{EIXO_MARINHO};border-bottom:2px solid #cbd5e1;padding-bottom:4px;margin-bottom:10px">
+          🏛️ {cargo}
+        </div>
+        {"".join(subsecoes)}
       </div>""")
+
+    corpo_eventos = "".join(secoes_html)
 
     html = f"""
     <html><body style="font-family:Arial,sans-serif;color:#111">
-      <h2 style="margin:0 0 6px 0">Resumo de debates</h2>
+      <h2 style="margin:0 0 6px 0">Resumo de debates e sabatinas</h2>
       <div style="color:#374151;margin:0 0 14px 0">
         {_esc(agora)} · {len(feitos)} resumo(s) novo(s)
       </div>
@@ -1110,7 +1172,7 @@ def email_da_rodada(feitos, agora):
         <a href="{PAINEL_DEBATES_URL}" style="color:{EIXO_MARINHO}">Debates e Sabatinas</a>
         do painel interno.
       </div>
-      {"".join(blocos)}
+      {corpo_eventos}
     </body></html>
     """
     return assunto, html
@@ -1154,6 +1216,66 @@ def testar_email(_args):
     exemplo = [dict(base, titulo="TESTE de aviso, ignore. " + base["titulo"])]
     if not avisar_por_email(exemplo):
         sys.exit("nenhum email saiu, veja o log acima")
+
+
+def disparar_rodada_email(_args):
+    """Verifica todos os eventos prontos que ainda não foram notificados por email.
+
+    Roda nas rodadas de 11h e 16h (horário de Brasília).
+    Se houver eventos prontos sem registro de envio, dispara um email único agrupado por
+    cargo e tipo, marcando a coluna 'email_notificado_em' para não reenviar.
+    Se não houver novos eventos, não envia nada.
+    """
+    import outros.transcricao_debates as td
+    from outros.transcricao_debates import (COL, PLANILHA, clientes_google,
+                                            com_retentativa, escrever_celula, agora_brt)
+
+    if not PLANILHA:
+        sys.exit("defina SPREADSHEET_ID_DEBATES (secret do repo).")
+    gc, drive = clientes_google()
+    ws = com_retentativa("abertura da planilha de eventos",
+                         lambda: gc.open_by_key(PLANILHA).worksheet("eventos"))
+    todas = com_retentativa("leitura da planilha", ws.get_all_values)
+    cabecalho = list(todas[0])
+
+    col_email = coluna_por_nome(ws, cabecalho, COLUNA_EMAIL)
+    col_resumo = indice_do_resumo(cabecalho)
+
+    pendentes = []
+    for i, linha in enumerate(todas[1:], start=2):
+        if not linha:
+            continue
+        status = (linha[COL["status"]] if COL["status"] < len(linha) else "").strip().lower()
+        link_res = (linha[col_resumo - 1] if col_resumo and col_resumo <= len(linha) else "").strip()
+        ja_notificado = (linha[col_email - 1] if col_email <= len(linha) else "").strip()
+
+        # Só notifica se estiver pronto, tiver link_resumo e ainda NÃO tiver sido notificado
+        if status == "pronto" and link_res and not ja_notificado:
+            meta = meta_da_linha(linha, COL, todas)
+            sabatina_flag = meta.get("tipo", "").strip().lower() == "sabatina"
+            pendentes.append({
+                "linha": i,
+                "titulo": titulo(meta, sabatina_flag),
+                "quando": por_extenso(meta.get("data", "")) or meta.get("data", ""),
+                "emissora": meta.get("emissora", ""),
+                "participantes": meta.get("participantes", []),
+                "link": link_res,
+                "atualizado": False,
+                "cargo": meta.get("cargo", ""),
+                "uf": meta.get("uf", ""),
+                "tipo": "Sabatina" if sabatina_flag else "Debate",
+            })
+
+    if not pendentes:
+        log("Nenhum novo resumo pendente de envio por email. Disparo cancelado.")
+        return
+
+    log(f"{len(pendentes)} resumo(s) pendente(s) de notificação por email.")
+    if avisar_por_email(pendentes):
+        agora = agora_brt()
+        for p in pendentes:
+            escrever_celula(ws, p["linha"], col_email, agora)
+        log(f"{len(pendentes)} evento(s) marcado(s) como notificado(s) em '{agora}'.")
 
 
 def exemplo_de_aviso():
@@ -1213,10 +1335,11 @@ def rodar_fila(args):
                          lambda: gc.open_by_key(PLANILHA).worksheet(aba_alvo))
     todas = com_retentativa("leitura da fila", ws.get_all_values)
 
-    # Evento que já tem resumo fica de fora da fila: cada rodada chama o modelo
-    # uma vez por tema e paga de novo por texto que já está no Drive. Com --id
-    # ou --refazer o resumo sai mesmo assim, e sobe como arquivo novo.
-    ja_tem = indice_do_resumo(todas[0])
+    # Evento que já tem resumo e email enviados fica de fora da fila: o workflow 19
+    # (transcrição) já preenche link_resumo com o doc, mas é aqui que o texto
+    # (resumo_md) é consolidado e o email é disparado. Checar resumo_md garante que
+    # eventos recém-transcritos sejam processados e notificados por email.
+    ja_tem = indice_da_coluna(todas[0], COLUNA_TEXTO) or indice_do_resumo(todas[0])
 
     fila = []
     for i, linha in enumerate(todas[1:], start=2):
@@ -1293,6 +1416,9 @@ def rodar_fila(args):
                 # Resumo que já tinha link é refeito por cima do mesmo Doc, e
                 # quem recebe precisa saber que não é evento novo.
                 "atualizado": bool(meta.get("link_resumo")),
+                "cargo": meta.get("cargo", ""),
+                "uf": meta.get("uf", ""),
+                "tipo": "Sabatina" if sabatina_flag else "Debate",
             })
             # O texto vai para a planilha porque é de lá que o painel lê. O
             # Drive continua guardando o documento timbrado, que é o que se
@@ -1327,6 +1453,8 @@ def main():
                     help="não avisa a lista de que saiu resumo novo")
     ap.add_argument("--testar-email", action="store_true",
                     help="manda um aviso de teste para a lista e sai")
+    ap.add_argument("--disparar-rodada-email", action="store_true",
+                    help="dispara o email de resumo dos eventos prontos ainda não notificados (rodadas 11h e 16h)")
     ap.add_argument("--eixos", type=int, default=EIXOS_NO_TEXTO,
                     help=f"quantos temas ganham parágrafo (padrão {EIXOS_NO_TEXTO})")
     ap.add_argument("--min-falas", type=int, default=MIN_FALAS)
@@ -1354,6 +1482,8 @@ def main():
 
     if args.testar_email:
         testar_email(args)
+    elif args.disparar_rodada_email:
+        disparar_rodada_email(args)
     elif args.preencher_texto:
         preencher_texto(args)
     elif args.preencher_meta:
