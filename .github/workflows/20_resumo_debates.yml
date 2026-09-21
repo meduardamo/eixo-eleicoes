@@ -7,7 +7,8 @@ name: 20 - Resumo de Debates
 on:
   schedule:
     - cron: '47 * * * *'   # Roda de hora em hora (no minuto 47) para consolidar texto e painel (sem email)
-    - cron: '0 14,19 * * *' # Rodadas de email às 11h e 16h BRT (14h e 19h UTC)
+    - cron: '0 14 * * *'   # Rodada de email das 11h BRT (14h UTC)
+    - cron: '0 19 * * *'   # Rodada de email das 16h BRT (19h UTC)
   workflow_dispatch:
     inputs:
       disparar_email:
