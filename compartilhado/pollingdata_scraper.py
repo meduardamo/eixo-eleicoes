@@ -2444,12 +2444,13 @@ def calcular_agregadores_paralelos_resultados_bi(
 
     principal["_percentual_num"] = pd.to_numeric(principal.get("percentual"), errors="coerce")
     principal["_amostra_num"] = pd.to_numeric(principal["amostra"], errors="coerce")
-    inicio = pd.to_datetime(principal["data_inicio_campo"], errors="coerce")
     fim = pd.to_datetime(principal["data_campo"], errors="coerce")
     # A pesquisa só passa a compor a série quando o campo termina, evitando
-    # vazamento retrospectivo. A idade do peso, porém, é contada desde o início
-    # do campo, conforme a definição do modelo amostral.
-    principal["_data_peso"] = inicio.fillna(fim)
+    # vazamento retrospectivo, e a idade do peso conta do mesmo dia: o último
+    # do campo. Era `inicio.fillna(fim)`, com `data_inicio_campo` que a aba
+    # `pesquisas` nunca gravou; se um dia gravasse, a série inteira mudaria de
+    # peso sem ninguém pedir. Decisão da Eduarda em 21/09/2026.
+    principal["_data_peso"] = fim
     principal["_data_disponivel"] = fim
     principal["_score_instituto"] = principal["classificacao_instituto"].apply(score_instituto)
     principal = principal[
