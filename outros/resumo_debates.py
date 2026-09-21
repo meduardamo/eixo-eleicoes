@@ -1153,7 +1153,7 @@ def email_da_rodada(feitos, agora):
         secoes_html.append(f"""
       <div style="margin-top:20px;margin-bottom:14px">
         <div style="font-size:16px;font-weight:bold;color:{EIXO_MARINHO};border-bottom:2px solid #cbd5e1;padding-bottom:4px;margin-bottom:10px">
-          🏛️ {cargo}
+          {_esc(cargo)}
         </div>
         {"".join(subsecoes)}
       </div>""")
