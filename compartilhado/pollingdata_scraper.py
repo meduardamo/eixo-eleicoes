@@ -763,6 +763,7 @@ MEIA_VIDA_AGREGADORES_DIAS = 30
 DIAS_MAX_INATIVIDADE_CANDIDATO = 60
 COLUNA_MODELO_AMOSTRAL = "media_amostral_30d"
 COLUNA_MODELO_HIBRIDO = "media_hibrida_30d"
+COLUNA_DECLARADO = "declarado_hibrido_30d"
 
 
 def score_instituto(classificacao) -> float:
@@ -2413,6 +2414,53 @@ def _calcular_serie_agregada_30d(
     return pd.DataFrame(linhas, columns=chaves_saida + [coluna_saida])
 
 
+def _serie_declarado_30d(df: pd.DataFrame, datas_finais_escopo: dict) -> pd.DataFrame:
+    """Fatia que declarou candidato, medida pesquisa a pesquisa.
+
+    Soma o percentual dos candidatos dentro de cada pesquisa e agrega com o mesmo peso da
+    média híbrida. Não dá para deduzir isso somando as médias por candidato: cada média tem
+    denominador próprio (só as pesquisas em que aquele candidato aparece), e a soma erra de
+    −1 a +5 pontos por UF. O complemento para 100 é quem respondeu branco, nulo ou não sabe.
+    """
+    chaves_escopo = ["ano", "uf", "cargo", "turno", "disputa", "tipo"]
+    colunas = chaves_escopo + ["data_campo", COLUNA_DECLARADO]
+    if df.empty:
+        return pd.DataFrame(columns=colunas)
+
+    por_pesquisa = (
+        df.groupby(chaves_escopo + ["poll_id"], dropna=False)
+        .agg(
+            _declarado=("_percentual_num", "sum"),
+            _amostra_num=("_amostra_num", "first"),
+            _score_instituto=("_score_instituto", "first"),
+            _data_peso=("_data_peso", "first"),
+            _data_disponivel=("_data_disponivel", "first"),
+        )
+        .reset_index()
+    )
+
+    linhas = []
+    for chave, grupo in por_pesquisa.groupby(chaves_escopo, dropna=False):
+        data_final = datas_finais_escopo.get(chave, grupo["_data_disponivel"].max())
+        for data_ref in pd.date_range(grupo["_data_disponivel"].min(), data_final, freq="D"):
+            disponiveis = grupo[grupo["_data_disponivel"].le(data_ref)]
+            idade = (data_ref - disponiveis["_data_peso"]).dt.days.clip(lower=0)
+            peso = (
+                disponiveis["_amostra_num"].pow(0.5)
+                * (2.0 ** (-idade / MEIA_VIDA_AGREGADORES_DIAS))
+                * disponiveis["_score_instituto"]
+            )
+            denominador = peso.sum()
+            if denominador <= 0:
+                continue
+            linha = dict(zip(chaves_escopo, chave))
+            linha["data_campo"] = data_ref.strftime("%Y-%m-%d")
+            linha[COLUNA_DECLARADO] = float((disponiveis["_declarado"] * peso).sum() / denominador)
+            linhas.append(linha)
+
+    return pd.DataFrame(linhas, columns=colunas)
+
+
 def calcular_agregadores_paralelos_resultados_bi(
     df_resultados: pd.DataFrame,
     df_pesquisas: pd.DataFrame | None = None,
@@ -2515,12 +2563,19 @@ def calcular_agregadores_paralelos_resultados_bi(
         datas_finais_escopo=datas_finais_escopo,
     )
 
+    declarado = _serie_declarado_30d(principal, datas_finais_escopo)
+
     chaves = ["ano", "uf", "cargo", "turno", "disputa", "tipo", "candidato_partido", "data_campo"]
     if abc.empty:
-        return hibrido
-    if hibrido.empty:
-        return abc
-    return hibrido.merge(abc, on=chaves, how="outer")
+        paralelos = hibrido
+    elif hibrido.empty:
+        paralelos = abc
+    else:
+        paralelos = hibrido.merge(abc, on=chaves, how="outer")
+    if paralelos.empty or declarado.empty:
+        return paralelos
+    # O declarado é do dia, não do candidato: entra repetido nas linhas do mesmo escopo.
+    return paralelos.merge(declarado, on=chaves_escopo + ["data_campo"], how="left")
 
 
 def construir_resultados_bi(
@@ -2545,6 +2600,9 @@ def construir_resultados_bi(
         "cenario_usado_no_calculo",
         "eh_lider", "eh_segundo",
         "institutos_no_dia", "classificacoes_instituto_no_dia",
+        # No fim da lista de propósito: coluna nova no meio desloca a posição das outras
+        # para quem lê a aba por índice.
+        COLUNA_DECLARADO,
     ]
 
     if df_resultados is None or df_resultados.empty:
