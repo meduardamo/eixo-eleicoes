@@ -506,8 +506,8 @@ _TEMA_ALIAS = {
     "critica-educacao": "educação",
 }
 
-# O tema de educação muda o cabeçalho do alerta ("Eixo | Educação" no lugar de
-# "Eixo | Eleições"), que é como o time separa os dois envios.
+# O tema de educação muda o cabeçalho do alerta ("EixoGov | Educação" no lugar de
+# "EixoGov | Eleições"), que é como o time separa os dois envios.
 TEMAS_EDUCACAO = ("educação",)
 
 # Temas que escapam da trava de cargo do executivo em aplicar_regra_alerta. Em
@@ -886,9 +886,9 @@ REGRAS_POLITICOS_ALERTA = (
 def _header_alerta(n) -> str:
     """Cabeçalho no formato que o time manda no WhatsApp:
 
-        Alerta | Eixo | Eleições | Subnacional | MG
-        Alerta | Eixo | Educação | Subnacional | GO
-        Alerta | Eixo | Eleições | Gov. Federal
+        Alerta | EixoGov | Eleições | Subnacional | MG
+        Alerta | EixoGov | Educação | Subnacional | GO
+        Alerta | EixoGov | Eleições | Gov. Federal
 
     O terceiro campo separa os dois envios que o time faz (eleições e educação).
     O quarto é o escopo: "Gov. Federal" quando o fato é da disputa presidencial,
@@ -898,10 +898,10 @@ def _header_alerta(n) -> str:
     assunto = "Educação" if n.get("alerta_tema") in TEMAS_EDUCACAO else "Eleições"
     uf = _uf_relevante(n)
     if uf:
-        return f"Alerta | Eixo | {assunto} | Subnacional | {uf}"
+        return f"Alerta | EixoGov | {assunto} | Subnacional | {uf}"
     if str(n.get("cargo") or "").strip().lower() == "presidente":
-        return f"Alerta | Eixo | {assunto} | Gov. Federal"
-    return f"Alerta | Eixo | {assunto}"
+        return f"Alerta | EixoGov | {assunto} | Gov. Federal"
+    return f"Alerta | EixoGov | {assunto}"
 
 
 def _encurtar_link(url: str) -> str:
