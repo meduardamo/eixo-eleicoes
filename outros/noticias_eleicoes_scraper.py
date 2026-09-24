@@ -330,6 +330,13 @@ def coletar(cargos=('presidente', 'governador', 'senador')):
     return resultado
 
 
+def _decodificou(decoded: dict) -> bool:
+    """A 0.2.1 do googlenewsdecoder (20/09/2026) trocou 'status': True por
+    'success': 'True', string. Olhando só 'status', toda decodificação parecia
+    falha: de 21/09 em diante nenhuma notícia teve texto nem URL real."""
+    return decoded.get("status") is True or str(decoded.get("success")).lower() == "true"
+
+
 def _ler_pagina(url: str, limite: int = 6000) -> tuple[str, str]:
     """Devolve (texto do artigo, URL real) por trás do link do Google Notícias.
 
@@ -352,7 +359,7 @@ def _ler_pagina(url: str, limite: int = 6000) -> tuple[str, str]:
         return "", ""
     try:
         decoded = gnewsdecoder(url, interval=1)
-        url_real = decoded.get("decoded_url") if decoded.get("status") else url
+        url_real = decoded.get("decoded_url") if _decodificou(decoded) else url
     except Exception:
         url_real = url
     url_real = url_real or url

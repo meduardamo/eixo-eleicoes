@@ -163,7 +163,9 @@ def buscar_artigos_g1(cand):
             break
         try:
             decoded = gnewsdecoder(it["link"], interval=1)
-            url_real = decoded.get("decoded_url") if decoded.get("status") else ""
+            # 'success' (string) desde a 0.2.1 de 20/09/2026; 'status' antes
+            _ok = decoded.get("status") is True or str(decoded.get("success")).lower() == "true"
+            url_real = decoded.get("decoded_url") if _ok else ""
         except Exception:
             url_real = ""
         host = re.match(r"https?://([^/]+)", url_real or "")

@@ -42,7 +42,7 @@ jobs:
           python-version: '3.12'
 
       - name: Instalar dependências
-        run: pip install requests google-genai gspread google-auth "newspaper3k==0.2.8" "lxml[html_clean]==5.2.2" googlenewsdecoder "brevo-python==1.1.2"
+        run: pip install requests google-genai gspread google-auth "newspaper3k==0.2.8" "lxml[html_clean]==5.2.2" "googlenewsdecoder==0.2.1" "brevo-python==1.1.2"
 
       - name: Rodar scraper
         env:
