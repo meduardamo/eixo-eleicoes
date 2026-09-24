@@ -1,0 +1,53 @@
+name: 29 - Conferir resumos dos planos
+
+# Manual. Confere frase a frase se o resumo de cada plano diz o que as
+# citações gravadas dizem (outros/conferir_resumos_planos.py).
+# NÃO ESCREVE NA PLANILHA: imprime as frases marcadas e sobe o CSV como
+# artefato, para conferir no plano antes de corrigir.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sq:
+        description: 'SQ_CANDIDATO separados por vírgula (vazio = todos)'
+        required: false
+        default: ''
+      limite:
+        description: 'Confere no máximo N candidatos (vazio = todos)'
+        required: false
+        default: ''
+
+jobs:
+  conferir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # pandas e PyMuPDF entram porque analise_planos importa no topo.
+      - run: pip install google-genai PyMuPDF pillow pytesseract pandas gspread google-auth
+
+      - name: Escrever credentials.json
+        run: printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+
+      - name: Conferir
+        env:
+          PYTHONUNBUFFERED: "1"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SPREADSHEET_ID_TSE: ${{ secrets.SPREADSHEET_ID_TSE }}
+        run: >
+          python -m outros.conferir_resumos_planos
+          ${{ inputs.sq && format('--sq {0}', inputs.sq) || '' }}
+          ${{ inputs.limite && format('--limite {0}', inputs.limite) || '' }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: conferir-resumos
+          path: conferir_resumos.csv
