@@ -656,6 +656,11 @@ def chave_alerta(n) -> str:
     partes = [n.get("alerta_tema"), _uf_relevante(n),
               str(n.get("cargo") or "").lower(),
               cand or f"titulo:{_chave_texto(n.get('titulo'))[:60]}"]
+    # Pesquisa é identificada pelo instituto: Quaest e Datafolha no mesmo dia são
+    # dois fatos. Sem ele, 22% das pesquisas rebaixadas até 24/09 eram de outro
+    # instituto que o alerta de origem.
+    if n.get("alerta_tema") == "pesquisa-executivo":
+        partes.append(_chave_texto(n.get("instituto")))
     return "|".join(partes)
 
 
@@ -1126,19 +1131,51 @@ def escrever_alertas(noticias):
 JANELA_DEDUP_HORAS = int(os.getenv("NOTICIAS_JANELA_DEDUP_HORAS", "48"))
 
 
-def carregar_chaves_recentes(aba):
-    """Chaves de alerta já gravadas nas últimas JANELA_DEDUP_HORAS.
+# Mesma chave não basta para ser o mesmo fato: tema + cargo + candidato junta
+# "Lula tenta atrair Centrão" e "Lula recorre a artistas" (os dois 'apoio'). Fora
+# pesquisa, a manchete precisa dividir pelo menos esta fração das palavras com um
+# alerta de mesma chave. Medido em 24/09 sobre 7 mil rebaixadas: abaixo de 0,12
+# quase tudo é outro fato, de 0,2 pra cima quase tudo é o mesmo. Na dúvida, alerta.
+LIMIAR_MESMO_FATO = float(os.getenv("NOTICIAS_LIMIAR_MESMO_FATO", "0.15"))
+# O topo de 600 linhas (LIMITE_VARREDURA) cobre umas 10 horas de coleta, não 48.
+LIMITE_DEDUP = int(os.getenv("NOTICIAS_LIMITE_DEDUP", "5000"))
+_PALAVRAS_VAZIAS = set(
+    "a o as os e de da do das dos em no na nos nas um uma para por com que se ao aos "
+    "sua seu mais apos sobre diz contra entre como ja nao".split())
 
-    Lê só duas colunas e só o topo da aba (LIMITE_VARREDURA linhas): a inserção é
-    sempre no topo, então tudo que é recente está lá, e a aba inteira passa de 11
-    mil linhas.
+
+def _palavras_titulo(titulo) -> frozenset:
+    """Palavras de conteúdo da manchete, sem o ' - Veículo' do fim."""
+    t = re.sub(r"\s+-\s+[^-]+$", "", str(titulo or ""))
+    return frozenset(w for w in re.findall(r"[a-z0-9]+", _sem_acento(t).lower())
+                     if len(w) > 2 and w not in _PALAVRAS_VAZIAS)
+
+
+def mesmo_fato(chave: str, palavras: frozenset, anteriores) -> bool:
+    """Se a notícia repete um dos alertas `anteriores` (palavras das manchetes)
+    que já têm a mesma chave. Pesquisa decide só pela chave, que leva o
+    instituto: as manchetes da mesma pesquisa variam demais."""
+    if not anteriores:
+        return False
+    if chave.startswith("pesquisa-executivo|"):
+        return True
+    return any(len(palavras & a) / max(1, len(palavras | a)) >= LIMIAR_MESMO_FATO
+               for a in anteriores)
+
+
+def carregar_chaves_recentes(aba) -> dict:
+    """Alertas das últimas JANELA_DEDUP_HORAS: {chave: [palavras da manchete]}.
+
+    Lê só quatro colunas e só o topo da aba (LIMITE_DEDUP linhas): a inserção é
+    sempre no topo, então tudo que é recente está lá.
     """
     headers = aba.row_values(1)
     if "alerta_chave" not in headers or "data" not in headers:
-        return set()
+        return {}
     corte = datetime.now(BRT) - timedelta(hours=JANELA_DEDUP_HORAS)
-    recentes = set()
-    for r in _ler_colunas(aba, headers, ("alerta_chave", "data", "alerta")):
+    recentes: dict = {}
+    for r in _ler_colunas(aba, headers, ("alerta_chave", "data", "alerta", "titulo"),
+                          limite=LIMITE_DEDUP):
         chave = r.get("alerta_chave", "")
         dt = _data_planilha(r.get("data", ""))
         # Só alerta que saiu conta. Com o 'repetido' contando, cada repetição
@@ -1147,7 +1184,7 @@ def carregar_chaves_recentes(aba):
         if r.get("alerta", "").lower() != "sim":
             continue
         if chave and dt and dt >= corte:   # sem data legível, fora da janela
-            recentes.add(chave)
+            recentes.setdefault(chave, []).append(_palavras_titulo(r.get("titulo")))
     return recentes
 
 
@@ -1158,16 +1195,17 @@ def marcar_repetidos(noticias, chaves_recentes):
     pesquisa sai em quatro veículos no mesmo dia e as quatro chegam juntas aqui.
     A linha continua na planilha com o tema preenchido, só não vira email.
     """
-    vistos = set(chaves_recentes)
+    vistos = {k: list(v) for k, v in chaves_recentes.items()}
     for n in noticias:
         chave = chave_alerta(n)
         n["alerta_chave"] = chave
         if not chave or n.get("alerta") != "sim":
             continue
-        if chave in vistos:
+        palavras = _palavras_titulo(n.get("titulo"))
+        if mesmo_fato(chave, palavras, vistos.get(chave)):
             n["alerta"] = "repetido"
         else:
-            vistos.add(chave)
+            vistos.setdefault(chave, []).append(palavras)
     return noticias
 
 
@@ -1620,18 +1658,25 @@ def _colapsar_por_fato(aba, headers, pendentes):
     """
     if "alerta_chave" not in headers:
         return pendentes, []
-    ja_enviado = {
-        r["alerta_chave"] for r in _ler_colunas(aba, headers, ("alerta_chave", "alerta_enviado_em"))
-        if r.get("alerta_chave") and r.get("alerta_enviado_em")
-    }
-    envia, rebaixa, vistos = [], [], set()
+    # Mesma régua da coleta (mesmo_fato): enviado nas últimas JANELA_DEDUP_HORAS,
+    # mesma chave e manchete parecida. Antes bastava a chave já ter saído alguma
+    # vez no topo da aba.
+    corte = datetime.now(BRT) - timedelta(hours=JANELA_DEDUP_HORAS)
+    vistos: dict = {}
+    for r in _ler_colunas(aba, headers, ("alerta_chave", "alerta_enviado_em", "titulo"),
+                          limite=LIMITE_DEDUP):
+        enviado = _data_planilha(r.get("alerta_enviado_em", ""))
+        if r.get("alerta_chave") and enviado and enviado >= corte:
+            vistos.setdefault(r["alerta_chave"], []).append(_palavras_titulo(r.get("titulo")))
+    envia, rebaixa = [], []
     for r in pendentes:
         chave = r.get("alerta_chave", "")
-        if chave and (chave in vistos or chave in ja_enviado):
+        palavras = _palavras_titulo(r.get("titulo"))
+        if chave and mesmo_fato(chave, palavras, vistos.get(chave)):
             rebaixa.append(r)
             continue
         if chave:
-            vistos.add(chave)
+            vistos.setdefault(chave, []).append(palavras)
         envia.append(r)
     return envia, rebaixa
 
@@ -1651,8 +1696,11 @@ def enviar_alertas_pendentes(aba):
     if "alerta" not in headers or "alerta_enviado_em" not in headers:
         print("Aba sem as colunas de alerta; pulando envio.")
         return
+    # alerta_chave faltava aqui até 24/09, e sem ela _colapsar_por_fato não
+    # rebaixava nada: toda chave chegava vazia.
     campos = ("alerta", "alerta_enviado_em", "alerta_tema", "titulo", "fonte", "data",
-              "link", "link_real", "candidato", "partido", "uf", "instituto", "resumo")
+              "link", "link_real", "candidato", "partido", "uf", "instituto", "resumo",
+              "alerta_chave")
     corte = datetime.now(BRT) - timedelta(days=JANELA_DIAS + 1)
     pendentes = []
     for r in _ler_colunas(aba, headers, campos):
