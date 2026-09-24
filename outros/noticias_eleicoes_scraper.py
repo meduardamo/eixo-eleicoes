@@ -1131,9 +1131,14 @@ def carregar_chaves_recentes(aba):
         return set()
     corte = datetime.now(BRT) - timedelta(hours=JANELA_DEDUP_HORAS)
     recentes = set()
-    for r in _ler_colunas(aba, headers, ("alerta_chave", "data")):
+    for r in _ler_colunas(aba, headers, ("alerta_chave", "data", "alerta")):
         chave = r.get("alerta_chave", "")
         dt = _data_planilha(r.get("data", ""))
+        # Só alerta que saiu conta. Com o 'repetido' contando, cada repetição
+        # renovava a janela e a chave não expirava: fato-eleitoral de Lula ficou
+        # de 31/08 a 24/09 com 403 repetidos e 3 alertas, nunca 48h sem notícia.
+        if r.get("alerta", "").lower() != "sim":
+            continue
         if chave and dt and dt >= corte:   # sem data legível, fora da janela
             recentes.add(chave)
     return recentes
