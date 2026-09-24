@@ -479,6 +479,18 @@ def _nome_pessoa(valor):
     return re.sub(r"[^a-z0-9]+", "", s)
 
 
+# Voto não válido que a matriz grava com tipo='candidato' (em 24/09: "Nh/br/nulo",
+# "Ns / Nr", "Não Sabe/não Opinou", "Branco / Nulo", "Ninguém", "Outros"). Sem
+# esse filtro "Nh/br/nulo" virou semente de busca do Senado de SE em 20/09.
+_NAO_VALIDO = re.compile(
+    r"\b(branc|nul[oa]s?\b|ninguem|nenhum|indecis|outros\b|outro nome|nao sab|nao sei"
+    r"|nao respond|nao opin|nao val|nao votar)|^n[sh]\s*/\s*(nr|br)\b")
+
+
+def _eh_nao_valido(nome):
+    return bool(_NAO_VALIDO.search(re.sub(r"\s+", " ", _sem_acento(nome).lower()).strip()))
+
+
 def _ler_senado_matriz():
     """Candidaturas ao Senado, tiradas de quem e testado nas pesquisas da T1."""
     sheet_id = _normalizar_spreadsheet_id(os.getenv("SPREADSHEET_ID_POLLINGDATA", ""))
@@ -515,7 +527,7 @@ def _ler_senado_matriz():
                 or row[idx["tipo"]].strip() != "candidato"):
             continue
         nome = row[idx["candidato"]].strip()
-        if not nome:
+        if not nome or _eh_nao_valido(nome):
             continue
         try:
             pct = float(str(row[idx["percentual"]]).replace(",", "."))
