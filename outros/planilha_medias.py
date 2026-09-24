@@ -152,11 +152,42 @@ def casar_com_tse(nomes_por_uf, base):
     return casados
 
 
-def filtrar_registrados(df, base, log=print):
-    """Mantém só candidato registrado e na disputa; une grafias da mesma pessoa; marca `*`.
+SIGLA_MATRIZ = {v: k for k, v in SIGLA_TSE.items()}
 
-    `df` tem `uf` e `candidato_partido`. Devolve cópia com `candidato_partido` já no nome
-    que vai para a planilha (a grafia mais frequente na matriz, com `*` se for o caso).
+
+def nome_publicado(cp, tse):
+    """Nome da matriz com a grafia e o partido do registro no TSE.
+
+    Mantém o nome pelo qual a pesquisa chama a pessoa ("Tenente Coronel Zucco", não "ZUCCO"),
+    mas corrige palavra escrita diferente do TSE (Luizinho -> Luisinho, Juriti -> Jurity) e
+    troca o partido pelo do registro: a janela partidária fechou em abril, então partido da
+    matriz diferente do TSE é erro de cadastro na matriz.
+    """
+    nome = re.sub(r'\s*\([^)]*\)\s*$', '', str(cp)).strip()
+    do_tse = {}
+    for w in re.findall(r'[^\W\d_]+', f'{tse.NM_URNA_CANDIDATO} {tse.NM_CANDIDATO}'):
+        do_tse.setdefault(sem_acento(w).lower(), w)
+
+    def troca(m):
+        w = m.group(0)
+        k = sem_acento(w).lower()
+        if len(k) <= 3 or k in do_tse or k in TITULO_PESSOA:
+            return w
+        melhor = max(do_tse, key=lambda x: difflib.SequenceMatcher(None, k, x).ratio())
+        if difflib.SequenceMatcher(None, k, melhor).ratio() >= 0.75:
+            return do_tse[melhor].capitalize()
+        return w
+
+    nome = re.sub(r'[^\W\d_]+', troca, nome)
+    partido = sem_acento(tse.SG_PARTIDO).upper().strip()
+    return f'{nome} ({SIGLA_MATRIZ.get(partido, partido)})'
+
+
+def nomes_publicados(df, base, log=print):
+    """{(uf, candidato_partido da matriz): nome da planilha}, só para quem está na disputa.
+
+    Todas as grafias da mesma pessoa no TSE levam ao mesmo nome: o da grafia mais frequente
+    na matriz, corrigida por `nome_publicado`, com `*` se o indeferimento está em recurso.
     """
     pares = sorted(set(zip(df.uf, df.candidato_partido)))
     casados = casar_com_tse(pares, base)
@@ -176,19 +207,30 @@ def filtrar_registrados(df, base, log=print):
     por_pessoa = {}
     for p in pares:
         c = casados[p]
-        if c is None or c.SITUACAO_TEMPO_REAL in SAI:
-            continue
-        por_pessoa.setdefault(c.SQ_CANDIDATO, []).append(p)
-    nome_final = {}
-    for sq, ps in por_pessoa.items():
+        if c is not None and c.SITUACAO_TEMPO_REAL not in SAI:
+            por_pessoa.setdefault(c.SQ_CANDIDATO, []).append(p)
+    nomes = {}
+    for ps in por_pessoa.values():
         principal = max(ps, key=lambda p: freq[p])
-        nome = principal[1] + (' *' if casados[principal].SITUACAO_TEMPO_REAL in COM_RECURSO else '')
-        if len(ps) > 1:
-            log(f'  mesma pessoa no TSE, fica a grafia mais usada: {ps} -> {nome}')
-        # Só a grafia principal segue: as outras são séries paralelas da mesma pessoa.
-        nome_final[principal] = nome
-    out = df[[p in nome_final for p in zip(df.uf, df.candidato_partido)]].copy()
-    out['candidato_partido'] = [nome_final[p] for p in zip(out.uf, out.candidato_partido)]
+        tse = casados[principal]
+        nome = nome_publicado(principal[1], tse) + (' *' if tse.SITUACAO_TEMPO_REAL in COM_RECURSO else '')
+        if len(ps) > 1 or nome.removesuffix(' *') != principal[1]:
+            log(f'  nome: {[p[1] for p in ps]} -> {nome}')
+        for p in ps:
+            nomes[p] = nome
+    return nomes, {p: max(ps, key=lambda q: freq[q]) for ps in por_pessoa.values() for p in ps}
+
+
+def filtrar_registrados(df, base, log=print):
+    """Mantém só candidato registrado e na disputa, com o nome de `nomes_publicados`.
+
+    Das grafias da mesma pessoa, só a mais frequente segue: as outras são séries paralelas
+    da mesma pessoa no `resultados_bi`, e somá-las contaria a pessoa duas vezes.
+    """
+    nomes, principal = nomes_publicados(df, base, log)
+    pares = list(zip(df.uf, df.candidato_partido))
+    out = df[[p in nomes and principal[p] == p for p in pares]].copy()
+    out['candidato_partido'] = [nomes[p] for p in zip(out.uf, out.candidato_partido)]
     return out
 
 

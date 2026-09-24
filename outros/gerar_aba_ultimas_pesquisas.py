@@ -13,7 +13,7 @@ from compartilhado import pollingdata_scraper as ps
 
 
 def montar(dados, hoje, log=print):
-    from outros.planilha_medias import MESES, casar_com_tse, chave, filtrar_registrados
+    from outros.planilha_medias import MESES, casar_com_tse, chave, filtrar_registrados, nomes_publicados
 
     pesq = dados['pesquisas']
     res = dados['resultados']
@@ -22,6 +22,10 @@ def montar(dados, hoje, log=print):
     gov_r = res[(res.cargo == 'governador') & (res.turno == 't1')].copy()
     gov_r['percentual'] = pd.to_numeric(gov_r.percentual.astype(str).str.replace(',', '.'), errors='coerce')
     gov_r['data_campo'] = pd.to_datetime(gov_r.data_campo)
+    # Nome dos candidatos nas pesquisas com a grafia e o partido do TSE, igual à média.
+    # Quem não tem registro ou saiu da disputa fica como a matriz traz (é o que a pesquisa testou).
+    publicados, _ = nomes_publicados(gov_r, dados['base'], log=lambda *_: None)
+    gov_r['candidato_partido'] = [publicados.get(p, p[1]) for p in zip(gov_r.uf, gov_r.candidato_partido)]
     princ = ps.selecionar_cenario_principal(gov_r)
     princ = ps._anexar_metadados_pesquisa(princ, pesq)
 
@@ -39,6 +43,14 @@ def montar(dados, hoje, log=print):
         cp = str(cp).removesuffix(' *')
         c = tse.get((uf, cp))
         return c.SQ_CANDIDATO if c is not None else chave(cp)
+
+    def recentes(u):
+        # Mais recente pelo fim do campo; no mesmo dia, a de melhor nota no Pindograma e,
+        # depois, a de maior amostra.
+        u = u.drop_duplicates('poll_id').copy()
+        u['_nota'] = u.classificacao_instituto.apply(ps.score_instituto)
+        u['_amostra'] = pd.to_numeric(u.amostra, errors='coerce').fillna(0)
+        return u.sort_values(['data_campo', '_nota', '_amostra', 'poll_id'], ascending=[False, False, False, True])
 
     def ufs(n):
         return f'{n} UF' if n == 1 else f'{n} UFs'
@@ -74,7 +86,7 @@ def montar(dados, hoje, log=print):
         dif_bi_txt = f"{dif_bi:.1f} p.p."
         lider_nome_bi = vivos_bi.iloc[0]['candidato_partido'].removesuffix(' *') if len(vivos_bi) > 0 else ''
     
-        polls_summary = u.drop_duplicates('poll_id').sort_values('data_campo', ascending=False)
+        polls_summary = recentes(u)
     
         # 1ª Pesquisa
         p1 = polls_summary.iloc[0]
@@ -269,7 +281,7 @@ def montar(dados, hoje, log=print):
 
     for uf in estados_foco:
         u = princ[princ.uf == uf].copy()
-        polls_summary = u.drop_duplicates('poll_id').sort_values('data_campo', ascending=False).head(2)
+        polls_summary = recentes(u).head(2)
     
         r_hdr = len(grid)
         grid.append([f"{nomes_uf[uf].upper()} ({uf}) - COMPARATIVO DE LEVANTAMENTOS RECENTES"] + [''] * (N_COLS - 1))
