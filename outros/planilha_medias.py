@@ -82,8 +82,13 @@ def sigla(candidato_partido):
 
 
 def nome_parecido(a, b):
-    """Algum sobrenome/prenome da pesquisa bate (grafia quase igual) com algum do TSE."""
-    return any(difflib.SequenceMatcher(None, x, y).ratio() >= 0.8 for x in tokens(a) for y in tokens(b))
+    """Cada nome da pesquisa bate (grafia quase igual) com algum nome do TSE.
+
+    Um nome só não basta: "Felipe Agwanã" e "Felipe Camarão" são do mesmo partido no MA,
+    e "Valério Luiz" não é "Luís Cesar Bueno".
+    """
+    ta, tb = tokens(a), tokens(b)
+    return bool(ta) and all(any(difflib.SequenceMatcher(None, x, y).ratio() >= 0.75 for y in tb) for x in ta)
 
 
 # ---------------------------------------------------------------- dados
@@ -123,9 +128,9 @@ def carregar(creds):
 
 # ---------------------------------------------------------------- TSE
 
-def casar_com_tse(nomes_por_uf, base):
+def casar_com_tse(nomes_por_uf, base, cargo='GOVERNADOR'):
     """{(uf, candidato_partido): linha do TSE ou None}."""
-    gov = base[base.DS_CARGO.str.upper().eq('GOVERNADOR')].copy()
+    gov = base[base.DS_CARGO.str.upper().eq(cargo)].copy()
     gov['_sigla'] = gov.SG_PARTIDO.map(lambda s: sem_acento(s).upper().strip())
     casados = {}
     for uf, cp in nomes_por_uf:
