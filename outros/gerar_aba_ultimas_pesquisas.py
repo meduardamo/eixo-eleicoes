@@ -13,7 +13,7 @@ from compartilhado import pollingdata_scraper as ps
 
 
 def montar(dados, hoje, log=print):
-    from outros.planilha_medias import MESES, casar_com_tse, chave, filtrar_registrados, nomes_publicados
+    from outros.planilha_medias import MESES, atualizado, casar_com_tse, chave, filtrar_registrados, nomes_publicados
 
     pesq = dados['pesquisas']
     res = dados['resultados']
@@ -185,7 +185,8 @@ def montar(dados, hoje, log=print):
     # Row 0: Title
     grid.append([f'ÚLTIMAS PESQUISAS - COMPARATIVO ENTRE LEVANTAMENTOS RECENTES ({MESES[hoje.month].upper()}/{hoje.year})'] + [''] * (N_COLS - 1))
     # Row 1: Subtitle
-    grid.append(['Comparativo direto entre os dois levantamentos mais recentes registrados no TSE e a Média Ponderada Eixo nos 27 estados.'] + [''] * (N_COLS - 1))
+    grid.append(['Comparativo direto entre os dois levantamentos mais recentes registrados no TSE e a Média Ponderada Eixo nos 27 estados. '
+                 + atualizado(hoje)] + [''] * (N_COLS - 1))
     # Row 2: Note
     grid.append(['Amostras estimuladas de 1º turno (cenário principal). Δ Líder = variação percentual do líder na 1ª pesquisa vs 2ª pesquisa. * Candidatura com recurso.'] + [''] * (N_COLS - 1))
     # Row 3: Spacer

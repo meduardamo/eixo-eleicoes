@@ -245,6 +245,11 @@ def num(s):
     return pd.to_numeric(s.astype(str).str.replace(',', '.'), errors='coerce')
 
 
+def atualizado(agora):
+    """Hora da rodada: as pesquisas da matriz e a situação no TSE são as desse momento."""
+    return f'Atualizado em {agora:%d/%m/%Y} às {agora:%H:%M} (horário de Brasília).'
+
+
 def montar_serie_semanal(dados, hoje, log=print):
     bi = dados['resultados_bi']
     bi = bi[(bi.cargo == 'governador') & (bi.turno == 't1') & (bi.tipo == 'candidato')].copy()
@@ -267,10 +272,9 @@ def montar_serie_semanal(dados, hoje, log=print):
     grid.append([f'SÉRIE SEMANAL - MÉDIA PONDERADA (JULHO A {mes_fim})'])
     fmt.append((0, 0, 8, 'titulo'))
     grid.append(['Candidatos registrados no TSE e testados em pesquisa nos últimos 60 dias, mais brancos, '
-                 'nulos e indecisos. Valores em %.'])
+                 f'nulos e indecisos. Valores em %. {atualizado(hoje)}'])
     fmt.append((1, 0, 8, 'sub'))
-    grid.append(['* Candidatura indeferida pelo TSE, com recurso: segue na disputa até a decisão final. '
-                 f'Situação das candidaturas em {hoje:%d/%m/%Y}.'])
+    grid.append(['* Candidatura indeferida pelo TSE, com recurso: segue na disputa até a decisão final.'])
     fmt.append((2, 0, 8, 'sub'))
     grid.append([])
     largura_max = 0
@@ -394,7 +398,7 @@ def main():
     from outros import gerar_aba_ultimas_pesquisas as ultimas
 
     gravar = '--gravar' in sys.argv
-    hoje = pd.Timestamp.now(tz='America/Recife').tz_localize(None).normalize()
+    hoje = pd.Timestamp.now(tz='America/Sao_Paulo').tz_localize(None)
     creds = credenciais()
     dados = carregar(creds)
     print('Série Semanal')
