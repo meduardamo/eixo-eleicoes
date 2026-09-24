@@ -20,6 +20,8 @@ jobs:
       GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
       SPREADSHEET_ID_POLLINGDATA: ${{ secrets.SPREADSHEET_ID_POLLINGDATA }}
       SPREADSHEET_ID_POLLINGDATA_T2: ${{ secrets.SPREADSHEET_ID_POLLINGDATA_T2 }}
+      SPREADSHEET_ID_TSE: ${{ secrets.SPREADSHEET_ID_TSE }}
+      SPREADSHEET_ID_MEDIAS: ${{ secrets.SPREADSHEET_ID_MEDIAS }}
 
     steps:
       - name: Checkout
@@ -37,3 +39,10 @@ jobs:
 
       - name: Reconstruir resultados_bi
         run: python -u -m relatorios.relatorios_extracao_segmentos rebuild_bi
+
+      # Planilha das médias da comunicação (Série Semanal e Últimas Pesquisas),
+      # lida do cache Parquet que o passo anterior acabou de publicar. Falha aqui
+      # não derruba o rebuild, que já terminou.
+      - name: Atualizar planilha das médias
+        continue-on-error: true
+        run: python -u outros/planilha_medias.py --gravar
