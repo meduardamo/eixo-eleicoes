@@ -11,6 +11,7 @@ ao Gemini para classificar cada tema numa escala de maturidade:
 
 from __future__ import annotations
 import json
+import difflib
 import os
 import time
 import re
@@ -2335,6 +2336,25 @@ def _paginas_de_um_pedaco(paginas_norm: list[str], trecho: str,
               if t and alvo_ce in _sem_espaco(t)]
     if exatas:
         return exatas[:limite]
+    # A conferência da citação aceita o texto contínuo do plano. Quando uma
+    # frase atravessa a quebra do PDF, a referência precisa incluir ambas as
+    # páginas, em vez de escolher só a página com mais palavras da frase.
+    atravessadas: list[int] = []
+    for i in range(len(paginas_norm) - 1):
+        primeira = _sem_espaco(paginas_norm[i])
+        segunda = _sem_espaco(paginas_norm[i + 1])
+        if not primeira or not segunda:
+            continue
+        inicio = (primeira + segunda).find(alvo_ce)
+        if inicio < 0 or inicio >= len(primeira) or inicio + len(alvo_ce) <= len(primeira):
+            continue
+        for pagina in (i + 1, i + 2):
+            if pagina not in atravessadas:
+                atravessadas.append(pagina)
+        if len(atravessadas) >= limite:
+            return atravessadas[:limite]
+    if atravessadas:
+        return atravessadas
     # Janela menor em trecho curto. Com janela fixa de seis, uma citação de
     # quatro palavras vira uma janela só, que precisa bater inteira: "preservar
     # sua riqueza ambiental" não achava a página onde está escrito "preserve
@@ -2346,6 +2366,25 @@ def _paginas_de_um_pedaco(paginas_norm: list[str], trecho: str,
     escores = [(sum(1 for j in janelas if j in _sem_espaco(t)) / len(janelas))
                if t else 0.0 for t in paginas_norm]
     melhor = max(escores) if escores else 0.0
+    # Números e cabeçalhos entram entre as duas metades de uma frase na
+    # extração. A busca contínua acima não os atravessa; compare então as
+    # palavras próximas da virada nas páginas mais prováveis.
+    if melhor >= _MIN_ESCORE and len(palavras) >= 6:
+        for i in range(len(paginas_norm) - 1):
+            if max(escores[i], escores[i + 1]) < melhor * 0.9:
+                continue
+            janela = max(len(palavras) * 3, 500)
+            anteriores = paginas_norm[i].split()[-janela:]
+            seguintes = paginas_norm[i + 1].split()[:janela]
+            divisor = len(anteriores)
+            blocos = difflib.SequenceMatcher(
+                None, palavras, anteriores + seguintes, autojunk=False,
+            ).get_matching_blocks()
+            cobertura = sum(b.size for b in blocos) / len(palavras)
+            usa_primeira = any(b.size and b.b < divisor for b in blocos)
+            usa_segunda = any(b.size and b.b + b.size > divisor for b in blocos)
+            if cobertura >= 0.95 and usa_primeira and usa_segunda:
+                return [i + 1, i + 2]
     if melhor < _MIN_ESCORE:
         return []
     return [i + 1 for i, s in enumerate(escores) if s >= melhor * 0.9][:limite]
