@@ -71,12 +71,20 @@ def baixar_base(gc) -> pd.DataFrame:
         "fields": "files(id,name,modifiedTime)", "supportsAllDrives": "true", "includeItemsFromAllDrives": "true",
     }, timeout=30)
     resposta.raise_for_status()
-    arquivos = resposta.json().get("files", [])
+    # O `contains` do Drive casa por palavra e devolve também `__base_dadosabertos_2022.parquet`
+    # (a base de 2022, no cache desde 18/09). Com ela o filtro cortava Flávio, Caiado e todo
+    # nome que não concorreu em 2022. Fica só o nome exato, o mais recente.
+    arquivos = [a for a in resposta.json().get("files", []) if a["name"].endswith("__base_dadosabertos.parquet")]
     if not arquivos:
         return pd.DataFrame()
-    conteudo = sessao.get(f"{API_ARQUIVOS}/{arquivos[0]['id']}", params={"alt": "media", "supportsAllDrives": "true"}, timeout=120)
+    arquivo = max(arquivos, key=lambda a: a.get("modifiedTime", ""))
+    conteudo = sessao.get(f"{API_ARQUIVOS}/{arquivo['id']}", params={"alt": "media", "supportsAllDrives": "true"}, timeout=120)
     conteudo.raise_for_status()
-    return pd.read_parquet(io.BytesIO(conteudo.content))
+    base = pd.read_parquet(io.BytesIO(conteudo.content))
+    if "ANO_ELEICAO" in base.columns and not base["ANO_ELEICAO"].astype(str).eq("2026").all():
+        print(f"  [candidaturas] {arquivo['name']} não é só de 2026; filtro não aplicado")
+        return pd.DataFrame()
+    return base
 
 
 def _indice(base: pd.DataFrame) -> dict:
