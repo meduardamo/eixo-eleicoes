@@ -262,6 +262,10 @@ def montar_serie_semanal(dados, hoje, log=print):
     bi = filtrar_registrados(bi, dados['base'], log)
 
     datas = list(pd.date_range(INICIO_SERIE, hoje, freq='7D'))
+    # Semana ainda aberta: o último ponto é o dia da rodada, para a pesquisa com campo depois da
+    # última quarta já aparecer. Na quarta seguinte ele vira o ponto semanal fechado.
+    if datas[-1] < hoje.normalize():
+        datas.append(hoje.normalize())
 
     def valor(serie, dt):
         s = serie[serie.d <= dt]
