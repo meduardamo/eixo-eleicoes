@@ -462,7 +462,7 @@ def gravar(sh, t):
         'range': {'sheetId': sid, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': N_COLS},
         'cell': {'userEnteredFormat': {
             'backgroundColor': C['marinho'], 'wrapStrategy': 'OVERFLOW_CELL', 'verticalAlignment': 'MIDDLE', 'horizontalAlignment': 'LEFT',
-            'textFormat': {'foregroundColor': C['branco'], 'bold': True, 'fontSize': 12, 'fontFamily': 'Montserrat'}
+            'textFormat': {'foregroundColor': C['branco'], 'bold': True, 'fontSize': 13, 'fontFamily': 'Montserrat'}
         }}, 'fields': 'userEnteredFormat'
     }})
     requests.append({'repeatCell': {

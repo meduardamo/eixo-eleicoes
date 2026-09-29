@@ -1,5 +1,5 @@
 """Planilha das médias da comunicação (Jess): abas `Série Semanal`, `Últimas Pesquisas` e
-`Série Semanal 2º Turno`.
+`Série Semanal 2º Turno` e `Últimas Pesquisas 2º Turno`.
 
 Governador, 1º turno (e 2º turno, um bloco por confronto, lido da matriz T2). Lê o cache Parquet que o `05 - Rebuild BI` acabou de publicar
 (`resultados_bi`, `resultados`, `pesquisas` da matriz T1) e a `base_dadosabertos` da
@@ -40,6 +40,8 @@ PLANILHA_MEDIAS_ENV = "SPREADSHEET_ID_MEDIAS"
 MATRIZ_T1_ENV = "SPREADSHEET_ID_POLLINGDATA"
 MATRIZ_T2_ENV = "SPREADSHEET_ID_POLLINGDATA_T2"
 ABA_T2 = "Série Semanal 2º Turno"
+ABA_ULTIMAS_T2 = "Últimas Pesquisas 2º Turno"
+ORDEM_ABAS = ["Série Semanal", "Últimas Pesquisas", ABA_T2, ABA_ULTIMAS_T2]
 CANDIDATURAS_ENV = "SPREADSHEET_ID_TSE"
 INICIO_SERIE = pd.Timestamp("2026-07-01")
 NV = "Brancos, nulos e indecisos"
@@ -129,6 +131,8 @@ def carregar(creds):
     t2 = os.getenv(MATRIZ_T2_ENV, '').strip()
     if t2:
         dados['resultados_bi_t2'] = baixar_cache(sessao, t2, 'resultados_bi')
+        dados['resultados_t2'] = baixar_cache(sessao, t2, 'resultados')
+        dados['pesquisas_t2'] = baixar_cache(sessao, t2, 'pesquisas')
     return dados
 
 
@@ -411,6 +415,165 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
     return grid, fmt, largura_max, datas_cel, series_cel
 
 
+def montar_ultimas_t2(dados, hoje, log=print):
+    """Últimas Pesquisas do 2º turno: por confronto, a Média Eixo e as duas pesquisas mais recentes."""
+    from compartilhado import pollingdata_scraper as ps
+    res = dados['resultados_t2']
+    res = res[(res.cargo == 'governador') & (res.turno == 't2')].copy()
+    res['p'] = num(res.percentual)
+    res['data_campo'] = pd.to_datetime(res.data_campo)
+    pesq = dados['pesquisas_t2'].drop_duplicates('poll_id').set_index('poll_id')
+    bi = dados['resultados_bi_t2']
+    bi = bi[(bi.cargo == 'governador') & (bi.turno == 't2') & (bi.tipo == 'candidato')].copy()
+    bi['h'] = num(bi.media_hibrida_30d)
+    bi['nv'] = 100 - num(bi.declarado_hibrido_30d)
+    bi['d'] = pd.to_datetime(bi.data_campo)
+    bi = bi[bi.h.notna()]
+    nomes, _ = nomes_publicados(pd.concat([bi[['uf', 'candidato_partido']],
+                                           res[res.tipo == 'candidato'][['uf', 'candidato_partido']]]),
+                                dados['base'], log=lambda *_: None)
+    nome = lambda uf, cp: nomes.get((uf, cp), cp)
+    curto = lambda n: re.sub(r'\s*\([^)]*\)\s*\*?$', '', n)
+    f1 = lambda x: f'{x:.1f}'.replace('.', ',')
+
+    linhas = []
+    for uf in sorted(NOMES_UF, key=lambda k: sem_acento(NOMES_UF[k]).lower()):
+        for disputa in sorted(res[res.uf == uf].disputa.dropna().unique()):
+            u_bi = bi[(bi.uf == uf) & (bi.disputa == disputa)]
+            if u_bi.empty:
+                continue
+            fim = u_bi.d.max()
+            ult = u_bi[u_bi.d == fim].sort_values('h', ascending=False)
+            if len(ult) != 2:
+                continue
+            a, b = (nome(uf, cp) for cp in ult.candidato_partido)
+            ma, mb, mnv = ult.h.iloc[0], ult.h.iloc[1], ult.nv.iloc[0]
+            u = res[(res.uf == uf) & (res.disputa == disputa)]
+            polls = u.drop_duplicates('poll_id').copy()
+            polls['_nota'] = polls.classificacao_instituto.apply(ps.score_instituto)
+            polls['_amostra'] = num(polls.poll_id.map(pesq.amostra)).fillna(0)
+            polls = polls.sort_values(['data_campo', '_nota', '_amostra'], ascending=[False, False, False]).head(2)
+            ps_lin = []
+            for _, p in polls.iterrows():
+                c = u[(u.scenario_id == p.scenario_id)]
+                cand = c[c.tipo == 'candidato']
+                val = {nome(uf, cp): v for cp, v in zip(cand.candidato_partido, cand.p)}
+                ps_lin.append((f"{p.instituto} ({p.data_campo:%d/%m})", p.registro_tse, val.get(a), val.get(b),
+                               c[c.tipo != 'candidato'].p.sum()))
+            while len(ps_lin) < 2:
+                ps_lin.append(('-', '-', None, None, None))
+            lid = [None if x[2] is None or x[3] is None else (a if x[2] >= x[3] else b) for x in ps_lin]
+            marg = [None if x[2] is None or x[3] is None else abs(x[2] - x[3]) for x in ps_lin]
+            dias = (hoje.normalize() - fim).days
+            if lid[1] is not None and lid[0] != lid[1]:
+                obs = f'Pesquisas divergem: a mais recente aponta {curto(lid[0])}, a anterior {curto(lid[1])}'
+            elif lid[0] is not None and lid[0] != a:
+                obs = f'Pesquisa mais recente aponta {curto(lid[0])}, a Média Eixo {curto(a)}'
+            elif all(m is not None and m <= 3 for m in marg):
+                obs = 'Margem estreita nas duas pesquisas'
+            else:
+                obs = f'{curto(a)} à frente nas duas pesquisas e na Média Eixo'
+            if dias > 21:
+                obs += f'. Última pesquisa há {dias} dias'
+            fmtp = lambda v: '-' if v is None else f1(v) + '%'
+            linhas.append([f'{NOMES_UF[uf]} ({uf})', f'{curto(a)} x {curto(b)}',
+                           a, f1(ma) + '%', b, f1(mb) + '%', f1(ma - mb) + ' p.p.', f1(mnv) + '%', f'{fim:%d/%m}']
+                          + [x for pl in ps_lin for x in (pl[0], pl[1], fmtp(pl[2]), fmtp(pl[3]), fmtp(pl[4]))]
+                          + [obs])
+    N = len(linhas[0]) if linhas else 20
+    grid = [[f'ÚLTIMAS PESQUISAS 2º TURNO - COMPARATIVO ENTRE LEVANTAMENTOS RECENTES ({MESES[hoje.month].upper()}/{hoje.year})'],
+            ['Por confronto de 2º turno para governador: a Média Ponderada Eixo e as duas pesquisas mais recentes registradas no TSE. '
+             + atualizado(hoje)],
+            ['Os percentuais das pesquisas estão na ordem da Média (candidato A e candidato B). Brancos/Nulos inclui indecisos. '
+             '* Candidatura com recurso.'],
+            [],
+            ['ESTADO', 'CONFRONTO', 'MÉDIA PONDERADA (EIXO)', '', '', '', '', '', '', '1ª PESQUISA (MAIS RECENTE)', '', '', '', '',
+             '2ª PESQUISA (ANTERIOR)', '', '', '', '', 'OBSERVAÇÕES'],
+            ['Estado', 'Confronto', 'Candidato A', '%', 'Candidato B', '%', 'Margem', 'Brancos/Nulos', 'Última pesquisa',
+             'Instituto (Data)', 'Registro TSE', 'A', 'B', 'Brancos/Nulos',
+             'Instituto (Data)', 'Registro TSE', 'A', 'B', 'Brancos/Nulos', 'Observações']] + linhas
+    grid = [r + [''] * (N - len(r)) for r in grid]
+    log(f'  {len(linhas)} confrontos')
+    grupos = [(0, 1), (1, 2), (2, 9), (9, 14), (14, 19), (19, 20)]
+    return grid, N, grupos
+
+
+def gravar_tabela(sh, aba, grid, N, grupos):
+    """Tabela simples no padrão visual das outras abas (título marinho, notas em gelo, cabeçalho marinho)."""
+    try:
+        ws = sh.worksheet(aba)
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet(aba, rows=len(grid) + 20, cols=N)
+    sid = ws.id
+    ws.clear()
+    sh.batch_update({'requests': [{'unmergeCells': {'range': {'sheetId': sid}}}]})
+    ws.resize(rows=len(grid) + 20, cols=N)
+    ws.update(values=grid, range_name='A1', value_input_option='RAW')
+    C = {'marinho': {'red': 0.098, 'green': 0.176, 'blue': 0.306}, 'gelo': {'red': 0.957, 'green': 0.953, 'blue': 0.937},
+         'branco': {'red': 1, 'green': 1, 'blue': 1}, 'sub': {'red': 0.463, 'green': 0.463, 'blue': 0.447},
+         'preto': {'red': 0, 'green': 0, 'blue': 0}, 'zebra': {'red': 0.98, 'green': 0.98, 'blue': 0.972},
+         'borda': {'red': 0.847, 'green': 0.839, 'blue': 0.812}}
+
+    def cel(r0, r1, c0, c1, bg, fg, bold=False, size=10, italic=False, wrap='OVERFLOW_CELL', align='LEFT'):
+        return {'repeatCell': {'range': {'sheetId': sid, 'startRowIndex': r0, 'endRowIndex': r1, 'startColumnIndex': c0,
+                                         'endColumnIndex': c1},
+                               'cell': {'userEnteredFormat': {'backgroundColor': bg, 'wrapStrategy': wrap,
+                                                              'verticalAlignment': 'MIDDLE', 'horizontalAlignment': align,
+                                                              'textFormat': {'foregroundColor': fg, 'bold': bold,
+                                                                             'fontSize': size, 'italic': italic,
+                                                                             'fontFamily': 'Montserrat'}}},
+                               'fields': 'userEnteredFormat'}}
+
+    def merge(r, c0, c1):
+        return {'mergeCells': {'range': {'sheetId': sid, 'startRowIndex': r, 'endRowIndex': r + 1, 'startColumnIndex': c0,
+                                         'endColumnIndex': c1}, 'mergeType': 'MERGE_ALL'}}
+    n = len(grid)
+    reqs = [cel(0, n + 20, 0, N, C['branco'], C['preto']),
+            {'updateBorders': {'range': {'sheetId': sid}, 'top': {'style': 'NONE'}, 'bottom': {'style': 'NONE'},
+                               'left': {'style': 'NONE'}, 'right': {'style': 'NONE'},
+                               'innerHorizontal': {'style': 'NONE'}, 'innerVertical': {'style': 'NONE'}}},
+            merge(0, 0, N), merge(1, 0, N), merge(2, 0, N),
+            cel(0, 1, 0, N, C['marinho'], C['branco'], True, 13),
+            cel(1, 3, 0, N, C['gelo'], C['sub'], False, 10, True),
+            cel(4, 6, 0, N, C['marinho'], C['branco'], True, 10, wrap='WRAP', align='CENTER')]
+    reqs += [merge(4, c0, c1) for c0, c1 in grupos if c1 - c0 > 1]
+    for i in range(6, n):
+        reqs.append(cel(i, i + 1, 0, N, C['zebra'] if i % 2 else C['branco'], C['preto'], wrap='WRAP'))
+    reqs.append({'updateBorders': {'range': {'sheetId': sid, 'startRowIndex': 5, 'endRowIndex': n, 'startColumnIndex': 0,
+                                             'endColumnIndex': N},
+                                   'innerHorizontal': {'style': 'SOLID', 'color': C['borda']},
+                                   'bottom': {'style': 'SOLID', 'color': C['borda']}}})
+    for c0, c1 in grupos[1:]:
+        reqs.append({'updateBorders': {'range': {'sheetId': sid, 'startRowIndex': 4, 'endRowIndex': n,
+                                                 'startColumnIndex': c0, 'endColumnIndex': c1},
+                                       'left': {'style': 'SOLID', 'color': C['borda']}}})
+    reqs += [{'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': 1},
+                                            'properties': {'pixelSize': 40}, 'fields': 'pixelSize'}},
+             {'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'COLUMNS', 'startIndex': 0,
+                                                      'endIndex': N},
+                                            'properties': {'pixelSize': 120}, 'fields': 'pixelSize'}},
+             {'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'COLUMNS', 'startIndex': N - 1,
+                                                      'endIndex': N},
+                                            'properties': {'pixelSize': 340}, 'fields': 'pixelSize'}}]
+    sh.batch_update({'requests': reqs})
+    print(f'{aba} gravada: {len(grid)} linhas x {N} colunas')
+
+
+def padronizar_abas(sh):
+    """Mesma cor de aba, 3 linhas congeladas e ordem fixa nas abas geradas."""
+    marinho = {'red': 0.098, 'green': 0.176, 'blue': 0.306}
+    abas = {w.title: w for w in sh.worksheets()}
+    reqs = []
+    for i, nome in enumerate(ORDEM_ABAS):
+        if nome in abas:
+            reqs.append({'updateSheetProperties': {
+                'properties': {'sheetId': abas[nome].id, 'index': i, 'tabColorStyle': {'rgbColor': marinho},
+                               'gridProperties': {'frozenRowCount': 3}},
+                'fields': 'index,tabColorStyle,gridProperties.frozenRowCount'}})
+    if reqs:
+        sh.batch_update({'requests': reqs})
+
+
 def gravar_serie_semanal(sh, grid, fmt, largura_max, datas_cel, series_cel, aba='Série Semanal'):
     try:
         ws = sh.worksheet(aba)
@@ -505,6 +668,8 @@ def main():
     if 'resultados_bi_t2' in dados:
         print(ABA_T2)
         serie_t2 = montar_serie_segundo_turno(dados, hoje)
+        print(ABA_ULTIMAS_T2)
+        ultimas_t2 = montar_ultimas_t2(dados, hoje)
     if not gravar:
         return
     gc = gspread.authorize(creds)
@@ -514,6 +679,8 @@ def main():
     ultimas.gravar(sh, tabela)
     if serie_t2:
         gravar_serie_semanal(sh, *serie_t2, aba=ABA_T2)
+        gravar_tabela(sh, ABA_ULTIMAS_T2, *ultimas_t2)
+    padronizar_abas(sh)
 
 
 if __name__ == '__main__':
