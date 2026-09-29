@@ -364,7 +364,8 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
     grid.append(['Confrontos de 2º turno para governador testados em pesquisa, com brancos, nulos e indecisos. '
                  f'Valores em %. {atualizado(hoje)}'])
     fmt.append((1, 0, 8, 'sub'))
-    grid.append(['* Candidatura indeferida pelo TSE, com recurso: segue na disputa até a decisão final.'])
+    grid.append(['Sem pesquisa nova do confronto, a série repete o último valor: veja a data da última pesquisa '
+                 'no título de cada bloco. * Candidatura indeferida pelo TSE, com recurso.'])
     fmt.append((2, 0, 8, 'sub'))
     grid.append([])
     largura_max = 0
@@ -390,7 +391,7 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
             r0 = len(grid)
             linha = [''] * (foto_col + 2)
             curto = ' x '.join(re.sub(r'\s*\([^)]*\)\s*\*?$', '', c) for c in vivos)
-            linha[0] = f'{NOMES_UF[uf]} ({uf}) - {curto}'
+            linha[0] = f'{NOMES_UF[uf]} ({uf}) - {curto} - última pesquisa em {fim:%d/%m}'
             linha[foto_col] = f'{uf} - Foto atual'
             grid.append(linha)
             fmt += [(r0, 0, ncol, 'estado'), (r0, foto_col, foto_col + 2, 'estado')]
