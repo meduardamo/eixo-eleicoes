@@ -1,6 +1,7 @@
-"""Planilha das médias da comunicação (Jess): abas `Série Semanal` e `Últimas Pesquisas`.
+"""Planilha das médias da comunicação (Jess): abas `Série Semanal`, `Últimas Pesquisas` e
+`Série Semanal 2º Turno`.
 
-Governador, 1º turno. Lê o cache Parquet que o `05 - Rebuild BI` acabou de publicar
+Governador, 1º turno (e 2º turno, um bloco por confronto, lido da matriz T2). Lê o cache Parquet que o `05 - Rebuild BI` acabou de publicar
 (`resultados_bi`, `resultados`, `pesquisas` da matriz T1) e a `base_dadosabertos` da
 planilha de candidaturas, e regrava as duas abas inteiras. Não recalcula média: a série é
 a `media_hibrida_30d` do `resultados_bi`, a mesma dos painéis.
@@ -37,6 +38,8 @@ from compartilhado.cache_parquet import API_ARQUIVOS, _achar_arquivo, nome_arqui
 
 PLANILHA_MEDIAS_ENV = "SPREADSHEET_ID_MEDIAS"
 MATRIZ_T1_ENV = "SPREADSHEET_ID_POLLINGDATA"
+MATRIZ_T2_ENV = "SPREADSHEET_ID_POLLINGDATA_T2"
+ABA_T2 = "Série Semanal 2º Turno"
 CANDIDATURAS_ENV = "SPREADSHEET_ID_TSE"
 INICIO_SERIE = pd.Timestamp("2026-07-01")
 NV = "Brancos, nulos e indecisos"
@@ -123,6 +126,9 @@ def carregar(creds):
     t1 = env(MATRIZ_T1_ENV)
     dados = {aba: baixar_cache(sessao, t1, aba) for aba in ('resultados_bi', 'resultados', 'pesquisas')}
     dados['base'] = baixar_cache(sessao, env(CANDIDATURAS_ENV), 'base_dadosabertos')
+    t2 = os.getenv(MATRIZ_T2_ENV, '').strip()
+    if t2:
+        dados['resultados_bi_t2'] = baixar_cache(sessao, t2, 'resultados_bi')
     return dados
 
 
@@ -178,9 +184,13 @@ def nome_publicado(cp, tse):
     for w in re.findall(r'[^\W\d_]+', f'{tse.NM_URNA_CANDIDATO} {tse.NM_CANDIDATO}'):
         do_tse.setdefault(sem_acento(w).lower(), w)
 
+    um_so = len(re.findall(r'[^\W\d_]+', nome)) == 1
+
     def troca(m):
         w = m.group(0)
         k = sem_acento(w).lower()
+        if len(k) <= 3 and um_so and sem_acento(tse.NM_URNA_CANDIDATO).lower().strip() == k:
+            return do_tse[k]  # nome de urna que é sigla (JHC), não "Jhc"
         if len(k) <= 3 or k in do_tse or k in TITULO_PESSOA:
             return w
         melhor = max(do_tse, key=lambda x: difflib.SequenceMatcher(None, k, x).ratio())
@@ -327,8 +337,84 @@ def montar_serie_semanal(dados, hoje, log=print):
     return grid, fmt, largura_max, datas_cel, series_cel
 
 
-def gravar_serie_semanal(sh, grid, fmt, largura_max, datas_cel, series_cel):
-    ws = sh.worksheet('Série Semanal')
+def montar_serie_segundo_turno(dados, hoje, log=print):
+    """Mesma série do 1º turno, um bloco por confronto de 2º turno de governador (`disputa`)."""
+    bi = dados['resultados_bi_t2']
+    bi = bi[(bi.cargo == 'governador') & (bi.turno == 't2') & (bi.tipo == 'candidato')].copy()
+    bi['h'] = num(bi.media_hibrida_30d)
+    bi['nv'] = 100 - num(bi.declarado_hibrido_30d)
+    bi['d'] = pd.to_datetime(bi.data_campo)
+    bi = bi[bi.h.notna()]
+    nv = bi.drop_duplicates(['uf', 'disputa', 'd'])[['uf', 'disputa', 'd', 'nv']].rename(columns={'nv': 'h'})
+    nv = nv[nv.h.notna()]
+    bi = filtrar_registrados(bi, dados['base'], log)
+
+    datas = list(pd.date_range(INICIO_SERIE, hoje, freq='7D'))
+    if datas[-1] < hoje.normalize():
+        datas.append(hoje.normalize())
+
+    def valor(serie, dt):
+        s = serie[serie.d <= dt]
+        return '' if s.empty else round(float(s.sort_values('d').h.iloc[-1]), 1)
+
+    mes_fim = MESES[datas[-1].month].upper()
+    grid, fmt, datas_cel, series_cel = [], [], [], []
+    grid.append([f'SÉRIE SEMANAL 2º TURNO - MÉDIA PONDERADA (JULHO A {mes_fim})'])
+    fmt.append((0, 0, 8, 'titulo'))
+    grid.append(['Confrontos de 2º turno para governador testados em pesquisa, com brancos, nulos e indecisos. '
+                 f'Valores em %. {atualizado(hoje)}'])
+    fmt.append((1, 0, 8, 'sub'))
+    grid.append(['* Candidatura indeferida pelo TSE, com recurso: segue na disputa até a decisão final.'])
+    fmt.append((2, 0, 8, 'sub'))
+    grid.append([])
+    largura_max = 0
+    ordem_ufs = sorted(NOMES_UF, key=lambda k: sem_acento(NOMES_UF[k]).lower())
+    for uf in ordem_ufs:
+        for disputa in sorted(bi[bi.uf == uf].disputa.unique()):
+            u = bi[(bi.uf == uf) & (bi.disputa == disputa)]
+            fim = u.d.max()
+            if fim < hoje.normalize() - pd.Timedelta(days=60):
+                continue
+            vivos = u[u.d == fim].sort_values('h', ascending=False).candidato_partido.tolist()
+            if len(vivos) != 2:
+                log(f'  {uf} {disputa}: {len(vivos)} candidatos na última data, fica de fora')
+                continue
+            n = nv[(nv.uf == uf) & (nv.disputa == disputa)]
+            colunas = vivos + ([NV] if not n.empty else [])
+            series = {cp: u[u.candidato_partido == cp] for cp in vivos}
+            if not n.empty:
+                series[NV] = n
+            ncol = 1 + len(colunas)
+            foto_col = ncol + 1
+            largura_max = max(largura_max, foto_col + 2)
+            r0 = len(grid)
+            linha = [''] * (foto_col + 2)
+            curto = ' x '.join(re.sub(r'\s*\([^)]*\)\s*\*?$', '', c) for c in vivos)
+            linha[0] = f'{NOMES_UF[uf]} ({uf}) - {curto}'
+            linha[foto_col] = f'{uf} - Foto atual'
+            grid.append(linha)
+            fmt += [(r0, 0, ncol, 'estado'), (r0, foto_col, foto_col + 2, 'estado')]
+            grid.append(['Data'] + colunas + [''] + ['Candidato', '% Atual'])
+            fmt += [(r0 + 1, 0, ncol, 'cabecalho'), (r0 + 1, foto_col, foto_col + 2, 'cabecalho')]
+            atuais = [(cp, valor(series[cp], fim)) for cp in colunas]
+            for i, dt in enumerate(datas):
+                lin = [dt.strftime('%Y-%m-%d')]
+                lin += [valor(series[cp], min(dt, fim)) if dt >= series[cp].d.min() else '' for cp in colunas] + ['']
+                lin += list(atuais[i]) if i < len(atuais) else ['', '']
+                grid.append(lin)
+            datas_cel.append((r0 + 2, r0 + 2 + len(datas)))
+            series_cel.append((r0 + 2, r0 + 2 + len(datas), 1, ncol))
+            grid.append([])
+            log(f'  {uf} {disputa}: última data {fim:%d/%m}, {atuais[:2]}')
+    grid = [row + [''] * (largura_max - len(row)) for row in grid]
+    return grid, fmt, largura_max, datas_cel, series_cel
+
+
+def gravar_serie_semanal(sh, grid, fmt, largura_max, datas_cel, series_cel, aba='Série Semanal'):
+    try:
+        ws = sh.worksheet(aba)
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet(aba, rows=len(grid) + 20, cols=largura_max + 1)
     sid = ws.id
     ws.clear()
     sh.batch_update({'requests': [{'unmergeCells': {'range': {'sheetId': sid}}}]})
@@ -398,7 +484,7 @@ def gravar_serie_semanal(sh, grid, fmt, largura_max, datas_cel, series_cel):
         if est == 'estado' and c0 == 0:
             reqs += [altura(linha, linha + 1, 28), altura(linha + 1, linha + 2, 34), altura(linha + 2, linha + 15, 22)]
     sh.batch_update({'requests': reqs})
-    print(f'Série Semanal gravada: {len(grid)} linhas x {largura_max} colunas')
+    print(f'{aba} gravada: {len(grid)} linhas x {largura_max} colunas')
 
 
 # ---------------------------------------------------------------- main
@@ -414,6 +500,10 @@ def main():
     serie = montar_serie_semanal(dados, hoje)
     print('Últimas Pesquisas')
     tabela = ultimas.montar(dados, hoje)
+    serie_t2 = None
+    if 'resultados_bi_t2' in dados:
+        print(ABA_T2)
+        serie_t2 = montar_serie_segundo_turno(dados, hoje)
     if not gravar:
         return
     gc = gspread.authorize(creds)
@@ -421,6 +511,8 @@ def main():
     sh = gc.open_by_key(env(PLANILHA_MEDIAS_ENV))
     gravar_serie_semanal(sh, *serie)
     ultimas.gravar(sh, tabela)
+    if serie_t2:
+        gravar_serie_semanal(sh, *serie_t2, aba=ABA_T2)
 
 
 if __name__ == '__main__':
