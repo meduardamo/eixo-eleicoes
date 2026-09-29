@@ -144,6 +144,11 @@ def casar_com_tse(nomes_por_uf, base, cargo='GOVERNADOR'):
             m = g[g.NM_URNA_CANDIDATO.map(lambda x: bool(ts) and ts <= set(tokens(x)))
                   | (g._sigla.eq(sigla(cp)) & g.NM_CANDIDATO.map(lambda x: bool(ts) and ts <= set(tokens(x))))]
         if m.empty:
+            # Pesquisa que junta nome de urna e sobrenome civil: "Cadu Xavier" é CADU DE LULA /
+            # CARLOS EDUARDO XAVIER, "Dorinha Seabra" é PROFESSORA DORINHA / MARIA AUXILIADORA SEABRA.
+            m = g[g._sigla.eq(sigla(cp))
+                  & (g.NM_URNA_CANDIDATO + ' ' + g.NM_CANDIDATO).map(lambda x: bool(ts) and ts <= set(tokens(x)))]
+        if m.empty:
             m = g[g._sigla.eq(sigla(cp))
                   & (g.NM_URNA_CANDIDATO.map(lambda x: nome_parecido(cp, x))
                      | g.NM_CANDIDATO.map(lambda x: nome_parecido(cp, x)))]
