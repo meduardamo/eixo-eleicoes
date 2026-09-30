@@ -68,13 +68,13 @@ WIKI_MANUAL = {}
 
 # Tipo do cargo, na ordem: o primeiro padrão que casar decide.
 TIPO_CARGO = [
-    ("Função parlamentar (Mesa, frente)", r"presidente d[ao] (câmara|assembleia|senado|ale[a-z]{2,3}\b)|"
+    ("Função parlamentar (Mesa, frente)", r"presidente d[ao] (câmara|assembl[ée]ia|senado|parlamento|ale[a-z]{2,3}\b)|"
                                          r"secretári[oa] da mesa|mesa diretora|frente parlamentar"),
-    ("Entidade de classe ou sociedade civil", r"sindicato|\bcut\b|federa[çc][ãa]o das ind|cooperativ|instituto e se"),
-    ("Direção partidária", r"presidente.*\b(partido|psdb|psb|pt|pdt|mdb|pl|solidariedade|uni[ãa]o progressista|federa[çc][ãa]o)\b"),
+    ("Entidade de classe ou sociedade civil", r"sindicato|\bcut\b|federa[çc][ãa]o das ind|cooperativ|instituto e se|\bune\b|estudant"),
+    ("Direção partidária", r"presidente (nacional|estadual|municipal) d|funda[çc][ãa]o ulysses|presidente.*\b(partido|psdb|psb|pt|pdt|mdb|pl|solidariedade|uni[ãa]o progressista|federa[çc][ãa]o)\b"),
     ("Cônjuge de chefe do Executivo", r"primeir[ao][ -](dama|cavalheiro)"),
     ("Mandato eletivo", r"deputad|senador|vereador|prefeit|governador|constituinte|presidente da república"),
-    ("Carreira pública", r"procurador|delegad|policial|capitão|coronel|oficial d"),
+    ("Carreira pública", r"procurador|delegad|policial|capitão|coronel|oficial d|general|brigada|comandante d"),
     ("Profissão", r"^(advogad|jornalista|empresári|engenheir|médic|produtor|publicitári|psicólog|professor|"
                   r"bancári|comerciante|pastor|treinador|servidor|cientista|radialista|veterinári|apresentador)"),
 ]
@@ -84,19 +84,23 @@ ENTRA_NO_RESUMO = {"Nomeação ou função pública", "Carreira pública", "Côn
 PASTA = [
     (r"sa[úu]de", "Saúde"),
     (r"educa[çc][ãa]o|ensino", "Educação"),
-    (r"seguran[çc]a|pol[íi]cia|delegad|policial|capitão|coronel|\bpm\b|narc[óo]ticos|denarc", "Defesa e Segurança"),
+    (r"seguran[çc]a|pol[íi]cia|delegad|policial|capitão|coronel|\bpm\b|narc[óo]ticos|denarc|defesa civil|brigada|"
+     r"ex[ée]rcito|militar|estrat[ée]gic", "Defesa e Segurança"),
+    (r"reitor|universidade", "Educação"),
+    (r"agr[áa]ri", "Estrutura Fundiária"),
+    (r"ind[íi]gena", "Direitos Humanos e Minorias"),
     (r"procurador|justi[çc]a|minist[ée]rio p[úu]blico|lava jato", "Direito e Justiça"),
-    (r"comunica[çc][ãa]o|secom", "Comunicações"),
-    (r"fazenda|planejamento|or[çc]amento|financeir|tesouro|caixa econ", "Finanças Públicas e Orçamento"),
+    (r"comunica[çc]|secom", "Comunicações"),
+    (r"fazenda|planejamento|or[çc]amento|financeir|finan[çc]as|tesouro|caixa econ", "Finanças Públicas e Orçamento"),
     (r"agricultura|pesca|aquicultura|pecu[áa]ria|abastecimento", "Agricultura, Pecuária, Pesca e Extrativismo"),
     (r"meio ambiente|mudan[çc]a do clima", "Meio Ambiente e Desenvolvimento Sustentável"),
     (r"itaipu|energia|recursos h[íi]dricos|minas", "Energia, Recursos Hídricos e Minerais"),
     (r"infraestrutura|obras|portos|transporte", "Viação, Transporte e Mobilidade"),
-    (r"cidades|urban|integra[çc][ãa]o nacional|reconstru[çc][ãa]o", "Cidades e Desenvolvimento Urbano"),
+    (r"cidades|urban|habita[çc][ãa]o|integra[çc][ãa]o nacional|reconstru[çc][ãa]o", "Cidades e Desenvolvimento Urbano"),
     (r"turismo", "Turismo"),
     (r"trabalho|emprego|qualifica[çc][ãa]o", "Trabalho e Emprego"),
-    (r"desenvolvimento econ[ôo]mico", "Economia"),
-    (r"assist[êe]ncia|social|volunt[áa]ri|desenvolvimento social", "Previdência e Assistência Social"),
+    (r"desenvolvimento econ[ôo]mico|desenvolvimento( de)?\s*$", "Economia"),
+    (r"assist[êe]ncia|social|cidadania|volunt[áa]ri|desenvolvimento social", "Previdência e Assistência Social"),
     (r"direitos humanos|juventude|mulher|igualdade", "Direitos Humanos e Minorias"),
     (r"metrologia|ind[úu]stria|com[ée]rcio(?! exterior)", "Indústria, Comércio e Serviços"),
     (r"apex|com[ée]rcio exterior|rela[çc][õo]es exteriores", "Relações Internacionais e Comércio Exterior"),
@@ -283,7 +287,7 @@ def pasta(cargo, tipo):
     s = cargo.lower()
     for nome_uf in sorted(UF_NOME.values(), key=len, reverse=True):
         s = s.replace(nome_uf.lower(), "")
-    return next((tema for padrao, tema in PASTA if re.search(padrao, s)), "A classificar")
+    return next((tema for padrao, tema in PASTA if re.search(padrao, s)), "Sem pasta na fonte")
 
 
 def cargos_wiki(titulo):
