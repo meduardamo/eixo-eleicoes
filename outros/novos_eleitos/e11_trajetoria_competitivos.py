@@ -14,7 +14,7 @@ vem de uma fonte com link, e o que não tem fonte fica marcado "a conferir".
   tema que a própria Câmara atribui, e no Senado, com a classificação do Senado traduzida para
   os temas da Câmara. Fora homenagem e data comemorativa. Entram até 3 temas, por número de
   proposições, entre os que a pessoa apresenta acima da média da Casa. Com menos de 10
-  proposições com tema não sai tema. Assembleia: temas do levantamento do IU, traduzidos.
+  proposições com tema não sai tema. Só autoria: levantamento do IU e coautoria não entram.
 - O que a pesquisa anterior dizia e nenhuma fonte confirma vai para a aba longa com
   "A conferir (pesquisa anterior sem fonte)". Profissão não entra: está em "Ocupação declarada
   ao TSE".
@@ -40,6 +40,7 @@ import requests
 
 from outros.novos_eleitos import comum as c
 from outros.novos_eleitos.dados_pesquisa_senado import PESQUISA_SENADO_74
+from outros.novos_eleitos.verificacao_competitivos import VERIFICADOS
 
 ABA_PESSOA = "Senado competitivos, pesquisa manual (pré-mapeados)"
 ABA_CARGOS = "Senado competitivos, cargos com fonte"
@@ -158,13 +159,6 @@ SENADO_PARA_CAMARA = {
     "Honorífico": "",
 }
 
-# Temas do levantamento do IU (assembleias, 2023) -> tema oficial da Câmara. "Generalista" não é tema.
-IU_PARA_CAMARA = {"Defesa de direitos": "Direitos Humanos e Minorias", "Previdência": "Previdência e Assistência Social",
-                  "Saúde": "Saúde", "Educação": "Educação", "Infraestrutura": "Viação, Transporte e Mobilidade",
-                  "Economia": "Economia", "Desenvolvimento social": "Previdência e Assistência Social",
-                  "Esporte": "Esporte e Lazer", "Segurança": "Defesa e Segurança", "Meio ambiente":
-                  "Meio Ambiente e Desenvolvimento Sustentável", "Cultura": "Arte, Cultura e Religião",
-                  "Agricultura": "Agricultura, Pecuária, Pesca e Extrativismo"}
 
 
 def sem_acento(s):
@@ -419,7 +413,7 @@ def universo():
     base = man[["Nome", "Partido", "UF", "Reeleição, volta ou novo", "Tipo de origem", "Origem",
                 "Mandatos eletivos desde 2006 (TSE)", "Ocupação declarada ao TSE", "Instagram",
                 "Outras redes declaradas", "SQ_CANDIDATO"]]
-    extra = mp[["SQ_CANDIDATO", "Nome de urna (TSE)", "ID na Câmara", "Código no Senado", "IU: temas"]]
+    extra = mp[["SQ_CANDIDATO", "Nome de urna (TSE)", "ID na Câmara", "Código no Senado"]]
     base = base.merge(extra, on="SQ_CANDIDATO", how="left", validate="one_to_one").fillna("")
     civil = c.ler_csv("candidaturas_2026.csv").set_index("sq_candidato")
     base["nome_civil"] = base.SQ_CANDIDATO.map(civil.nome_civil)
@@ -462,6 +456,28 @@ def main():
                 if p:
                     pastas.append(p)
 
+        # Conferência item a item do que a ficha não trazia (verificacao_competitivos.py).
+        verificados = VERIFICADOS.get(sq, [])
+        resolvidos = {v["substitui"] for v in verificados}
+        nao_confirmados, fontes_verif = [], []
+        for v in verificados:
+            confirmado_ = v["resultado"] != "Não confirmado"
+            cargos_longos.append({"Nome": r.Nome, "Partido": r.Partido, "UF": r.UF, "Cargo": v["cargo"], "Tipo": v["tipo"],
+                                  "Pasta (tema da Câmara)": pasta(v["cargo"], v["tipo"]) if confirmado_ else "",
+                                  "Período": v["periodo"], "Fonte": v["fonte"],
+                                  "Checagem": v["resultado"] + (f" (antes: {v['substitui']})"
+                                                                if v["resultado"] == "Corrigido" and v["substitui"] else ""),
+                                  "SQ_CANDIDATO": sq})
+            if not confirmado_:
+                nao_confirmados.append(v["cargo"])
+                continue
+            fontes_verif.append(v["fonte"])
+            if v["tipo"] in ENTRA_NO_RESUMO:
+                nao_eletivos.append(v["cargo"])
+                periodos_ne.append(v["periodo"] or "sem data")
+                if pasta(v["cargo"], v["tipo"]):
+                    pastas.append(pasta(v["cargo"], v["tipo"]))
+
         anterior = PESQUISA_SENADO_74.get(sq, {})
         pendentes = []
         for item in re.split(r";\s*", anterior.get("Cargo não eletivo anterior (ex.: secretário de pasta)", "")):
@@ -469,7 +485,8 @@ def main():
             if not item or item.lower().startswith("sem registro"):
                 continue
             tipo = tipo_cargo(item)
-            if tipo in {"Profissão", "Mandato eletivo", "Função parlamentar (Mesa, frente)"} or confirmado(item, cargos):
+            if (item in resolvidos or tipo in {"Profissão", "Mandato eletivo", "Função parlamentar (Mesa, frente)"}
+                    or confirmado(item, cargos)):
                 continue
             if tipo in ENTRA_NO_RESUMO:
                 pendentes.append(item)
@@ -500,16 +517,17 @@ def main():
                 temas = escolher_temas(junto.tema.value_counts(), junto.idProposicao.nunique(), media_camara)
                 medida = "; ".join(filter(None, [medida, f"Senado: {s.idProposicao.nunique()} matérias de autoria principal com classificação"]))
                 fontes_tema.append(f"https://www25.senado.leg.br/web/senadores/senador/-/perfil/{r['Código no Senado']}")
-        if not temas and r["IU: temas"]:
-            iu = [IU_PARA_CAMARA.get(t.strip()) for t in r["IU: temas"].split("|")]
-            temas = [(t, None) for t in dict.fromkeys(filter(None, iu))]
-            medida = "Levantamento do IU de deputados estaduais (2023), traduzido para os temas da Câmara"
         if not temas:
             medida = (medida + "; poucas proposições para dar tema") if medida else "Sem atuação legislativa com tema registrado"
 
-        sem_fonte_pessoa = not titulo
-        checagem = ("A conferir: sem verbete com ficha na Wikipedia" if sem_fonte_pessoa
-                    else "Parte a conferir: ver aba de cargos" if pendentes else "Com fonte")
+        if pendentes:
+            checagem = "Parte a conferir: ver aba de cargos"
+        elif nao_confirmados:
+            checagem = "Parte não confirmada: ver aba de cargos"
+        elif titulo or fontes_verif:
+            checagem = "Com fonte"
+        else:
+            checagem = "Sem cargo não eletivo achado em fonte"
         pessoas.append({
             **{k: r[k] for k in ["Nome", "Partido", "UF", "Reeleição, volta ou novo", "Tipo de origem", "Origem",
                                  "Mandatos eletivos desde 2006 (TSE)", "Ocupação declarada ao TSE", "Instagram",
@@ -520,7 +538,7 @@ def main():
             "Período": "; ".join(periodos_ne),
             "Temática principal": "; ".join(f"{t} ({n})" if n else t for t, n in temas),
             "Temática: como foi medida": medida,
-            "Fonte da informação": " ".join(filter(None, [url] + fontes_tema)),
+            "Fonte da informação": " ".join(dict.fromkeys(filter(None, [url] + fontes_verif + fontes_tema))),
             "Checagem": checagem,
             "Observações": "",
             "SQ_CANDIDATO": sq,
@@ -529,7 +547,7 @@ def main():
     pessoas = pd.DataFrame(pessoas)
     longos = pd.DataFrame(cargos_longos)
     c.falhar_se(len(pessoas) != len(base), "perdeu gente na montagem")
-    print(f"{len(pessoas)} pessoas; com verbete: {(pessoas['Checagem'] != 'A conferir: sem verbete com ficha na Wikipedia').sum()}; "
+    print(f"{len(pessoas)} pessoas; checagem: {pessoas.Checagem.value_counts().to_dict()}; "
           f"com tema: {(pessoas['Temática principal'] != '').sum()}; cargos: {len(longos)}, "
           f"a conferir: {(longos.Checagem == A_CONFERIR).sum()}")
     print(longos.Tipo.value_counts().to_string())
