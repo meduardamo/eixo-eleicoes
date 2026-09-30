@@ -11,6 +11,9 @@ Mesmo método da etapa 11:
 O deputado é achado na API da Câmara (legislatura 57) por nome parlamentar dentro da UF; o
 partido desempata. Nome civil e nascimento vêm da mesma API.
 
+A aba também recebe quem chega à Câmara (não disputa reeleição) e tem autoria na Câmara ou no
+Senado, só com o tema: é quem a tela de renovação do painel conta.
+
 Saídas: abas "Câmara competitivos, autoria e cargos" (uma linha por deputado) e
 "Câmara competitivos, cargos com fonte" (uma linha por cargo) na planilha "Pré mapeamento".
 Rodar: python -m outros.novos_eleitos.e12_camara_competitivos [--faixas Alta,Média] [--publicar]
@@ -21,8 +24,8 @@ import pandas as pd
 
 from outros.novos_eleitos import comum as c
 from outros.novos_eleitos.e11_trajetoria_competitivos import (
-    ENTRA_NO_RESUMO, WIKI_URL, achar_verbete, autoria_principal_camara, cargos_wiki, escolher_temas, pasta,
-    texto_periodo, tipo_cargo)
+    ENTRA_NO_RESUMO, WIKI_URL, achar_verbete, autoria_principal_camara, cargos_wiki, chegam_com_autoria, colunas_tema,
+    pasta, tema_autoria, texto_periodo, tipo_cargo)
 
 ABA_RADAR = "Competitividade Câmara (em exercício)"
 ABA_PESSOA = "Câmara competitivos, autoria e cargos"
@@ -80,6 +83,7 @@ def main():
     # SQ do registro de 2026, pela aba Mapeamento Câmara: é a chave com que o painel cruza.
     mapa = c.ler_aba(c.planilha_destino(), "Mapeamento Câmara")
     sq_por_id = dict(zip(mapa["ID na Câmara"], mapa["SQ_CANDIDATO"]))
+    cod_por_sq = dict(zip(mapa.SQ_CANDIDATO, mapa["Código no Senado"]))
 
     pessoas, longos = [], []
     for _, r in base.iterrows():
@@ -104,33 +108,34 @@ def main():
                 if p:
                     pastas.append(p)
 
-        temas, medida = [], "Sem ID na Câmara"
-        if idc:
-            prop = camara[camara.idDeputadoAutor == idc]
-            n = prop.idProposicao.nunique()
-            temas = escolher_temas(prop.tema.value_counts(), n, media)
-            medida = f"Câmara: {n} proposições de autoria principal com tema (2003-2026)"
-            if not temas:
-                medida += "; poucas proposições para dar tema"
+        sq = sq_por_id.get(idc, "")
+        cod_senado = cod_por_sq.get(sq, "")
+        temas, medida, fontes = tema_autoria(idc, cod_senado, r.Parlamentar, camara, media)
         pessoas.append({
             "Parlamentar": r.Parlamentar, "Partido": r.Partido, "UF": r.UF,
             "O que disputa em 2026": r["O que disputa em 2026"],
             "Índice de competitividade à reeleição": r["Índice de competitividade à reeleição"],
             "Alta, média ou baixa": r["Alta, média ou baixa"],
-            "Temática principal": "; ".join(f"{t} ({n})" for t, n in temas),
-            "Temática: como foi medida": medida,
+            **colunas_tema(temas, medida, []),
             "Cargo não eletivo anterior (ex.: secretário de pasta)": "; ".join(nao_eletivos),
             "Pasta ou área": "; ".join(dict.fromkeys(pastas)),
             "Período": "; ".join(periodos),
             "Teve mandato antes de 2006?": "; ".join(antes_2006) or ("Não" if titulo else ""),
-            "Fonte da informação": " ".join(filter(None, [url, f"https://www.camara.leg.br/deputados/{idc}" if idc else ""])),
+            "Fonte da informação": " ".join(filter(None, [url] + fontes)),
             "Checagem": "Com fonte" if titulo else "Sem verbete com ficha na Wikipedia: cargos não pesquisados",
             "ID na Câmara": idc,
-            "SQ_CANDIDATO": sq_por_id.get(idc, ""),
+            "SQ_CANDIDATO": sq,
         })
 
     pessoas, longos = pd.DataFrame(pessoas), pd.DataFrame(longos)
-    print(f"{len(pessoas)} deputados; com verbete: {(pessoas.Checagem == 'Com fonte').sum()}; "
+    pessoas.insert(3, "Grupo", "Deputado competitivo à reeleição (Radar)")
+    extra = chegam_com_autoria("Mapeamento Câmara", set(pessoas.SQ_CANDIDATO), camara, media)
+    extra = extra.rename(columns={"Nome": "Parlamentar"})
+    extra.insert(3, "Grupo", "Chega à Câmara com autoria na Câmara ou no Senado")
+    print(f"chegam à Câmara com autoria: {len(extra)}; com tema: {(extra['Temática principal'] != '').sum()}")
+    pessoas = pd.concat([pessoas, extra], ignore_index=True).fillna("")
+    pessoas = pessoas[[col for col in pessoas.columns if col not in ("ID na Câmara", "SQ_CANDIDATO")] + ["ID na Câmara", "SQ_CANDIDATO"]]
+    print(f"{len(pessoas)} linhas; com verbete: {(pessoas.Checagem == 'Com fonte').sum()}; "
           f"com tema: {(pessoas['Temática principal'] != '').sum()}; "
           f"com cargo não eletivo: {(pessoas['Cargo não eletivo anterior (ex.: secretário de pasta)'] != '').sum()}; "
           f"sem SQ: {(pessoas.SQ_CANDIDATO == '').sum()}; cargos: {len(longos)}")
@@ -138,7 +143,8 @@ def main():
     c.salvar_csv(longos, "camara_competitivos_cargos.csv")
     if a.publicar:
         destino = c.planilha_destino()
-        c.gravar_aba(destino, ABA_PESSOA, pessoas.sort_values(["UF", "Parlamentar"]), congelar_colunas=1)
+        c.gravar_aba(destino, ABA_PESSOA, pessoas.sort_values(["Grupo", "UF", "Parlamentar"], ascending=[False, True, True]),
+                     congelar_colunas=1)
         c.gravar_aba(destino, ABA_CARGOS, longos.sort_values(["UF", "Parlamentar", "Tipo"]), congelar_colunas=1)
 
 

@@ -408,6 +408,53 @@ def escolher_temas(contagem, n_props, media_casa):
     return list(acima.sort_values(ascending=False).head(3).items())
 
 
+def tema_autoria(id_camara, cod_senado, nome, camara, media_camara):
+    """Até 3 temas de autoria principal na Câmara (2003-2026) e no Senado, com a frase de como
+    foi medido e os links. Sem ID nas duas Casas não há tema."""
+    temas, medida, fontes = [], "", []
+    p = camara[camara.idDeputadoAutor == id_camara] if id_camara else camara.iloc[:0]
+    if id_camara:
+        n = p.idProposicao.nunique()
+        temas = escolher_temas(p.tema.value_counts(), n, media_camara)
+        medida = f"Câmara: {n} proposições de autoria principal com tema (2003-2026)"
+        fontes.append(f"https://www.camara.leg.br/deputados/{id_camara}")
+    if cod_senado:
+        info = c.senado(f"senador/{cod_senado}", chave_cache=f"senador_{cod_senado}") or {}
+        nome_casa = (info.get("DetalheParlamentar", {}).get("Parlamentar", {})
+                     .get("IdentificacaoParlamentar", {}).get("NomeParlamentar", nome))
+        s, n_sen = autoria_principal_senado(cod_senado, nome_casa)
+        s["tema"] = s.classificacao.map(senado_para_camara)
+        s = s.dropna(subset=["tema"]).drop_duplicates(["idProposicao", "tema"])
+        if n_sen:
+            junto = pd.concat([p[["idProposicao", "tema"]], s[["idProposicao", "tema"]]])
+            temas = escolher_temas(junto.tema.value_counts(), junto.idProposicao.nunique(), media_camara)
+            medida = "; ".join(filter(None, [medida, f"Senado: {s.idProposicao.nunique()} matérias de autoria principal com classificação"]))
+            fontes.append(f"https://www25.senado.leg.br/web/senadores/senador/-/perfil/{cod_senado}")
+    if not temas:
+        medida = (medida + "; poucas proposições para dar tema") if medida else "Sem autoria na Câmara ou no Senado"
+    return temas, medida, fontes
+
+
+def colunas_tema(temas, medida, fontes):
+    return {"Temática principal": "; ".join(f"{t} ({n})" for t, n in temas),
+            "Temática: como foi medida": medida, "Fonte da informação": " ".join(fontes)}
+
+
+def chegam_com_autoria(aba_mapeamento, ja_tem, camara, media_camara):
+    """Quem chega à Casa (não disputa reeleição) e já tem autoria na Câmara ou no Senado: só o
+    tema, sem pesquisa de cargo. É o que a tela de renovação do painel conta."""
+    mp = c.ler_aba(c.planilha_destino(), aba_mapeamento)
+    alvo = mp[(mp["Reeleição, volta ou novo"] != "Reeleição") & ~mp.SQ_CANDIDATO.isin(ja_tem)
+              & ((mp["ID na Câmara"] != "") | (mp["Código no Senado"] != ""))]
+    linhas = []
+    for _, r in alvo.iterrows():
+        temas, medida, fontes = tema_autoria(r["ID na Câmara"], r["Código no Senado"], r.Nome, camara, media_camara)
+        linhas.append({"Nome": r.Nome, "Partido": r.Partido, "UF": r.UF, "Reeleição, volta ou novo": r["Reeleição, volta ou novo"],
+                       "Tipo de origem": r["Tipo de origem"], "Origem": r.Origem, **colunas_tema(temas, medida, fontes),
+                       "Checagem": "Só tema de autoria; cargos não pesquisados", "SQ_CANDIDATO": r.SQ_CANDIDATO})
+    return pd.DataFrame(linhas)
+
+
 # ---------------------------------------------------------------- montagem
 
 def universo():
@@ -500,29 +547,7 @@ def main():
         if not titulo and anterior.get("Teve mandato antes de 2006?", "Não") not in ("", "Não"):
             antes_2006 = [f"{anterior['Teve mandato antes de 2006?']} (a conferir)"]
 
-        # tema
-        temas, medida, fontes_tema = [], "", []
-        if r["ID na Câmara"]:
-            p = camara[camara.idDeputadoAutor == r["ID na Câmara"]]
-            n = p.idProposicao.nunique()
-            temas = escolher_temas(p.tema.value_counts(), n, media_camara)
-            medida = f"Câmara: {n} proposições de autoria principal com tema (2003-2026)"
-            fontes_tema.append(f"https://www.camara.leg.br/deputados/{r['ID na Câmara']}")
-        if r["Código no Senado"] and SENADO_PARA_CAMARA:
-            nome_casa = (c.senado(f"senador/{r['Código no Senado']}", chave_cache=f"senador_{r['Código no Senado']}") or {})
-            nome_casa = (nome_casa.get("DetalheParlamentar", {}).get("Parlamentar", {})
-                         .get("IdentificacaoParlamentar", {}).get("NomeParlamentar", r.Nome))
-            s, n_sen = autoria_principal_senado(r["Código no Senado"], nome_casa)
-            s["tema"] = s.classificacao.map(senado_para_camara)
-            s = s.dropna(subset=["tema"]).drop_duplicates(["idProposicao", "tema"])
-            if n_sen:
-                junto = pd.concat([p[["idProposicao", "tema"]] if r["ID na Câmara"] else s.iloc[:0][["idProposicao", "tema"]],
-                                   s[["idProposicao", "tema"]]])
-                temas = escolher_temas(junto.tema.value_counts(), junto.idProposicao.nunique(), media_camara)
-                medida = "; ".join(filter(None, [medida, f"Senado: {s.idProposicao.nunique()} matérias de autoria principal com classificação"]))
-                fontes_tema.append(f"https://www25.senado.leg.br/web/senadores/senador/-/perfil/{r['Código no Senado']}")
-        if not temas:
-            medida = (medida + "; poucas proposições para dar tema") if medida else "Sem atuação legislativa com tema registrado"
+        temas, medida, fontes_tema = tema_autoria(r["ID na Câmara"], r["Código no Senado"], r.Nome, camara, media_camara)
 
         if pendentes:
             checagem = "Parte a conferir: ver aba de cargos"
@@ -550,7 +575,11 @@ def main():
 
     pessoas = pd.DataFrame(pessoas)
     longos = pd.DataFrame(cargos_longos)
-    c.falhar_se(len(pessoas) != len(base), "perdeu gente na montagem")
+    extra = chegam_com_autoria(ABA_MAPEAMENTO, set(pessoas.SQ_CANDIDATO), camara, media_camara)
+    print(f"chegam ao Senado com autoria, fora dos competitivos: {len(extra)}; com tema: {(extra['Temática principal'] != '').sum()}")
+    pessoas = pd.concat([pessoas, extra], ignore_index=True).fillna("")
+    pessoas = pessoas[[col for col in pessoas.columns if col != "SQ_CANDIDATO"] + ["SQ_CANDIDATO"]]
+    c.falhar_se(len(pessoas) < len(base), "perdeu gente na montagem")
     print(f"{len(pessoas)} pessoas; checagem: {pessoas.Checagem.value_counts().to_dict()}; "
           f"com tema: {(pessoas['Temática principal'] != '').sum()}; cargos: {len(longos)}, "
           f"a conferir: {(longos.Checagem == A_CONFERIR).sum()}")
