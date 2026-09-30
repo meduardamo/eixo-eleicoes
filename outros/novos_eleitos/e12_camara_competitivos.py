@@ -77,6 +77,10 @@ def main():
     camara = autoria_principal_camara()
     media = camara.tema.value_counts() / camara.idProposicao.nunique()
 
+    # SQ do registro de 2026, pela aba Mapeamento Câmara: é a chave com que o painel cruza.
+    mapa = c.ler_aba(c.planilha_destino(), "Mapeamento Câmara")
+    sq_por_id = dict(zip(mapa["ID na Câmara"], mapa["SQ_CANDIDATO"]))
+
     pessoas, longos = [], []
     for _, r in base.iterrows():
         idc = r["ID na Câmara"]
@@ -115,19 +119,21 @@ def main():
             "Alta, média ou baixa": r["Alta, média ou baixa"],
             "Temática principal": "; ".join(f"{t} ({n})" for t, n in temas),
             "Temática: como foi medida": medida,
-            "Cargo não eletivo anterior": "; ".join(nao_eletivos),
+            "Cargo não eletivo anterior (ex.: secretário de pasta)": "; ".join(nao_eletivos),
             "Pasta ou área": "; ".join(dict.fromkeys(pastas)),
             "Período": "; ".join(periodos),
             "Teve mandato antes de 2006?": "; ".join(antes_2006) or ("Não" if titulo else ""),
             "Fonte da informação": " ".join(filter(None, [url, f"https://www.camara.leg.br/deputados/{idc}" if idc else ""])),
             "Checagem": "Com fonte" if titulo else "Sem verbete com ficha na Wikipedia: cargos não pesquisados",
             "ID na Câmara": idc,
+            "SQ_CANDIDATO": sq_por_id.get(idc, ""),
         })
 
     pessoas, longos = pd.DataFrame(pessoas), pd.DataFrame(longos)
     print(f"{len(pessoas)} deputados; com verbete: {(pessoas.Checagem == 'Com fonte').sum()}; "
           f"com tema: {(pessoas['Temática principal'] != '').sum()}; "
-          f"com cargo não eletivo: {(pessoas['Cargo não eletivo anterior'] != '').sum()}; cargos: {len(longos)}")
+          f"com cargo não eletivo: {(pessoas['Cargo não eletivo anterior (ex.: secretário de pasta)'] != '').sum()}; "
+          f"sem SQ: {(pessoas.SQ_CANDIDATO == '').sum()}; cargos: {len(longos)}")
     c.salvar_csv(pessoas, "camara_competitivos.csv")
     c.salvar_csv(longos, "camara_competitivos_cargos.csv")
     if a.publicar:
