@@ -92,7 +92,7 @@ for chave, rotulo in RELATORIOS_COLUNAS:
 
 STATUS_TOPLINE_MANUAL = "⚠️ REGISTRE NO POLLING MANUAL"
 
-POLLING_MANUAL_URL = "https://eixoestrategiapolitica.streamlit.app/Polling_Manual"
+POLLING_MANUAL_URL = "https://eixogov.streamlit.app/Polling"
 
 
 def link_status_topline_manual() -> str:

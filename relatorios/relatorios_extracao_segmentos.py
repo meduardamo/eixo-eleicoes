@@ -59,7 +59,7 @@ PESQELE_ABA = os.getenv("PESQELE_ABA", "Consolidado")
 
 
 POLLING_MANUAL_URL = os.getenv("POLLING_MANUAL_URL",
-                               "https://eixoestrategiapolitica.streamlit.app/Polling_Manual")
+                               "https://eixogov.streamlit.app/Polling")
 
 
 GRUPOS = ["Presidente (Nacional)", "Presidente (por UF)", "Governador / Senador"]
