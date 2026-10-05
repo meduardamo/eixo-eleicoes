@@ -55,4 +55,14 @@ UNILATERAL = {
    "https://www.jornalopcao.com.br/ultimas-noticias/romario-policarpo-endossa-apoio-a-gracinha-caiado-para-um-das-vagas-no-senado-861501/"),
  ("MG","Carlos Viana"): ("Caiado",
    "https://www.otempo.com.br/eleicoes/2026/senadores/2026/6/4/presidente-do-psd-garante-viana-na-chapa-ao-senado-e-ve-aro-com-segunda-vaga"),
+ # Busca de 05/10/2026, só para eleitos que estavam como "Não declarado". "recebe
+ # apoio" é a mão contrária: o presidenciável declarou apoio ao candidato, que não
+ # declarou voto. Sem posição localizada: Teresa Surita (RR), Delegado Alessandro
+ # (SE) e Alexandre Guimarães (TO).
+ ("AM","Plinio Valério"): ("Flávio (declarou, fora da lista dos 47)",
+   "https://amazonas1.com.br/plinio-valerio-declara-voto-em-flavio-bolsonaro-e-nega-adesao-ao-bolsonarismo/"),
+ ("MA","Lahesio Bonfim"): ("Flávio (recebe apoio, fora da lista dos 47)",
+   "https://gilbertoleda.com.br/2026/09/07/senado-lahesio-bonfim-agradece-apoio-de-flavio-bolsonaro"),
+ ("MA","Fufuca"): ("Lula (recebe apoio, fora do time de Lula)",
+   "https://www.congressoemfoco.com.br/noticia/121447/candidatos-aliados-se-dividem-em-tres-palanques-ao-senado-no-maranhao"),
 }
