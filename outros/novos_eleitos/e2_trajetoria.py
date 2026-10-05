@@ -88,6 +88,26 @@ def mapas(pessoas):
     return cpf_titulo, nome_titulo
 
 
+def nome_contido(pessoas):
+    """Ligação de reserva para o Senado, que não publica CPF: mesma data de nascimento e
+    um nome civil contido no outro, com duas palavras em comum no mínimo e um título só.
+    O Senado registra "José Antônio Medeiros" e o TSE "José Antônio dos Santos Medeiros";
+    pelo nome exato o ex-senador ficava sem ligação e saía como novo na Casa."""
+    por_nasc = pessoas[pessoas.nascimento != ""].groupby("nascimento")
+
+    def ligar(civil, nasc):
+        if not nasc or nasc not in por_nasc.groups:
+            return ""
+        chave = c.chave_nome(civil)
+        grupo = por_nasc.get_group(nasc)
+        bate = grupo[grupo.chave.map(
+            lambda x: c.semelhanca(chave, x) == 1.0 and len(set(chave.split()) & set(x.split())) >= 2)]
+        titulos = set(bate.titulo)
+        return titulos.pop() if len(titulos) == 1 else ""
+
+    return ligar
+
+
 def camara(cpf_titulo, nome_titulo):
     legislaturas = {}
     for leg in LEGISLATURAS:
@@ -110,7 +130,7 @@ def camara(cpf_titulo, nome_titulo):
     return pd.DataFrame(linhas)
 
 
-def senado(nome_titulo):
+def senado(nome_titulo, ligar_contido=lambda civil, nasc: ""):
     lista = c.senado(f"senador/lista/legislatura/{min(LEGISLATURAS)}/57")
     parlamentares = c.como_lista(lista["ListaParlamentarLegislatura"]["Parlamentares"]["Parlamentar"])
     codigos = sorted({p["IdentificacaoParlamentar"]["CodigoParlamentar"] for p in parlamentares})
@@ -141,10 +161,11 @@ def senado(nome_titulo):
         ident = p.get("IdentificacaoParlamentar", {})
         nasc = c.data_iso(p.get("DadosBasicosParlamentar", {}).get("DataNascimento"))
         civil = ident.get("NomeCompletoParlamentar", "")
+        tit = nome_titulo.get((c.chave_nome(civil), nasc), "") or ligar_contido(civil, nasc)
         linhas.append({"casa": "Senado", "id_casa": cod, "nome_casa": ident.get("NomeParlamentar", ""),
                        "partido_casa": ident.get("SiglaPartidoParlamentar", ""), "uf": uf,
                        "legislaturas": ";".join(str(x) for x in sorted(legs)),
-                       "titulo": nome_titulo.get((c.chave_nome(civil), nasc), ""), "cpf": "",
+                       "titulo": tit, "cpf": "",
                        "nome_civil": civil, "nascimento": nasc})
     return pd.DataFrame(linhas)
 
@@ -164,7 +185,8 @@ def main():
     c.salvar_csv(pessoas, "pessoas_tse.csv")
     cpf_titulo, nome_titulo = mapas(pessoas)
 
-    exercicio = pd.concat([camara(cpf_titulo, nome_titulo), senado(nome_titulo)], ignore_index=True)
+    exercicio = pd.concat([camara(cpf_titulo, nome_titulo), senado(nome_titulo, nome_contido(pessoas))],
+                          ignore_index=True)
     for casa, grupo in exercicio.groupby("casa"):
         sem = grupo[grupo.titulo == ""]
         atual = sem[sem.legislaturas.str.contains("57")]
