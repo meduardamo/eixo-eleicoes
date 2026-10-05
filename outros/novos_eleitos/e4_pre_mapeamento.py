@@ -242,6 +242,35 @@ def conferir(pre, comp):
                     f"{sorted(nome.get(t, t) for t in sem_explicacao)}")
 
 
+# Câmara: onde a regra acima e a Agência Câmara classificam diferente, vale a Agência
+# Câmara (decisão de 05/10/2026). É o número que a Casa publicou e que a imprensa repete:
+# 301 reeleitos, 183 de primeiro mandato e 29 ex-deputados que voltam. Reeleito, para
+# ela, é o titular eleito em 2022 ou o suplente efetivado, mesmo licenciado hoje; suplente
+# que só exerceu sem ser efetivado conta como primeiro mandato; e ex-deputado de antes de
+# 2003, que as bases daqui não alcançam, conta como volta. Listas nominais conferidas
+# contra os 513 eleitos do TSE: camara.leg.br/noticias/1309168, 1309174 e 1309179.
+CLASSE_AGENCIA_CAMARA = {
+    "10002545233": "Novo na Casa",  # Dr. Fábio Rueda (UNIÃO/AC)
+    "100002537259": "Novo na Casa",  # Mariana Carvalho (PL/MA)
+    "130002543714": "Novo na Casa",  # Duarte Júnior (PSB/MG)
+    "160002540768": "Novo na Casa",  # Newton Bonin (REPUBLICANOS/PR)
+    "160002547593": "Novo na Casa",  # Ricardo Arruda (PL/PR)
+    "190002543363": "Novo na Casa",  # Luis Carlos Gomes (REPUBLICANOS/RJ)
+    "190002540157": "Novo na Casa",  # Renan Ferreirinha (PSD/RJ)
+    "260002547412": "Novo na Casa",  # Capitão Samuel (UNIÃO/SE)
+    "250002532353": "Novo na Casa",  # Coronel Telhada (PP/SP)
+    "250002539622": "Novo na Casa",  # Professora Luciene Cavalcante (PSOL/SP)
+    "50002532504": "Reeleição",  # Léo Prates (REPUBLICANOS/BA)
+    "150002544203": "Reeleição",  # Murilo Galdino (REPUBLICANOS/PB)
+    "150002544208": "Reeleição",  # Wilson Santiago (REPUBLICANOS/PB)
+    "190002550510": "Reeleição",  # Luciano Vieira (PSDB/RJ)
+    "250002544340": "Reeleição",  # Renata Abreu (PODE/SP)
+    "80002549477": "Volta à Casa",  # João Coser (PT/ES)
+    "100002536098": "Volta à Casa",  # Hildo Rocha (MDB/MA)
+    "210002534584": "Volta à Casa",  # Valdeci Oliveira (PT/RS)
+}
+
+
 def main():
     cands = c.ler_csv("candidaturas_2026.csv")
     cands["titulo"] = c.canonizar(cands.titulo)
@@ -253,6 +282,13 @@ def main():
     print(pre.groupby(["Casa disputada", "Reeleição, volta ou novo"]).size().to_string())
     print(pre.groupby(["Casa disputada", "Tipo de origem"]).size().to_string())
     conferir(pre, c.ler_csv("composicao_atual.csv"))
+    # Depois da conferência com o Radar, que compara quem está em exercício: o ajuste
+    # abaixo troca justamente esse critério pelo da Agência Câmara.
+    ajuste = pre.SQ_CANDIDATO.astype(str).map(CLASSE_AGENCIA_CAMARA)
+    na_camara = ajuste.notna() & (pre["Casa disputada"] == "Câmara")
+    c.falhar_se(int(na_camara.sum()) != len(CLASSE_AGENCIA_CAMARA),
+                f"classificação da Agência Câmara: {int(na_camara.sum())} de {len(CLASSE_AGENCIA_CAMARA)} candidaturas achadas")
+    pre.loc[na_camara, "Reeleição, volta ou novo"] = ajuste[na_camara]
     c.salvar_csv(pre, "pre_mapeamento.csv")
 
 
