@@ -19,6 +19,8 @@ brevo-python==1.1.2
 newspaper3k==0.2.8
 lxml[html_clean]==5.2.2
 googlenewsdecoder==0.2.1
+# selectolax 1.0 (03/10/2026) tirou o backend que o googlenewsdecoder importa
+selectolax<1.0
 apify-client>=1.7.0
 # clipping em PDF do relatorio do Instagram (outros/instagram_relatorio.py)
 fpdf2>=2.7
