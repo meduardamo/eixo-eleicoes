@@ -1,8 +1,8 @@
-"""Planilha das médias da comunicação (Jess): abas `Série Semanal`, `Últimas Pesquisas` e
-`Série Semanal 2º Turno` e `Últimas Pesquisas 2º Turno`.
+"""Planilha das médias da comunicação (Jess): abas `Série Semanal 2º Turno` e
+`Últimas Pesquisas 2º Turno`. As duas do 1º turno saíram em 06/10/2026.
 
-Governador, 1º turno (e 2º turno, um bloco por confronto, lido da matriz T2). Lê o cache Parquet que o `05 - Rebuild BI` acabou de publicar
-(`resultados_bi`, `resultados`, `pesquisas` da matriz T1) e a `base_dadosabertos` da
+Governador, 2º turno, um bloco por confronto. Lê o cache Parquet que o `05 - Rebuild BI` acabou de publicar
+(`resultados_bi`, `resultados`, `pesquisas` da matriz T2) e a `base_dadosabertos` da
 planilha de candidaturas, e regrava as duas abas inteiras. Não recalcula média: a série é
 a `media_hibrida_30d` do `resultados_bi`, a mesma dos painéis.
 
@@ -41,7 +41,7 @@ MATRIZ_T1_ENV = "SPREADSHEET_ID_POLLINGDATA"
 MATRIZ_T2_ENV = "SPREADSHEET_ID_POLLINGDATA_T2"
 ABA_T2 = "Série Semanal 2º Turno"
 ABA_ULTIMAS_T2 = "Últimas Pesquisas 2º Turno"
-ORDEM_ABAS = ["Série Semanal", "Últimas Pesquisas", ABA_T2, ABA_ULTIMAS_T2]
+ORDEM_ABAS = [ABA_T2, ABA_ULTIMAS_T2]
 CANDIDATURAS_ENV = "SPREADSHEET_ID_TSE"
 INICIO_SERIE = pd.Timestamp("2026-07-01")
 NV = "Brancos, nulos e indecisos"
@@ -125,14 +125,9 @@ def env(nome):
 
 def carregar(creds):
     sessao = AuthorizedSession(creds)
-    t1 = env(MATRIZ_T1_ENV)
-    dados = {aba: baixar_cache(sessao, t1, aba) for aba in ('resultados_bi', 'resultados', 'pesquisas')}
+    t2 = env(MATRIZ_T2_ENV)
+    dados = {f'{aba}_t2': baixar_cache(sessao, t2, aba) for aba in ('resultados_bi', 'resultados', 'pesquisas')}
     dados['base'] = baixar_cache(sessao, env(CANDIDATURAS_ENV), 'base_dadosabertos')
-    t2 = os.getenv(MATRIZ_T2_ENV, '').strip()
-    if t2:
-        dados['resultados_bi_t2'] = baixar_cache(sessao, t2, 'resultados_bi')
-        dados['resultados_t2'] = baixar_cache(sessao, t2, 'resultados')
-        dados['pesquisas_t2'] = baixar_cache(sessao, t2, 'pesquisas')
     return dados
 
 
@@ -654,32 +649,21 @@ def gravar_serie_semanal(sh, grid, fmt, largura_max, datas_cel, series_cel, aba=
 # ---------------------------------------------------------------- main
 
 def main():
-    from outros import gerar_aba_ultimas_pesquisas as ultimas
-
     gravar = '--gravar' in sys.argv
     hoje = pd.Timestamp.now(tz='America/Sao_Paulo').tz_localize(None)
     creds = credenciais()
     dados = carregar(creds)
-    print('Série Semanal')
-    serie = montar_serie_semanal(dados, hoje)
-    print('Últimas Pesquisas')
-    tabela = ultimas.montar(dados, hoje)
-    serie_t2 = None
-    if 'resultados_bi_t2' in dados:
-        print(ABA_T2)
-        serie_t2 = montar_serie_segundo_turno(dados, hoje)
-        print(ABA_ULTIMAS_T2)
-        ultimas_t2 = montar_ultimas_t2(dados, hoje)
+    print(ABA_T2)
+    serie_t2 = montar_serie_segundo_turno(dados, hoje)
+    print(ABA_ULTIMAS_T2)
+    ultimas_t2 = montar_ultimas_t2(dados, hoje)
     if not gravar:
         return
     gc = gspread.authorize(creds)
     gc.timeout = 120
     sh = gc.open_by_key(env(PLANILHA_MEDIAS_ENV))
-    gravar_serie_semanal(sh, *serie)
-    ultimas.gravar(sh, tabela)
-    if serie_t2:
-        gravar_serie_semanal(sh, *serie_t2, aba=ABA_T2)
-        gravar_tabela(sh, ABA_ULTIMAS_T2, *ultimas_t2)
+    gravar_serie_semanal(sh, *serie_t2, aba=ABA_T2)
+    gravar_tabela(sh, ABA_ULTIMAS_T2, *ultimas_t2)
     padronizar_abas(sh)
 
 

@@ -1023,11 +1023,12 @@ def cmd_rebuild_bi():
     from compartilhado.pollingdata_scraper import gs_client_from_env, reconstruir_resultados_bi
 
     gc = gs_client_from_env()
-    for turno, sheet_id in (("t1", T1_ID), ("t2", T2_ID)):
-        if not sheet_id:
-            continue
-        print(f"{turno}: reconstruindo resultados_bi...")
-        reconstruir_resultados_bi(gc, sheet_id)
+    # O 1º turno fechou em 04/10/2026 e a matriz T1 não recebe mais pesquisa:
+    # reconstruir regravava o mesmo conteúdo. A aba e o Parquet dela ficam como
+    # estão; os painéis não descartam mais cache por idade.
+    if T2_ID:
+        print("t2: reconstruindo resultados_bi...")
+        reconstruir_resultados_bi(gc, T2_ID)
 
 
 def cmd_canonico():
