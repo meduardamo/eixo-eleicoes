@@ -4148,6 +4148,64 @@ def pontes_de_programa(classif: dict) -> dict:
 
 
 
+def resumir_tema(tema: str, nivel: str, trecho: str, nome: str = "",
+                 genero: str = "") -> str:
+    """A frase de UM tema para o `resumos_eixos`, a partir da citação gravada.
+
+    Existe para o tema que entra por --so-tema. Refazer o resumo do plano
+    inteiro reescreve os textos de todos os eixos, e esses foram conferidos e
+    corrigidos à mão em 24 e 25/09/2026. Aqui só nasce a chave do tema novo.
+
+    Devolve "" quando a frase não passa nas guardas; a tela cai na frase
+    genérica, que é melhor que número ou proposta sem lastro.
+    """
+    from google.genai import types
+    if nivel in ("Não menciona", "") or not str(trecho or "").strip():
+        return ""
+    prompt = (
+        "Você é repórter de política. Escreva UMA frase curta, fiel à citação "
+        "abaixo, tirada de um plano de governo.\n\n"
+        "Regras:\n"
+        "1. O nível determina o que pode ser atribuído: em 'Propõe ação' e "
+        "'Define meta', descreva somente a medida expressa na citação; em "
+        "'Menciona vagamente', relate apenas o assunto ou o diagnóstico, sem "
+        "escrever que se propõe, promete, defende, quer, prevê ou vai executar "
+        "uma medida.\n"
+        "2. Não invente alcance, quantidade, prazo, público ou intensidade. "
+        "Número só o que está na citação.\n"
+        "3. Não cite o nome da categoria da grade.\n"
+        + _regras_sujeito(nome, genero) +
+        f"\n\n{RESTRICOES_LINGUAGEM}\n\n"
+        f"TEMA DA GRADE: {tema}\nNÍVEL: {nivel}\nCITAÇÃO: {trecho}\n\n"
+        "Responda APENAS um objeto JSON com a chave 'frase'.")
+
+    def pedir(evitar: list[str] | None = None) -> str:
+        texto = prompt
+        if evitar:
+            texto += ("\n\nSUA RESPOSTA ANTERIOR FOI RECUSADA porque usou: "
+                      + ", ".join(evitar) + ". Reescreva sem isso.")
+        resp = _gerar(
+            model=GEMINI_MODEL, contents=texto,
+            config=types.GenerateContentConfig(response_mime_type="application/json"))
+        item = _carregar_json(getattr(resp, "text", ""), f"frase de {tema!r}")
+        return _limpa(item.get("frase", ""), n=400) if isinstance(item, dict) else ""
+
+    def recusas(frase: str) -> list[str]:
+        ruins = list(termos_proibidos(frase))
+        base = re.sub(r"\D+", " ", _norm_busca(trecho)).split()
+        ruins += [f"o número {x}" for x in re.findall(r"\d+", frase)
+                  if x not in base]
+        return ruins
+
+    frase = pedir()
+    ruins = recusas(frase) if frase else []
+    if ruins:
+        frase = pedir(ruins)
+        if frase and recusas(frase):
+            return ""
+    return frase
+
+
 def gerar_resumos_eixos(classif: dict, temas: dict = TEMAS, nome: str = "", genero: str = "") -> dict:
     from google.genai import types
     

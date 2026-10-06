@@ -40,6 +40,7 @@ from analise_planos import (  # noqa: E402
     _norm_busca, _sem_espaco, citacao_sustenta, classificar_plano, resumir_plano,
     classificar_etapas_tempo_integral,
     contexto_dos_segmentos,
+    resumir_tema,
     segmentos_fundamental_do_plano,
     contexto_do_trecho,
     contexto_do_tema, contexto_do_vocabulario, posicoes_do_tema,
@@ -1258,6 +1259,89 @@ def preencher_etapas_tempo_integral(sh, uf: str = "", limite: int = 0,
     return 1 if erros else 0
 
 
+def resumir_so_tema(sh, tema: str, uf: str = "", limite: int = 0,
+                    sq: str = "", forcar: bool = False) -> int:
+    """Acrescenta ao `resumos_eixos` a frase de um tema, sem tocar no resto.
+
+    Par do --so-tema. Escreve uma célula por candidato, a do `resumos_eixos`,
+    com o JSON que já estava lá mais a chave do tema. O `resumo` do plano e os
+    textos dos eixos ficam como estão.
+    """
+    if tema not in TEMAS:
+        print(f"Tema desconhecido: {tema!r}.")
+        return 1
+    salvas = ler_aba(sh, ANALISE_ABA)
+    coe = ler_aba(sh, COERENCIA_ABA)
+    if salvas.empty or coe.empty or "resumos_eixos" not in coe.columns:
+        print("Faltou a aba de análise ou a de coerência.")
+        return 1
+    alvo = salvas[(salvas["tema"].astype(str).str.strip() == tema)
+                  & (salvas["ano"].astype(str).str.strip() == ANO)
+                  & (salvas["nivel"].astype(str).str.strip() != "Não menciona")]
+    if uf:
+        alvo = alvo[alvo["uf"].astype(str).str.strip().str.upper() == uf.upper()]
+    if sq:
+        sqs = {x.strip() for x in str(sq).split(",") if x.strip()}
+        alvo = alvo[alvo["sq_candidato"].astype(str).str.strip().isin(sqs)]
+    if limite:
+        alvo = alvo.head(limite)
+
+    base = ler_aba(sh, ABA_BASE)
+    genero_de = {}
+    if not base.empty and "DS_GENERO" in base.columns:
+        genero_de = {str(r["SQ_CANDIDATO"]).strip(): str(r.get("DS_GENERO", "")).strip()
+                     for _, r in base.iterrows()}
+    linha_de = {str(v).strip(): i + 2
+                for i, v in enumerate(coe["sq_candidato"].tolist())}
+    coluna = list(coe.columns).index("resumos_eixos") + 1
+    letras, c = "", coluna
+    while c:
+        c, resto = divmod(c - 1, 26)
+        letras = chr(65 + resto) + letras
+
+    print(f"{len(alvo)} planos com conteúdo em '{tema}'")
+    ws = sh.worksheet(COERENCIA_ABA)
+    dados, feitos, vazios = [], 0, []
+    for pos, (_, r) in enumerate(alvo.iterrows(), 1):
+        sq_cand = str(r.get("sq_candidato", "")).strip()
+        nome = str(r.get("candidato", "")).strip()
+        if sq_cand not in linha_de:
+            continue
+        bruto = str(coe.iloc[linha_de[sq_cand] - 2]["resumos_eixos"] or "").strip()
+        try:
+            atual = json.loads(bruto) if bruto else {}
+        except ValueError:
+            print(f"[{pos}] {nome}: resumos_eixos ilegível, pulado")
+            continue
+        if not isinstance(atual, dict) or (atual.get(tema) and not forcar):
+            continue
+        try:
+            frase = resumir_tema(tema, str(r.get("nivel", "")).strip(),
+                                 str(r.get("trecho", "")), nome=nome,
+                                 genero=genero_de.get(sq_cand, ""))
+        except Exception as e:
+            print(f"[{pos}] {nome}: ERRO {type(e).__name__}: {e}")
+            vazios.append(nome)
+            continue
+        if not frase:
+            vazios.append(nome)
+            print(f"[{pos}] {nome}: frase recusada pelas guardas")
+            continue
+        atual[tema] = frase
+        dados.append({"range": f"{letras}{linha_de[sq_cand]}",
+                      "values": [[json.dumps(atual, ensure_ascii=False)]]})
+        feitos += 1
+        print(f"[{pos}/{len(alvo)}] {r.get('uf','')} · {nome}: {frase}")
+        if len(dados) >= 20:
+            ws.batch_update(dados, value_input_option="RAW")
+            dados = []
+    if dados:
+        ws.batch_update(dados, value_input_option="RAW")
+    print(f"{feitos} frases gravadas; {len(vazios)} sem frase"
+          + (f": {', '.join(vazios)}" if vazios else ""))
+    return 0
+
+
 def preencher_segmentos_fundamental(sh, uf: str = "", limite: int = 0,
                                     sq: str = "", forcar: bool = False) -> int:
     """Preenche o segmento (anos iniciais, anos finais) dentro de Fundamental.
@@ -1618,6 +1702,9 @@ def main() -> int:
                                     "caixa alta dos trechos já gravados")
     p.add_argument("--so-etapas-tempo-integral", action="store_true",
                    help="preenche semanticamente a etapa dentro de Tempo Integral")
+    p.add_argument("--so-resumo-tema", default="",
+                   help="acrescenta ao resumos_eixos a frase deste tema, sem "
+                        "refazer o resumo do plano")
     p.add_argument("--so-segmentos-fundamental", action="store_true",
                    help="preenche anos iniciais/finais dentro de Fundamental")
     # Tema novo entra na base sem refazer os outros. Subir a VERSAO_ANALISE
@@ -1675,6 +1762,10 @@ def main() -> int:
         if args.so_etapas_tempo_integral:
             return preencher_etapas_tempo_integral(
                 sh, args.uf, args.limite, args.sq, args.forcar)
+
+        if args.so_resumo_tema:
+            return resumir_so_tema(sh, args.so_resumo_tema.strip(), args.uf,
+                                   args.limite, args.sq, args.forcar)
 
         if args.so_segmentos_fundamental:
             return preencher_segmentos_fundamental(

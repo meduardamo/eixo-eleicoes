@@ -52,6 +52,10 @@ on:
         type: boolean
         required: false
         default: false
+      so_resumo_tema:
+        description: 'Acrescenta ao resumos_eixos a frase deste tema (par do so_tema)'
+        required: false
+        default: ''
       so_segmentos_fundamental:
         description: 'Preenche anos iniciais/finais dentro de Fundamental (sem modelo)'
         type: boolean
@@ -144,6 +148,7 @@ jobs:
             ${{ inputs.forcar == true && '--forcar' || '' }} \
             ${{ inputs.so_coerencia == true && '--so-coerencia' || '' }} \
             ${{ inputs.so_etapas_tempo_integral == true && '--so-etapas-tempo-integral' || '' }} \
+            ${{ inputs.so_resumo_tema && format('--so-resumo-tema "{0}"', inputs.so_resumo_tema) || '' }} \
             ${{ inputs.so_segmentos_fundamental == true && '--so-segmentos-fundamental' || '' }} \
             ${{ inputs.so_tema && format('--so-tema "{0}"', inputs.so_tema) || '' }} \
             ${{ inputs.so_acao && format('--so-acao {0}', inputs.so_acao) || '' }} \
