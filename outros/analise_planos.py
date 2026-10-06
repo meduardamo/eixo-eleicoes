@@ -266,7 +266,24 @@ EIXOS = {
         "Transparência e Combate à Corrupção": "transparência, controle interno, dados abertos, combate à corrupção, integridade pública, fiscalização de emendas parlamentares e orçamento secreto. Dados abertos da educação contam também no tema Infraestrutura Pública Digital, no eixo de Educação",
         "Regulação de Plataformas Digitais": "regulação de plataformas digitais e redes sociais, moderação de conteúdo, combate à desinformação e fake news, soberania digital, proteção de dados, segurança cibernética e inteligência artificial. Soberania digital, proteção de dados, LGPD e segurança cibernética ligados à educação contam também no tema Infraestrutura Pública Digital, no eixo de Educação",
         "Governo Digital": "digitalização de serviços, atendimento ao cidadão, governo eletrônico e a infraestrutura digital do Estado: identidade digital e Carteira de Identidade Nacional, pagamento instantâneo (Pix), cadastros e bases de dados interoperáveis, interoperabilidade entre sistemas públicos, padrões de troca de dados, data centers e nuvem públicos. Quando ligado à educação, conta também no tema Infraestrutura Pública Digital, no eixo de Educação, que também reúne a internet da população fora da escola",
-        "Servidores e Municípios": "servidor público estadual em geral, carreira e concurso, e a relação do estado com os municípios (consórcio, repasse, apoio técnico) — professor e demais profissionais da educação são o tema Valorização Docente, no eixo de Educação",
+        # Até 06/10/2026 este tema era "Servidores e Municípios". A parte de
+        # servidor saiu para o eixo Gestão de pessoas no setor público, criado a
+        # pedido da Fundação Lemann, e aqui ficou só a relação federativa. As
+        # linhas do tema antigo foram apagadas e os planos reclassificados.
+        "Relação com Municípios": "relação do estado com os municípios: consórcio intermunicipal, repasse e transferência aos municípios, apoio técnico às prefeituras, municipalismo, regionalização, região metropolitana e cooperação federativa — o servidor público, a carreira e o concurso são os temas do eixo Gestão de pessoas no setor público",
+    },
+    # Os dois eixos abaixo entraram em 06/10/2026 a pedido da Fundação Lemann,
+    # que acompanha lideranças públicas e gestão de pessoas como agendas
+    # separadas. Professor fica onde sempre esteve, em Valorização Docente: a
+    # fronteira está escrita nos dois lados, como no tema antigo.
+    "Lideranças públicas": {
+        "Seleção de Dirigentes": "escolha de quem ocupa cargo de direção, de chefia e cargo comissionado na administração pública: processo seletivo e critério técnico ou de mérito para nomeação, banco de talentos, requisitos e ficha limpa para cargo de confiança, profissionalização do secretariado e da alta direção, e diversidade (mulheres, pessoas negras, paridade) nos cargos de direção e no secretariado — o concurso para cargo efetivo é o tema Concurso e Quadro de Pessoal, no eixo de Gestão de pessoas no setor público, o corte no número de cargos comissionados é o tema Eficiência e Gasto Público, e a escolha de diretor de escola é o tema Valorização Docente, no eixo de Educação. Secretariado ou equipe de governo citados sem dizer como serão escolhidos não são este tema: nesse caso o nível é Não menciona",
+        "Formação de Lideranças": "formação e desenvolvimento de quem dirige a administração pública: escola de governo, programa de desenvolvimento de lideranças e de gestores públicos, formação de dirigentes e de equipes de alta direção, mentoria, trilha e certificação para cargo de gestão, programa de trainee e de atração de talentos para o setor público — a capacitação do servidor em geral é o tema Desempenho e Capacitação, no eixo de Gestão de pessoas no setor público, e a formação de professor e de diretor de escola é o tema Valorização Docente, no eixo de Educação. Liderança comunitária, juvenil, feminina, empresarial, religiosa ou política não é este tema: nesse caso o nível é Não menciona",
+    },
+    "Gestão de pessoas no setor público": {
+        "Carreira e Remuneração": "carreira e salário do servidor público estadual: plano de cargos, carreiras e remuneração, reestruturação de carreira, progressão e promoção, reajuste, data-base e revisão geral anual, piso, gratificação, teto e supersalário, negociação coletiva e previdência do servidor — professor e demais profissionais da educação são o tema Valorização Docente, no eixo de Educação, e a carreira das polícias conta aqui e também no tema Policiamento e Efetivo, no eixo de Segurança pública. Reforma administrativa e corte de despesa de pessoal sem tratar da carreira são o tema Eficiência e Gasto Público",
+        "Concurso e Quadro de Pessoal": "ingresso e tamanho do quadro de servidores: concurso público, nomeação de aprovados, recomposição do quadro, dimensionamento da força de trabalho, contratação temporária, terceirização e substituição de temporário por efetivo — concurso para professor é o tema Valorização Docente, no eixo de Educação, e concurso para as polícias conta aqui e também no tema Policiamento e Efetivo, no eixo de Segurança pública",
+        "Desempenho e Capacitação": "gestão do desempenho e desenvolvimento do servidor público: avaliação de desempenho, gestão por competências e por resultados, metas e contrato de gestão para órgãos e equipes, bônus e remuneração variável por resultado, capacitação e formação continuada do servidor — a formação de quem ocupa cargo de direção é o tema Formação de Lideranças, no eixo de Lideranças públicas, e a formação continuada de professor é o tema Valorização Docente, no eixo de Educação",
     },
     "Direitos humanos e igualdade": {
         "Igualdade Racial": "promoção da igualdade racial, população negra, racismo, cotas e ações afirmativas — a desigualdade racial medida dentro da escola, a educação antirracista e a cota na educação são o tema Equidade Educacional, no eixo de Educação",
@@ -512,8 +529,22 @@ TERMOS_ANCORA = {
                         "identidade digital", "pagamento instantaneo",
                         "infraestrutura publica digital", "bens publicos digitais",
                         "carteira de identidade nacional"],
-    "Servidores e Municípios": ["servidor publico", "concurso publico", "plano de carreira",
-                                "consorcio", "repasse aos municipios"],
+    "Relação com Municípios": ["consorcio", "repasse aos municipios", "municipalis*",
+                               "apoio aos municipios", "pacto federativo"],
+    "Seleção de Dirigentes": ["cargos comissionados", "cargo comissionado", "cargos de direcao",
+                              "cargos de confianca", "banco de talentos", "criterios tecnicos",
+                              "meritocra*", "alta direcao"],
+    "Formação de Lideranças": ["escola de governo", "formacao de liderancas",
+                               "desenvolvimento de liderancas", "liderancas publicas",
+                               "formacao de gestores", "gestores publicos"],
+    "Carreira e Remuneração": ["plano de carreira", "plano de cargos", "pccr", "data base",
+                               "revisao geral anual", "supersalario", "valorizacao do servidor",
+                               "reajuste dos servidores"],
+    "Concurso e Quadro de Pessoal": ["concurso publico", "concursos", "contratacao temporaria",
+                                     "recomposicao do quadro", "forca de trabalho"],
+    "Desempenho e Capacitação": ["avaliacao de desempenho", "gestao por competencia",
+                                 "gestao por resultados", "capacitacao de servidores",
+                                 "capacitacao dos servidores", "remuneracao variavel"],
     "Igualdade Racial": ["igualdade racial", "populacao negra", "racismo", "cotas raciais",
                          "acao afirmativa"],
     "Mulheres": ["mulher", "autonomia economica das mulheres", "saude da mulher",
@@ -1044,12 +1075,46 @@ TERMOS_AUSENCIA = {
         "base de dados publica", "software publico", "integracao de dados",
         "integracao de sistemas", "governanca de dados", "infraestrutura de dados",
     ],
-    "Servidores e Municípios": [
-        "servidor publico", "servidores", "concurso publico", "plano de carreira",
-        "reajuste", "negociacao coletiva", "valorizacao do servidor",
-        "capacitacao de servidores", "consorcio", "consorcio intermunicipal",
-        "repasse aos municipios", "apoio aos municipios",
-        "cooperacao federativa", "regiao metropolitana",
+    "Relação com Municípios": [
+        "consorcio", "consorcio intermunicipal", "repasse aos municipios",
+        "apoio aos municipios", "cooperacao federativa", "regiao metropolitana",
+        "municipalis*", "pacto federativo", "prefeituras", "regionalizacao",
+    ],
+
+    # ---------------------------------------------------- Lideranças públicas
+    "Seleção de Dirigentes": [
+        "cargos comissionados", "cargo comissionado", "cargos de direcao",
+        "cargos de confianca", "cargos de lideranca", "cargos de chefia",
+        "banco de talentos", "criterios tecnicos", "criterio tecnico",
+        "meritocra*", "alta direcao", "processo seletivo", "secretariado",
+        "indicacao politica", "ficha limpa", "primeiro escalao",
+    ],
+    "Formação de Lideranças": [
+        "escola de governo", "formacao de liderancas", "desenvolvimento de liderancas",
+        "liderancas publicas", "formacao de gestores", "gestores publicos",
+        "formacao de dirigentes", "trainee", "atracao de talentos",
+        "escola de gestao publica", "escola de administracao publica",
+    ],
+
+    # ------------------------------------- Gestão de pessoas no setor público
+    "Carreira e Remuneração": [
+        "servidor publico", "servidores", "plano de carreira", "plano de cargos",
+        "pccr", "reajuste", "data base", "revisao geral anual", "supersalario",
+        "negociacao coletiva", "valorizacao do servidor", "progressao",
+        "previdencia dos servidores", "gratificacao",
+    ],
+    "Concurso e Quadro de Pessoal": [
+        "concurso publico", "concursos", "nomeacao dos aprovados", "aprovados em concurso",
+        "contratacao temporaria", "temporarios", "terceirizacao",
+        "recomposicao do quadro", "forca de trabalho", "quadro de pessoal",
+        "quadro de servidores",
+    ],
+    "Desempenho e Capacitação": [
+        "avaliacao de desempenho", "gestao por competencia", "gestao por competencias",
+        "gestao por resultados", "contrato de gestao", "capacitacao de servidores",
+        "capacitacao dos servidores", "formacao continuada dos servidores",
+        "remuneracao variavel", "bonus por desempenho", "bonus por resultado",
+        "gestao de pessoas",
     ],
 
     # ----------------------------------------- Direitos humanos e igualdade
@@ -1151,7 +1216,7 @@ TERMOS_AUSENCIA = {
 # Mapa plano tema -> eixo, para a página agrupar sem repetir a estrutura.
 
 # Reordena os eixos para o painel UI (relevancia + alfabetica)
-EIXOS = {k: EIXOS[k] for k in ["Educação", "Saúde", "Primeira Infância", "Direitos Reprodutivos", "Assistência social e pobreza", "Cultura, esporte e turismo", "Direitos humanos e igualdade", "Economia e emprego", "Gestão pública e transparência", "Infraestrutura e mobilidade", "Meio ambiente e clima", "Segurança pública"] if k in EIXOS}
+EIXOS = {k: EIXOS[k] for k in ["Educação", "Saúde", "Primeira Infância", "Direitos Reprodutivos", "Assistência social e pobreza", "Cultura, esporte e turismo", "Direitos humanos e igualdade", "Economia e emprego", "Gestão pública e transparência", "Lideranças públicas", "Gestão de pessoas no setor público", "Infraestrutura e mobilidade", "Meio ambiente e clima", "Segurança pública"] if k in EIXOS}
 
 EIXO_DO_TEMA = {tema: eixo for eixo, temas in EIXOS.items() for tema in temas}
 

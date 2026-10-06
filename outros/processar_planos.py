@@ -866,8 +866,14 @@ def analisar_tema(sh, tema: str, uf: str = "", limite: int = 0, sq: str = "",
     está. `_conferir_citacao_generica`, que devolve para reanálise a citação
     repetida em três temas, também só enxerga o tema da vez.
     """
-    if tema not in TEMAS:
-        print(f"Tema desconhecido: {tema!r}. Os nomes válidos estão em TEMAS.")
+    # Vários temas numa rodada só, separados por "|". O custo da rodada é o
+    # download e a leitura do plano, que são os mesmos para um tema ou para
+    # seis: os dois eixos de 06/10/2026 entraram assim, numa passada em vez de
+    # seis. A pergunta ao modelo é a mesma, com mais itens na lista.
+    temas = [t.strip() for t in tema.split("|") if t.strip()]
+    desconhecidos = [t for t in temas if t not in TEMAS]
+    if desconhecidos or not temas:
+        print(f"Tema desconhecido: {desconhecidos!r}. Os nomes válidos estão em TEMAS.")
         return 1
     salvas = ler_aba(sh, ANALISE_ABA)
     if salvas.empty:
@@ -884,8 +890,12 @@ def analisar_tema(sh, tema: str, uf: str = "", limite: int = 0, sq: str = "",
     # da aba de análise, e não da base: o que este comando faz é acrescentar uma
     # linha ao que já foi analisado, e plano que ainda não passou pelo caminho
     # completo entra por lá, já com o tema novo na lista.
-    ja_tem = set(salvas[salvas["tema"].astype(str).str.strip() == tema]
-                 ["sq_candidato"].astype(str).str.strip())
+    # Já tem quem tem TODOS os temas da rodada.
+    ja_tem = None
+    for t in temas:
+        com = set(salvas[salvas["tema"].astype(str).str.strip() == t]
+                  ["sq_candidato"].astype(str).str.strip())
+        ja_tem = com if ja_tem is None else ja_tem & com
     fila = []
     vistos = set()
     for _, l in salvas.iterrows():
@@ -908,7 +918,8 @@ def analisar_tema(sh, tema: str, uf: str = "", limite: int = 0, sq: str = "",
     outros_de = {}
     for _, l in salvas.iterrows():
         t = str(l.get("tema", "")).strip()
-        if not t or t == tema:
+        # Tema que saiu da taxonomia (linha ainda não apagada) não alinha nada.
+        if not t or t in temas or t not in TEMAS:
             continue
         nivel = NIVEIS_LEGADO.get(str(l.get("nivel", "")).strip(),
                                   str(l.get("nivel", "")).strip())
@@ -928,38 +939,41 @@ def analisar_tema(sh, tema: str, uf: str = "", limite: int = 0, sq: str = "",
             chars = len((texto or "").strip())
             if chars < LIMIAR_CHARS:
                 return n, l, None, 0, f"extração pobre ({chars} caracteres)"
+            da_rodada = {t: TEMAS[t] for t in temas}
             try:
-                classif = classificar_plano(texto, {tema: TEMAS[tema]})
+                classif = classificar_plano(texto, da_rodada)
             except RespostaIlegivel:
                 time.sleep(3)
-                classif = classificar_plano(texto, {tema: TEMAS[tema]})
+                classif = classificar_plano(texto, da_rodada)
             classif = conferir_classificacao(classif, texto, paginas_norm)
             sq_cand = str(l.get("sq_candidato", "")).strip()
-            # O alinhamento roda com os vizinhos por perto e devolve só o tema
+            # O alinhamento roda com os vizinhos por perto e devolve só os temas
             # da vez: as linhas dos outros não são reescritas por esta rodada.
             junto = dict(outros_de.get(sq_cand, {}))
-            junto[tema] = classif[tema]
-            classif = {tema: _conferir_nivel_por_citacao(junto)[tema]}
-            res = classif[tema]
+            junto.update({t: classif[t] for t in temas})
+            alinhado = _conferir_nivel_por_citacao(junto)
             agora = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M")
-            linha = {
-                "ano": ANO, "sq_candidato": sq_cand,
-                "candidato": l.get("candidato", ""), "partido": l.get("partido", ""),
-                "uf": l.get("uf", ""), "cargo": l.get("cargo", ""), "link": link,
-                "tema": tema, "versao": VERSAO_ANALISE,
-                "nivel": res["nivel"], "trecho": res["trecho"],
-                "contexto": contexto_do_trecho(paginas, paginas_norm, res["trecho"]),
-                "responsavel": res.get("responsavel", ""),
-                "entes": normalizar_responsavel(res.get("responsavel", "")),
-                "prazo": res.get("prazo", ""),
-                "publico_alvo": res.get("publico_alvo", ""),
-                "programa_nome": res.get("programa_nome", ""),
-                "pagina": ", ".join(str(p) for p in
-                                    paginas_do_trecho(paginas_norm, res["trecho"])),
-                "verificacao": verificar_trecho(paginas_norm, res["trecho"]),
-                "chars": chars, "chars_analisados": chars, "analisado_em": agora,
-            }
-            return n, l, linha, chars, ""
+            linhas = []
+            for t in temas:
+                res = alinhado[t]
+                linhas.append({
+                    "ano": ANO, "sq_candidato": sq_cand,
+                    "candidato": l.get("candidato", ""), "partido": l.get("partido", ""),
+                    "uf": l.get("uf", ""), "cargo": l.get("cargo", ""), "link": link,
+                    "tema": t, "versao": VERSAO_ANALISE,
+                    "nivel": res["nivel"], "trecho": res["trecho"],
+                    "contexto": contexto_do_trecho(paginas, paginas_norm, res["trecho"]),
+                    "responsavel": res.get("responsavel", ""),
+                    "entes": normalizar_responsavel(res.get("responsavel", "")),
+                    "prazo": res.get("prazo", ""),
+                    "publico_alvo": res.get("publico_alvo", ""),
+                    "programa_nome": res.get("programa_nome", ""),
+                    "pagina": ", ".join(str(p) for p in
+                                        paginas_do_trecho(paginas_norm, res["trecho"])),
+                    "verificacao": verificar_trecho(paginas_norm, res["trecho"]),
+                    "chars": chars, "chars_analisados": chars, "analisado_em": agora,
+                })
+            return n, l, linhas, chars, ""
         except Exception as e:                        # noqa: BLE001
             return n, l, None, 0, f"{type(e).__name__}: {e}"
         finally:
@@ -981,12 +995,15 @@ def analisar_tema(sh, tema: str, uf: str = "", limite: int = 0, sq: str = "",
             (pulados if "extração pobre" in problema else erros).append(f"{nome} ({problema})")
             print(problema)
             continue
-        buffer.append(linha)
+        buffer.extend(linha)
         feitos += 1
-        print(f"{linha['nivel']}"
-              + (f" · pág. {linha['pagina']}" if linha["pagina"] else "")
-              + f" ({linha['verificacao'] or 'sem citação'})")
-        if len(buffer) >= LOTE:
+        if len(linha) == 1:
+            print(f"{linha[0]['nivel']}"
+                  + (f" · pág. {linha[0]['pagina']}" if linha[0]["pagina"] else "")
+                  + f" ({linha[0]['verificacao'] or 'sem citação'})")
+        else:
+            print(" · ".join(f"{x['tema']}: {x['nivel']}" for x in linha))
+        if len(buffer) >= LOTE * len(temas):
             gravar(sh, ANALISE_ABA, COLS, ["sq_candidato", "tema"], buffer,
                    apagar_do_candidato=False)
             buffer = []
