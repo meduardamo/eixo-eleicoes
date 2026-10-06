@@ -41,6 +41,7 @@ from analise_planos import (  # noqa: E402
     classificar_etapas_tempo_integral,
     contexto_dos_segmentos,
     resumir_tema,
+    segmentos_e_propostas_do_plano,
     segmentos_fundamental_do_plano,
     contexto_do_trecho,
     contexto_do_tema, contexto_do_vocabulario, posicoes_do_tema,
@@ -158,7 +159,8 @@ COLS = ["ano", "sq_candidato", "candidato", "partido", "uf", "cargo", "link",
         "chars", "chars_analisados", "versao", "analisado_em",
         "etapas_tempo_integral", "evidencia_etapas_tempo_integral",
         "etapas_inferidas_tempo_integral",
-        "segmentos_fundamental", "evidencia_segmentos_fundamental"]
+        "segmentos_fundamental", "evidencia_segmentos_fundamental",
+        "segmentos_propostos_fundamental"]
 # `resumos_eixos` não entra aqui: quem escreve a coluna é a aba de coerência,
 # uma linha por candidato. Listada em COLS, o reindex de `gravar` criava uma
 # coluna 23 sempre vazia na aba de análise, que tem uma linha por tema.
@@ -1346,9 +1348,10 @@ def preencher_segmentos_fundamental(sh, uf: str = "", limite: int = 0,
                                     sq: str = "", forcar: bool = False) -> int:
     """Preenche o segmento (anos iniciais, anos finais) dentro de Fundamental.
 
-    Mesmo desenho do backfill de Tempo Integral: só as duas colunas novas da
-    linha de Fundamental são escritas, célula a célula. Não chama o modelo, e
-    por isso rodar de novo com --forcar devolve o mesmo resultado.
+    Mesmo desenho do backfill de Tempo Integral: só as três colunas novas da
+    linha de Fundamental são escritas, célula a célula. Quais segmentos o plano
+    nomeia sai da régua, sem modelo. O modelo entra só para dizer em qual frase
+    há proposta para o segmento (`segmentos_propostos_fundamental`).
     """
     salvas = ler_aba(sh, ANALISE_ABA)
     if salvas.empty:
@@ -1372,7 +1375,8 @@ def preencher_segmentos_fundamental(sh, uf: str = "", limite: int = 0,
     ws = sh.worksheet(ANALISE_ABA)
     if ws.col_count < len(COLS):
         ws.resize(cols=len(COLS))
-    colunas_novas = ["segmentos_fundamental", "evidencia_segmentos_fundamental"]
+    colunas_novas = ["segmentos_fundamental", "evidencia_segmentos_fundamental",
+                     "segmentos_propostos_fundamental"]
 
     def a1(coluna: int) -> str:
         letras = ""
@@ -1401,7 +1405,11 @@ def preencher_segmentos_fundamental(sh, uf: str = "", limite: int = 0,
                     x for x in (str(r.get("trecho", "")),
                                 str(r.get("contexto", "")),
                                 contexto_dos_segmentos(texto)) if x.strip())
-                resultado = segmentos_fundamental_do_plano(contexto, nivel)
+                try:
+                    resultado = segmentos_e_propostas_do_plano(contexto, nivel)
+                except RespostaIlegivel:
+                    time.sleep(3)
+                    resultado = segmentos_e_propostas_do_plano(contexto, nivel)
         except Exception as e:
             print(f"ERRO: {type(e).__name__}: {e}")
             erros.append(nome)
@@ -1410,7 +1418,8 @@ def preencher_segmentos_fundamental(sh, uf: str = "", limite: int = 0,
         for campo_resultado in colunas_novas:
             dados.append({"range": f"{a1(COLS.index(campo_resultado) + 1)}{linha}",
                           "values": [[resultado.get(campo_resultado, "")]]})
-        print(resultado["segmentos_fundamental"])
+        print(resultado["segmentos_fundamental"], "· com proposta:",
+              resultado.get("segmentos_propostos_fundamental") or "nenhum")
         contagem[resultado["segmentos_fundamental"]] = contagem.get(
             resultado["segmentos_fundamental"], 0) + 1
         if len(dados) >= 40:

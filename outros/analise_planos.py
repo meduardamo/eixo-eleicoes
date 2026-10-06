@@ -3629,7 +3629,7 @@ def conferir_segmentos_fundamental(segmentos, evidencia: str, contexto: str,
 
 
 def contexto_dos_segmentos(texto: str, janela: int = 1500,
-                           maximo: int = 8) -> str:
+                           maximo: int = 12) -> str:
     """Os pedaços do plano em volta de onde ele nomeia segmento ou ano escolar.
 
     As âncoras de Fundamental ("aprendizagem", "educação básica") são largas
@@ -3677,6 +3677,99 @@ def _recorte_do_segmento(frase: str, segmento: str, largura: int = 140) -> str:
         if segmento in segmentos_escritos(recorte):
             return recorte
     return ""
+
+
+def frases_dos_segmentos(contexto: str, maximo: int = 10) -> dict:
+    """Todas as frases do contexto que nomeiam cada segmento, na ordem do texto."""
+    frases = {s: [] for s in SEGMENTOS_FUNDAMENTAL}
+    corrido = re.sub(r"[ \t]*\n(?!\s*\n)[ \t]*", " ", str(contexto or ""))
+    for frase in re.split(r"\[\.\.\.\]|(?<=[.!?;])\s+|\n\s*\n", corrido):
+        frase = frase.strip()
+        for segmento in (segmentos_escritos(frase) if frase else []):
+            recorte = _recorte_do_segmento(frase, segmento)
+            if (recorte and recorte not in frases[segmento]
+                    and len(frases[segmento]) < maximo):
+                frases[segmento].append(recorte)
+    return {s: f for s, f in frases.items() if f}
+
+
+def propostas_por_segmento(frases: dict) -> dict:
+    """Para cada segmento, a frase em que o plano PROPÕE algo, se houver.
+
+    Nomear o segmento não é propor para ele: boa parte das menções é o Ideb
+    dos anos iniciais ou a divisão de responsabilidade com os municípios. A
+    pergunta é estreita, como a do `acao_na_citacao`: o modelo recebe as frases
+    já recortadas e devolve o NÚMERO de uma delas, ou 0. Não escreve texto, e
+    por isso não tem como trazer frase que não esteja no plano.
+    """
+    from google.genai import types
+    if not frases:
+        return {}
+    blocos = []
+    for segmento, lista in frases.items():
+        blocos.append(f"SEGMENTO: {segmento}\n" + "\n".join(
+            f"{i}. {f}" for i, f in enumerate(lista, 1)))
+    prompt = (
+        "Abaixo estão frases de um plano de governo que citam um segmento do "
+        "ensino fundamental. Para cada segmento, diga o número da frase em que "
+        "o plano PROPÕE algo para aquele segmento, ou 0 se nenhuma propõe.\n\n"
+        "PROPOSTA: a frase diz o que o governo vai fazer, criar, ampliar, "
+        "apoiar ou alcançar para o segmento (ação, programa, meta ou "
+        "compromisso), ainda que em cooperação com os municípios.\n"
+        "NÃO É PROPOSTA: resultado ou indicador já medido (Ideb, Saeb, "
+        "matrículas), histórico da gestão, descrição do problema, divisão de "
+        "responsabilidade entre estado e município, e lista de indicadores a "
+        "acompanhar sem ação.\n"
+        "Se mais de uma frase propõe, escolha a mais concreta. Julgue só o que "
+        "a frase diz; não presuma o que vem antes ou depois.\n\n"
+        + "\n\n".join(blocos) +
+        "\n\nResponda APENAS um objeto JSON com o nome de cada segmento "
+        "como chave e o número como valor.")
+    resp = _gerar(
+        model=GEMINI_MODEL, contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json"))
+    item = _carregar_json(getattr(resp, "text", ""), "propostas por segmento")
+    if not isinstance(item, dict):
+        raise RespostaIlegivel("propostas por segmento não vieram como objeto")
+    escolhidas = {}
+    for segmento, lista in frases.items():
+        try:
+            n = int(item.get(segmento, 0))
+        except (TypeError, ValueError):
+            n = 0
+        if 1 <= n <= len(lista):
+            escolhidas[segmento] = lista[n - 1]
+    return escolhidas
+
+
+def segmentos_e_propostas_do_plano(contexto: str, nivel: str) -> dict:
+    """Segmentos que o plano nomeia e, entre eles, os que têm proposta.
+
+    A evidência de cada segmento é a frase da proposta quando existe; sem
+    proposta, a primeira frase que o nomeia.
+    """
+    base = segmentos_fundamental_do_plano(contexto, nivel)
+    base["segmentos_propostos_fundamental"] = ""
+    nomeados = [s for s in SEGMENTOS_FUNDAMENTAL
+                if s in base["segmentos_fundamental"].split(" | ")]
+    if not nomeados:
+        return base
+    frases = frases_dos_segmentos(contexto)
+    propostas = propostas_por_segmento(frases)
+    evidencias = []
+    for segmento in nomeados:
+        frase = propostas.get(segmento) or (frases.get(segmento) or [""])[0]
+        if frase and frase not in evidencias:
+            evidencias.append(frase)
+    conferido = conferir_segmentos_fundamental(
+        nomeados, " [...] ".join(evidencias), contexto, nivel)
+    # Só troca a evidência se ela continuar sustentando os mesmos segmentos.
+    if conferido["segmentos_fundamental"] == base["segmentos_fundamental"]:
+        base["evidencia_segmentos_fundamental"] = conferido[
+            "evidencia_segmentos_fundamental"]
+        base["segmentos_propostos_fundamental"] = " | ".join(
+            s for s in nomeados if s in propostas)
+    return base
 
 
 def segmentos_fundamental_do_plano(contexto: str, nivel: str) -> dict:
