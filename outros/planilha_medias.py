@@ -44,6 +44,13 @@ ABA_ULTIMAS_T2 = "Últimas Pesquisas 2º Turno"
 ORDEM_ABAS = [ABA_T2, ABA_ULTIMAS_T2]
 CANDIDATURAS_ENV = "SPREADSHEET_ID_TSE"
 INICIO_SERIE = pd.Timestamp("2026-07-01")
+
+# Confrontos de 2º turno para governador que foram de fato às urnas (25/10/2026),
+# pelo resultado do 1º turno no TSE: UF -> `disputa` da matriz T2. Os demais
+# confrontos da matriz são hipóteses testadas antes de 04/10 e ficam de fora.
+CONFRONTOS_2T = {"AC": "t2_rick-assis", "AM": "t2_seffair-aziz", "DF": "t2_leao-grass",
+                 "ES": "t2_pazolini-ferraco", "RJ": "t2_ruas-paes", "RN": "t2_bezerra-xavier",
+                 "TO": "t2_seabra-junior"}
 NV = "Brancos, nulos e indecisos"
 
 SAI = {"Renúncia", "Indeferido", "Cancelado", "Falecido", "Cassado"}
@@ -255,6 +262,10 @@ def filtrar_registrados(df, base, log=print):
 
 # ---------------------------------------------------------------- Série Semanal
 
+def so_confrontos_reais(df):
+    return df[df.uf.map(CONFRONTOS_2T) == df.disputa]
+
+
 def num(s):
     return pd.to_numeric(s.astype(str).str.replace(',', '.'), errors='coerce')
 
@@ -339,7 +350,7 @@ def montar_serie_semanal(dados, hoje, log=print):
 def montar_serie_segundo_turno(dados, hoje, log=print):
     """Mesma série do 1º turno, um bloco por confronto de 2º turno de governador (`disputa`)."""
     bi = dados['resultados_bi_t2']
-    bi = bi[(bi.cargo == 'governador') & (bi.turno == 't2') & (bi.tipo == 'candidato')].copy()
+    bi = so_confrontos_reais(bi[(bi.cargo == 'governador') & (bi.turno == 't2') & (bi.tipo == 'candidato')]).copy()
     bi['h'] = num(bi.media_hibrida_30d)
     bi['nv'] = 100 - num(bi.declarado_hibrido_30d)
     bi['d'] = pd.to_datetime(bi.data_campo)
@@ -360,7 +371,7 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
     grid, fmt, datas_cel, series_cel = [], [], [], []
     grid.append([f'SÉRIE SEMANAL 2º TURNO - MÉDIA PONDERADA (JULHO A {mes_fim})'])
     fmt.append((0, 0, 8, 'titulo'))
-    grid.append(['Confrontos de 2º turno para governador testados em pesquisa, com brancos, nulos e indecisos. '
+    grid.append(['Confrontos de 2º turno para governador, com brancos, nulos e indecisos. '
                  f'Valores em %. {atualizado(hoje)}'])
     fmt.append((1, 0, 8, 'sub'))
     grid.append(['Sem pesquisa nova do confronto, a série repete o último valor: veja a data da última pesquisa '
@@ -414,12 +425,12 @@ def montar_ultimas_t2(dados, hoje, log=print):
     """Últimas Pesquisas do 2º turno: por confronto, a Média Eixo e as duas pesquisas mais recentes."""
     from compartilhado import pollingdata_scraper as ps
     res = dados['resultados_t2']
-    res = res[(res.cargo == 'governador') & (res.turno == 't2')].copy()
+    res = so_confrontos_reais(res[(res.cargo == 'governador') & (res.turno == 't2')]).copy()
     res['p'] = num(res.percentual)
     res['data_campo'] = pd.to_datetime(res.data_campo)
     pesq = dados['pesquisas_t2'].drop_duplicates('poll_id').set_index('poll_id')
     bi = dados['resultados_bi_t2']
-    bi = bi[(bi.cargo == 'governador') & (bi.turno == 't2') & (bi.tipo == 'candidato')].copy()
+    bi = so_confrontos_reais(bi[(bi.cargo == 'governador') & (bi.turno == 't2') & (bi.tipo == 'candidato')]).copy()
     bi['h'] = num(bi.media_hibrida_30d)
     bi['nv'] = 100 - num(bi.declarado_hibrido_30d)
     bi['d'] = pd.to_datetime(bi.data_campo)
