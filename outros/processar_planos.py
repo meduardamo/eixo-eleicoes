@@ -36,10 +36,11 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from analise_planos import (  # noqa: E402
-    NIVEIS, NIVEIS_LEGADO, TEMAS, PlanoIndisponivel, RespostaIlegivel,
+    EIXOS, NIVEIS, NIVEIS_LEGADO, TEMAS, PlanoIndisponivel, RespostaIlegivel,
     _norm_busca, _sem_espaco, citacao_sustenta, classificar_plano, resumir_plano,
     classificar_etapas_tempo_integral,
     contexto_dos_segmentos,
+    resumir_eixo,
     resumir_tema,
     segmentos_e_propostas_do_plano,
     segmentos_fundamental_do_plano,
@@ -1361,6 +1362,109 @@ def resumir_so_tema(sh, tema: str, uf: str = "", limite: int = 0,
     return 0
 
 
+def resumir_so_eixo(sh, eixos: str, uf: str = "", limite: int = 0,
+                    sq: str = "", forcar: bool = False) -> int:
+    """Acrescenta ao `resumos_eixos` o texto de eixos novos e a frase dos temas deles.
+
+    Para eixo que entra por --so-tema depois de a base estar conferida. Só
+    nascem as chaves do eixo e dos temas dele; o `resumo` do plano e os textos
+    dos outros eixos ficam como estão. Vários eixos separados por "|".
+    """
+    nomes = [e.strip() for e in eixos.split("|") if e.strip()]
+    if not nomes or any(e not in EIXOS for e in nomes):
+        print(f"Eixo desconhecido em {nomes!r}.")
+        return 1
+    salvas = ler_aba(sh, ANALISE_ABA)
+    coe = ler_aba(sh, COERENCIA_ABA)
+    if salvas.empty or coe.empty or "resumos_eixos" not in coe.columns:
+        print("Faltou a aba de análise ou a de coerência.")
+        return 1
+    salvas = salvas[salvas["ano"].astype(str).str.strip() == ANO]
+    if uf:
+        coe_alvo = coe[coe["uf"].astype(str).str.strip().str.upper() == uf.upper()]
+    else:
+        coe_alvo = coe
+    if sq:
+        sqs = {x.strip() for x in str(sq).split(",") if x.strip()}
+        coe_alvo = coe_alvo[coe_alvo["sq_candidato"].astype(str).str.strip().isin(sqs)]
+    if limite:
+        coe_alvo = coe_alvo.head(limite)
+
+    base = ler_aba(sh, ABA_BASE)
+    genero_de = {}
+    if not base.empty and "DS_GENERO" in base.columns:
+        genero_de = {str(r["SQ_CANDIDATO"]).strip(): str(r.get("DS_GENERO", "")).strip()
+                     for _, r in base.iterrows()}
+    temas_alvo = {t for e in nomes for t in EIXOS[e]}
+    do_candidato = {}
+    for _, l in salvas[salvas["tema"].astype(str).str.strip().isin(temas_alvo)].iterrows():
+        do_candidato.setdefault(str(l.get("sq_candidato", "")).strip(), {})[
+            str(l.get("tema", "")).strip()] = {
+                "nivel": str(l.get("nivel", "")).strip(),
+                "trecho": str(l.get("trecho", ""))}
+    coluna = list(coe.columns).index("resumos_eixos") + 1
+    letras, c = "", coluna
+    while c:
+        c, resto = divmod(c - 1, 26)
+        letras = chr(65 + resto) + letras
+
+    print(f"{len(coe_alvo)} planos · eixos: {', '.join(nomes)}")
+    ws = sh.worksheet(COERENCIA_ABA)
+    dados, feitos, recusados = [], 0, []
+    for pos, (indice, r) in enumerate(coe_alvo.iterrows(), 1):
+        sq_cand = str(r.get("sq_candidato", "")).strip()
+        nome = str(r.get("candidato", "")).strip()
+        bruto = str(r.get("resumos_eixos", "") or "").strip()
+        try:
+            atual = json.loads(bruto) if bruto else {}
+        except ValueError:
+            print(f"[{pos}] {nome}: resumos_eixos ilegível, pulado")
+            continue
+        if not isinstance(atual, dict):
+            continue
+        mudou = False
+        for eixo in nomes:
+            temas_eixo = {t: v for t, v in do_candidato.get(sq_cand, {}).items()
+                          if t in EIXOS[eixo] and v["nivel"] != "Não menciona"}
+            if not temas_eixo:
+                continue
+            try:
+                for t, v in temas_eixo.items():
+                    if atual.get(t) and not forcar:
+                        continue
+                    frase = resumir_tema(t, v["nivel"], v["trecho"], nome=nome,
+                                         genero=genero_de.get(sq_cand, ""))
+                    if frase:
+                        atual[t] = frase
+                        mudou = True
+                    else:
+                        recusados.append(f"{nome} ({t})")
+                if not atual.get(eixo) or forcar:
+                    texto = resumir_eixo(eixo, temas_eixo, nome=nome,
+                                         genero=genero_de.get(sq_cand, ""))
+                    if texto:
+                        atual[eixo] = texto
+                        mudou = True
+                        print(f"[{pos}/{len(coe_alvo)}] {r.get('uf','')} · {nome} · {eixo}: {texto}")
+                    else:
+                        recusados.append(f"{nome} ({eixo})")
+            except Exception as e:
+                print(f"[{pos}] {nome}: ERRO {type(e).__name__}: {e}")
+                recusados.append(f"{nome} (erro)")
+        if mudou:
+            dados.append({"range": f"{letras}{indice + 2}",
+                          "values": [[json.dumps(atual, ensure_ascii=False)]]})
+            feitos += 1
+        if len(dados) >= 15:
+            ws.batch_update(dados, value_input_option="RAW")
+            dados = []
+    if dados:
+        ws.batch_update(dados, value_input_option="RAW")
+    print(f"{feitos} planos com resumo acrescentado; {len(recusados)} recusas"
+          + (f": {'; '.join(recusados[:30])}" if recusados else ""))
+    return 0
+
+
 def preencher_segmentos_fundamental(sh, uf: str = "", limite: int = 0,
                                     sq: str = "", forcar: bool = False) -> int:
     """Preenche o segmento (anos iniciais, anos finais) dentro de Fundamental.
@@ -1731,6 +1835,9 @@ def main() -> int:
     p.add_argument("--so-resumo-tema", default="",
                    help="acrescenta ao resumos_eixos a frase deste tema, sem "
                         "refazer o resumo do plano")
+    p.add_argument("--so-resumo-eixo", default="",
+                   help="acrescenta ao resumos_eixos o texto destes eixos e a "
+                        "frase dos temas deles (vários separados por |)")
     p.add_argument("--so-segmentos-fundamental", action="store_true",
                    help="preenche anos iniciais/finais dentro de Fundamental")
     # Tema novo entra na base sem refazer os outros. Subir a VERSAO_ANALISE
@@ -1791,6 +1898,10 @@ def main() -> int:
 
         if args.so_resumo_tema:
             return resumir_so_tema(sh, args.so_resumo_tema.strip(), args.uf,
+                                   args.limite, args.sq, args.forcar)
+
+        if args.so_resumo_eixo:
+            return resumir_so_eixo(sh, args.so_resumo_eixo.strip(), args.uf,
                                    args.limite, args.sq, args.forcar)
 
         if args.so_segmentos_fundamental:

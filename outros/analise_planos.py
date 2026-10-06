@@ -4364,6 +4364,63 @@ def resumir_tema(tema: str, nivel: str, trecho: str, nome: str = "",
     return frase
 
 
+def resumir_eixo(eixo: str, por_tema: dict, nome: str = "", genero: str = "") -> str:
+    """O texto de UM eixo para o `resumos_eixos`, a partir das citações gravadas.
+
+    Par do `resumir_tema`, para eixo que nasce depois de a base estar conferida.
+    `por_tema` é {tema: {"nivel", "trecho"}} só com os temas que têm conteúdo.
+    Devolve "" se o texto não passar nas guardas.
+    """
+    from google.genai import types
+    por_tema = {t: r for t, r in por_tema.items()
+                if r.get("nivel") not in ("Não menciona", "", None)
+                and str(r.get("trecho") or "").strip()}
+    if not por_tema:
+        return ""
+    prompt = (
+        "Você é repórter de política. Escreva um texto corrido de até 3 frases, "
+        "fiel às citações abaixo, tiradas de um plano de governo.\n\n"
+        "Regras:\n"
+        "1. O nível de cada item determina o que pode ser atribuído: em 'Propõe "
+        "ação' e 'Define meta', descreva somente a medida expressa na citação; "
+        "em 'Menciona vagamente', relate apenas o assunto ou o diagnóstico, sem "
+        "escrever que se propõe, promete, defende, quer, prevê ou vai executar "
+        "uma medida.\n"
+        "2. Priorize os itens com ação ou meta. Não invente alcance, quantidade, "
+        "prazo, público ou intensidade. Número só o que está nas citações.\n"
+        "3. Sem lista e sem citar o nome das categorias da grade.\n"
+        + _regras_sujeito(nome, genero) +
+        f"\n\n{RESTRICOES_LINGUAGEM}\n\nASSUNTO GERAL: {eixo}\n"
+        + "".join(f"- nível: {r['nivel']} | citação: {r['trecho']}\n"
+                  for r in por_tema.values())
+        + "\nResponda APENAS um objeto JSON com a chave 'texto'.")
+    lastro = re.sub(r"\D+", " ", _norm_busca(
+        " ".join(str(r["trecho"]) for r in por_tema.values()))).split()
+
+    def pedir(evitar: list[str] | None = None) -> str:
+        texto = prompt
+        if evitar:
+            texto += ("\n\nSUA RESPOSTA ANTERIOR FOI RECUSADA porque usou: "
+                      + ", ".join(evitar) + ". Reescreva sem isso.")
+        resp = _gerar(
+            model=GEMINI_MODEL, contents=texto,
+            config=types.GenerateContentConfig(response_mime_type="application/json"))
+        item = _carregar_json(getattr(resp, "text", ""), f"texto de {eixo!r}")
+        return _limpa(item.get("texto", ""), n=800) if isinstance(item, dict) else ""
+
+    def recusas(texto: str) -> list[str]:
+        return list(termos_proibidos(texto)) + [
+            f"o número {x}" for x in re.findall(r"\d+", texto) if x not in lastro]
+
+    texto = pedir()
+    ruins = recusas(texto) if texto else []
+    if ruins:
+        texto = pedir(ruins)
+        if texto and recusas(texto):
+            return ""
+    return texto
+
+
 def gerar_resumos_eixos(classif: dict, temas: dict = TEMAS, nome: str = "", genero: str = "") -> dict:
     from google.genai import types
     
