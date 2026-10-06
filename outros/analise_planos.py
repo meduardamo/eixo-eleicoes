@@ -141,6 +141,12 @@ EIXOS = {
         # Entraram em 19/08/2026 a pedido do Itaú:
         "Educação, Arte e Cultura": "integração de arte, cultura e linguagens artísticas no currículo escolar e na educação integral: arte na escola, oficinas e projetos culturais com estudantes — a política cultural fora da escola (fomento, editais, patrimônio, equipamentos) é o tema Cultura, no eixo de Cultura, esporte e turismo",
         "Recomposição das Aprendizagens": "recomposição, recuperação e aceleração de aprendizagens, reforço escolar, correção de fluxo, defasagem idade-série e superação de lacunas pedagógicas, inclusive as herdadas da pandemia — alfabetizar na idade certa é o tema Alfabetização, e a etapa em si é Fundamental ou Ensino Médio",
+        # Entrou em 06/10/2026 a pedido da Fundação Lemann. O termo é transversal:
+        # a maior parte dos planos que nomeiam a matemática o faz dentro de uma
+        # ação de recomposição, de alfabetização ou de etapa, e a mesma frase
+        # sustenta os dois temas. Quem separa é a palavra: sem matemática
+        # nomeada, o tema não existe no plano.
+        "Matemática": "ensino e aprendizagem de matemática na educação básica: proficiência e resultado em matemática, alfabetização e letramento matemático, numeracia, reforço, recomposição e recuperação em matemática, material didático e formação de professores de matemática, olimpíadas de matemática e metas de desempenho em matemática. A matemática citada junto com língua portuguesa como foco de uma ação conta aqui e também no tema da ação (Recomposição das Aprendizagens, Alfabetização, Fundamental ou Ensino Médio). Matemática citada só como item de uma lista de disciplinas ou de áreas do conhecimento, sem ação própria, é Menciona vagamente. Raciocínio lógico, robótica, programação, educação financeira e STEM sem a palavra matemática não são este tema, e plano que fala de aprendizagem, reforço ou avaliação sem nomear a matemática também não: nesse caso o nível é Não menciona",
         # Os dois temas abaixo entraram em 14/09/2026 no lugar do eixo
         # "Conectividade e Infraestrutura Digital" (31/08 a 14/09), a pedido da
         # MegaEdu, que não queria eixo e sim dois temas dentro de Educação. São
@@ -331,6 +337,7 @@ TERMOS_ANCORA = {
                                  "educacao artistica", "ensino de arte"],
     "Recomposição das Aprendizagens": ["recomposicao*", "recuperacao da aprendizagem", "reforco escolar",
                                        "defasagem", "distorcao idade serie", "lacunas de aprendizagem"],
+    "Matemática": ["matematic*", "numeracia", "numeramento"],
     "Ensino Superior": ["ensino superior", "universidade", "universitari*", "vestibular",
                         "enem", "prouni", "fies", "assistencia estudantil",
                         "graduacao", "campus"],
@@ -615,6 +622,9 @@ TERMOS_AUSENCIA = {
         "educacao e cultura", "linguagens artisticas", "educacao artistica",
         "ensino de arte", "oficinas culturais na escola",
         "arte na escola", "artes na escola", "formacao artistica",
+    ],
+    "Matemática": [
+        "matematic*", "numeracia", "numeramento", "obmep",
     ],
     "Recomposição das Aprendizagens": [
         "recomposicao", "recomposicao da aprendizagem", "recomposicao de aprendizagem",
