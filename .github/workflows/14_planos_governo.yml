@@ -52,6 +52,11 @@ on:
         type: boolean
         required: false
         default: false
+      so_segmentos_fundamental:
+        description: 'Preenche anos iniciais/finais dentro de Fundamental (sem modelo)'
+        type: boolean
+        required: false
+        default: false
       so_tema:
         description: 'Classifica SÓ este tema nos planos já analisados (nome exato, sem subir versão)'
         required: false
@@ -139,6 +144,7 @@ jobs:
             ${{ inputs.forcar == true && '--forcar' || '' }} \
             ${{ inputs.so_coerencia == true && '--so-coerencia' || '' }} \
             ${{ inputs.so_etapas_tempo_integral == true && '--so-etapas-tempo-integral' || '' }} \
+            ${{ inputs.so_segmentos_fundamental == true && '--so-segmentos-fundamental' || '' }} \
             ${{ inputs.so_tema && format('--so-tema "{0}"', inputs.so_tema) || '' }} \
             ${{ inputs.so_acao && format('--so-acao {0}', inputs.so_acao) || '' }} \
             ${{ inputs.limpar && format('--limpar-fora-da-base {0}', inputs.limpar) || '' }}

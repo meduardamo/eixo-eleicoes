@@ -39,6 +39,8 @@ from analise_planos import (  # noqa: E402
     NIVEIS, NIVEIS_LEGADO, TEMAS, PlanoIndisponivel, RespostaIlegivel,
     _norm_busca, _sem_espaco, citacao_sustenta, classificar_plano, resumir_plano,
     classificar_etapas_tempo_integral,
+    contexto_dos_segmentos,
+    segmentos_fundamental_do_plano,
     contexto_do_trecho,
     contexto_do_tema, contexto_do_vocabulario, posicoes_do_tema,
     extrair_paginas_url, ocorrencias_ancora, paginas_do_trecho, reanalisar_tema,
@@ -154,7 +156,8 @@ COLS = ["ano", "sq_candidato", "candidato", "partido", "uf", "cargo", "link",
         "publico_alvo", "programa_nome", "pagina", "verificacao", "entes",
         "chars", "chars_analisados", "versao", "analisado_em",
         "etapas_tempo_integral", "evidencia_etapas_tempo_integral",
-        "etapas_inferidas_tempo_integral"]
+        "etapas_inferidas_tempo_integral",
+        "segmentos_fundamental", "evidencia_segmentos_fundamental"]
 # `resumos_eixos` não entra aqui: quem escreve a coluna é a aba de coerência,
 # uma linha por candidato. Listada em COLS, o reindex de `gravar` criava uma
 # coluna 23 sempre vazia na aba de análise, que tem uma linha por tema.
@@ -1255,6 +1258,88 @@ def preencher_etapas_tempo_integral(sh, uf: str = "", limite: int = 0,
     return 1 if erros else 0
 
 
+def preencher_segmentos_fundamental(sh, uf: str = "", limite: int = 0,
+                                    sq: str = "", forcar: bool = False) -> int:
+    """Preenche o segmento (anos iniciais, anos finais) dentro de Fundamental.
+
+    Mesmo desenho do backfill de Tempo Integral: só as duas colunas novas da
+    linha de Fundamental são escritas, célula a célula. Não chama o modelo, e
+    por isso rodar de novo com --forcar devolve o mesmo resultado.
+    """
+    salvas = ler_aba(sh, ANALISE_ABA)
+    if salvas.empty:
+        print(f"A aba {ANALISE_ABA} está vazia.")
+        return 1
+    alvo = salvas[salvas["tema"].astype(str).str.strip() == "Fundamental"]
+    if uf:
+        alvo = alvo[alvo["uf"].astype(str).str.strip().str.upper() == uf.upper()]
+    if sq:
+        sqs = {x.strip() for x in str(sq).split(",") if x.strip()}
+        alvo = alvo[alvo["sq_candidato"].astype(str).str.strip().isin(sqs)]
+    campo = "segmentos_fundamental"
+    if not forcar and campo in alvo.columns:
+        alvo = alvo[alvo[campo].astype(str).str.strip() == ""]
+    if limite:
+        alvo = alvo.head(limite)
+    print(f"{len(alvo)} planos para subclassificar em Fundamental")
+    if alvo.empty:
+        return 0
+
+    ws = sh.worksheet(ANALISE_ABA)
+    if ws.col_count < len(COLS):
+        ws.resize(cols=len(COLS))
+    colunas_novas = ["segmentos_fundamental", "evidencia_segmentos_fundamental"]
+
+    def a1(coluna: int) -> str:
+        letras = ""
+        while coluna:
+            coluna, resto = divmod(coluna - 1, 26)
+            letras = chr(65 + resto) + letras
+        return letras
+
+    dados = []
+    for nome in colunas_novas:
+        dados.append({"range": f"{a1(COLS.index(nome) + 1)}1", "values": [[nome]]})
+    erros = []
+    contagem = {}
+    for pos, (indice, r) in enumerate(alvo.iterrows(), 1):
+        nome = str(r.get("candidato", ""))
+        nivel = str(r.get("nivel", "") or "Não menciona")
+        print(f"[{pos}/{len(alvo)}] {r.get('uf','')} · {nome}...", end=" ", flush=True)
+        try:
+            if nivel == "Não menciona":
+                resultado = segmentos_fundamental_do_plano("", nivel)
+            else:
+                texto = " ".join(extrair_paginas_url(str(r.get("link", ""))))
+                # A citação que sustenta o tema vem primeiro: se ela nomeia o
+                # segmento, é ela a evidência, e não uma frase do diagnóstico.
+                contexto = "\n[...]\n".join(
+                    x for x in (str(r.get("trecho", "")),
+                                str(r.get("contexto", "")),
+                                contexto_dos_segmentos(texto)) if x.strip())
+                resultado = segmentos_fundamental_do_plano(contexto, nivel)
+        except Exception as e:
+            print(f"ERRO: {type(e).__name__}: {e}")
+            erros.append(nome)
+            continue
+        linha = indice + 2
+        for campo_resultado in colunas_novas:
+            dados.append({"range": f"{a1(COLS.index(campo_resultado) + 1)}{linha}",
+                          "values": [[resultado.get(campo_resultado, "")]]})
+        print(resultado["segmentos_fundamental"])
+        contagem[resultado["segmentos_fundamental"]] = contagem.get(
+            resultado["segmentos_fundamental"], 0) + 1
+        if len(dados) >= 40:
+            ws.batch_update(dados, value_input_option="RAW")
+            dados = []
+    if dados:
+        ws.batch_update(dados, value_input_option="RAW")
+    print(contagem)
+    if erros:
+        print(f"{len(erros)} planos com erro: {', '.join(erros[:10])}")
+    return 1 if erros else 0
+
+
 def rebaixar_mencao(sh, uf: str = "", limite: int = 0, paralelo: int = 8,
                     gravar_de_verdade: bool = False) -> int:
     """Rebaixa para "Menciona vagamente" o "Propõe ação" que só cita o tema.
@@ -1533,6 +1618,8 @@ def main() -> int:
                                     "caixa alta dos trechos já gravados")
     p.add_argument("--so-etapas-tempo-integral", action="store_true",
                    help="preenche semanticamente a etapa dentro de Tempo Integral")
+    p.add_argument("--so-segmentos-fundamental", action="store_true",
+                   help="preenche anos iniciais/finais dentro de Fundamental")
     # Tema novo entra na base sem refazer os outros. Subir a VERSAO_ANALISE
     # continua sendo o caminho quando a taxonomia MUDA de forma (tema que sai de
     # eixo, tema que se divide em dois, descrição que redesenha a fronteira com
@@ -1587,6 +1674,10 @@ def main() -> int:
 
         if args.so_etapas_tempo_integral:
             return preencher_etapas_tempo_integral(
+                sh, args.uf, args.limite, args.sq, args.forcar)
+
+        if args.so_segmentos_fundamental:
+            return preencher_segmentos_fundamental(
                 sh, args.uf, args.limite, args.sq, args.forcar)
 
         if args.so_tema:

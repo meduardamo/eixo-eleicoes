@@ -3522,6 +3522,191 @@ def classificar_etapas_tempo_integral(contexto: str, nivel: str) -> dict:
     return resultado
 
 
+# Segmento dentro do tema Fundamental (06/10/2026, pedido da Fundação Lemann).
+# É subclassificação, e não dois temas, pelo mesmo motivo do Tempo Integral:
+# "Anos iniciais" e "Anos finais" como temas disputariam a citação que hoje
+# sustenta Fundamental, e dividir o tema obrigaria a refazer a base.
+#
+# Diferença para as etapas do Tempo Integral: aqui NÃO há segmento deduzido. Lá
+# a rede estadual vale Ensino Médio por regra editorial; aqui ela não aponta
+# segmento nenhum, porque vários estados mantêm os anos iniciais. Só conta o
+# que o plano escreve: o nome do segmento, "Fundamental I/II" ou o ano escolar.
+SEGMENTOS_FUNDAMENTAL = ("Anos iniciais", "Anos finais")
+SEGMENTO_NAO_ESPECIFICADO = "Segmento não especificado"
+
+# Sobre _norm_acentos, que mantém o indicador ordinal. O ordinal é obrigatório
+# no ano escrito em algarismo: sem ele "5 anos" é idade ou prazo, não série.
+_ORD = r"([1-9])\s?[ºo°]"
+_ANO_EXTENSO = {"primeiro": 1, "segundo": 2, "terceiro": 3, "quarto": 4,
+                "quinto": 5, "sexto": 6, "setimo": 7, "oitavo": 8, "nono": 9}
+# "1º ano do ensino médio" e "1º ano de governo" não são ano do fundamental.
+_NAO_E_SERIE = (r"(?!\s+d[oea]\s+(?:ensino\s+)?(?:medio|superior|tecnico))"
+                r"(?!\s+d[oea]\s+(?:faculdade|curso|graduacao))"
+                r"(?!\s+d[oea]\s+(?:novo\s+)?(?:governo|mandato|gestao))")
+_RX_FAIXA_ANOS = re.compile(
+    _ORD + r"\s+(?:ao?|e|ate\s+o)\s+" + _ORD + r"\s+anos?\b" + _NAO_E_SERIE)
+_RX_ANO_SOLTO = re.compile(_ORD + r"\s+ano\b" + _NAO_E_SERIE)
+# "a partir do 5º ano" vai do ano citado até o 9º.
+_RX_A_PARTIR = re.compile(r"\ba\s+partir\s+d[oe]\s+" + _ORD + r"\s+ano\b"
+                          + _NAO_E_SERIE)
+# Por extenso só vale com "fundamental" logo depois: plano dividido por ano de
+# governo tem "PRIMEIRO ANO", "SEGUNDO ANO" como título de seção.
+_RX_ANO_EXTENSO = re.compile(
+    r"\b(" + "|".join(_ANO_EXTENSO) + r")\s+ano\s+d[oe]\s+(?:ensino\s+)?fundamental\b")
+_RX_DO_FUNDAMENTAL = re.compile(r"\s+d[oe]\s+(?:ensino\s+)?fundamental\b")
+_RX_NOME_SEGMENTO = {
+    "Anos iniciais": re.compile(
+        r"\b(?:anos|series)\s+iniciais\b|\bfundamental\s+(?:i|1)\b"),
+    # "anos iniciais e finais" e "6,7 nos anos iniciais, 5,3 nos finais": o
+    # substantivo fica só no primeiro, e o segundo segmento está escrito.
+    "Anos finais": re.compile(
+        r"\b(?:anos|series)\s+finais\b|\bfundamental\s+(?:ii|2)\b|"
+        r"\b(?:anos|series)\s+iniciais\b[^.;:]{0,30}?\b(?:e|ou|n?os|d?os|aos)"
+        r"\s+finais\b"),
+}
+# O ano escolar sozinho só vale com a escola por perto na mesma evidência.
+_RX_ASSUNTO_ESCOLAR = re.compile(
+    r"\b(fundamental|anos\s+iniciais|anos\s+finais|escola\w*|estudante\w*|"
+    r"alun\w+|aprendiza\w+|alfabetiza\w+|saeb|ideb|proficiencia|ensino)\b")
+
+
+def _segmento_do_ano(ano: int) -> str:
+    return "Anos iniciais" if ano <= 5 else "Anos finais"
+
+
+def segmentos_escritos(texto: str) -> list[str]:
+    """Os segmentos do fundamental que o texto nomeia, na ordem canônica."""
+    n = _norm_acentos(texto)
+    achados = {s for s, rx in _RX_NOME_SEGMENTO.items() if rx.search(n)}
+    if _RX_ASSUNTO_ESCOLAR.search(n):
+        for m in _RX_FAIXA_ANOS.finditer(n):
+            a, b = sorted((int(m.group(1)), int(m.group(2))))
+            achados.add(_segmento_do_ano(a))
+            achados.add(_segmento_do_ano(b))
+        # A faixa já consumiu os dois anos; o ano solto pega o resto.
+        resto = _RX_FAIXA_ANOS.sub(" ", n)
+        for m in _RX_A_PARTIR.finditer(resto):
+            achados.add(_segmento_do_ano(int(m.group(1))))
+            achados.add("Anos finais")
+        # 1º e 2º ano citados como marco de alfabetização ("alfabetizar até o
+        # 2º ano") são o tema Alfabetização, que Fundamental exclui.
+        marco = bool(re.search(r"\balfabetiza", n))
+        for m in _RX_ANO_EXTENSO.finditer(resto):
+            ano = _ANO_EXTENSO[m.group(1)]
+            if not (ano <= 2 and marco):
+                achados.add(_segmento_do_ano(ano))
+        for m in _RX_ANO_SOLTO.finditer(resto):
+            ano = int(m.group(1))
+            # "1º ano" e "2º ano" soltos também são ano de governo.
+            if ano <= 2 and (marco or not _RX_DO_FUNDAMENTAL.match(resto, m.end())):
+                continue
+            achados.add(_segmento_do_ano(ano))
+    return [s for s in SEGMENTOS_FUNDAMENTAL if s in achados]
+
+
+def conferir_segmentos_fundamental(segmentos, evidencia: str, contexto: str,
+                                   nivel: str) -> dict:
+    """Só fica o segmento que a evidência, copiada do plano, escreve."""
+    if nivel == "Não menciona":
+        return {"segmentos_fundamental": ETAPA_NAO_SE_APLICA,
+                "evidencia_segmentos_fundamental": ""}
+    vazio = {"segmentos_fundamental": SEGMENTO_NAO_ESPECIFICADO,
+             "evidencia_segmentos_fundamental": ""}
+    evidencia = _limpa(evidencia, n=600, ruido_citacao=True)
+    if not evidencia or not citacao_sustenta([_norm_busca(contexto)], evidencia):
+        return vazio
+    if isinstance(segmentos, str):
+        segmentos = re.split(r"\s*[|,;]\s*", segmentos)
+    if not isinstance(segmentos, list):
+        segmentos = []
+    por_chave = {_chave(x): x for x in SEGMENTOS_FUNDAMENTAL}
+    pedidos = {por_chave.get(_chave(str(x))) for x in segmentos}
+    validados = [s for s in segmentos_escritos(evidencia) if s in pedidos]
+    if not validados:
+        return vazio
+    return {"segmentos_fundamental": " | ".join(validados),
+            "evidencia_segmentos_fundamental": evidencia}
+
+
+def contexto_dos_segmentos(texto: str, janela: int = 1500,
+                           maximo: int = 8) -> str:
+    """Os pedaços do plano em volta de onde ele nomeia segmento ou ano escolar.
+
+    As âncoras de Fundamental ("aprendizagem", "educação básica") são largas
+    demais para isso: as oito primeiras ocorrências raramente são as que dizem
+    o segmento.
+    """
+    n = _norm_acentos(texto)
+    posicoes = sorted(
+        m.start()
+        for rx in (*_RX_NOME_SEGMENTO.values(), _RX_FAIXA_ANOS, _RX_ANO_SOLTO,
+                   _RX_ANO_EXTENSO)
+        for m in rx.finditer(n))
+    fator = len(texto) / max(len(n), 1)
+    pedacos, fim_anterior = [], -1
+    for p in posicoes:
+        centro = int(p * fator)
+        if centro < fim_anterior:
+            continue
+        pedacos.append(texto[max(0, centro - janela):centro + janela])
+        fim_anterior = centro + janela
+        if len(pedacos) >= maximo:
+            break
+    return "\n[...]\n".join(pedacos)
+
+
+def _recorte_do_segmento(frase: str, segmento: str, largura: int = 140) -> str:
+    """A frase inteira quando é curta; senão, o entorno de onde o segmento aparece."""
+    if len(frase) <= 2 * largura:
+        return frase
+    n = _norm_acentos(frase)
+    fator = len(frase) / max(len(n), 1)
+    inicios = [m.start()
+               for rx in (_RX_NOME_SEGMENTO[segmento], _RX_FAIXA_ANOS,
+                          _RX_A_PARTIR, _RX_ANO_SOLTO, _RX_ANO_EXTENSO)
+               for m in rx.finditer(n)]
+    for p in sorted(inicios):
+        centro = int(p * fator)
+        a, b = max(0, centro - largura), min(len(frase), centro + largura)
+        # Corta em espaço, para a evidência não começar no meio de palavra.
+        if a:
+            a = frase.find(" ", a) + 1
+        if b < len(frase):
+            b = frase.rfind(" ", a, b)
+        recorte = frase[a:b].strip()
+        if segmento in segmentos_escritos(recorte):
+            return recorte
+    return ""
+
+
+def segmentos_fundamental_do_plano(contexto: str, nivel: str) -> dict:
+    """Os segmentos do fundamental que o plano nomeia, com a frase que os traz.
+
+    Não passa pelo modelo. A pergunta é se a palavra está escrita, e isso a
+    régua responde igual em toda rodada; a versão com o modelo só podia tirar
+    segmento que a régua já tinha achado na frase. A leitura é frase a frase:
+    segmento e escola em frases diferentes não se somam.
+    """
+    if nivel == "Não menciona":
+        return conferir_segmentos_fundamental([], "", contexto, nivel)
+    achados, evidencias = [], []
+    # A quebra de linha do PDF cai no meio da frase; só o parágrafo separa.
+    corrido = re.sub(r"[ \t]*\n(?!\s*\n)[ \t]*", " ", str(contexto or ""))
+    for frase in re.split(r"\[\.\.\.\]|(?<=[.!?;])\s+|\n\s*\n", corrido):
+        frase = frase.strip()
+        for segmento in (segmentos_escritos(frase) if frase else []):
+            if segmento in achados:
+                continue
+            recorte = _recorte_do_segmento(frase, segmento)
+            if not recorte:
+                continue
+            achados.append(segmento)
+            if recorte not in evidencias:
+                evidencias.append(recorte)
+    return conferir_segmentos_fundamental(
+        achados, " [...] ".join(evidencias), contexto, nivel)
+
+
 # Sem mínimo de caracteres dentro das aspas. Com o mínimo de 8 que estava aqui,
 # um par curto era pulado e o par seguinte casava errado: a justificativa do
 # Hertz Dias (10/08/2026) tinha "Turismo" (7 caracteres) seguido de
