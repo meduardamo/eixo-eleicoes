@@ -674,6 +674,23 @@ def processar(r, ano: str) -> tuple[list[dict], dict | None, str]:
         etapas = classificar_etapas_tempo_integral(
             contexto_etapas, tempo_integral.get("nivel", "Não menciona"))
     tempo_integral.update(etapas)
+    fundamental = classif.get("Fundamental", {})
+    nivel_fund = fundamental.get("nivel", "Não menciona")
+    if nivel_fund == "Não menciona":
+        fundamental.update(segmentos_e_propostas_do_plano("", nivel_fund))
+    else:
+        citacao_fund = str(fundamental.get("trecho", ""))
+        ctx_fund = "\n[...]\n".join(
+            x for x in (citacao_fund,
+                        contexto_do_trecho(paginas, paginas_norm, citacao_fund),
+                        contexto_dos_segmentos(texto)) if x.strip())
+        try:
+            seg_fund = segmentos_e_propostas_do_plano(ctx_fund, nivel_fund)
+        except RespostaIlegivel as e:
+            print(f"(segmentos ilegíveis, tentando de novo: {e})", end=" ", flush=True)
+            time.sleep(3)
+            seg_fund = segmentos_e_propostas_do_plano(ctx_fund, nivel_fund)
+        fundamental.update(seg_fund)
     # Nome e gênero vão para a justificativa da coerência: é ela que atribui a
     # proposta a alguém, e "o candidato" escrito sobre uma mulher é erro de
     # fato. A base de dados abertos pode não trazer a coluna de gênero; sem ela,
@@ -721,6 +738,11 @@ def processar(r, ano: str) -> tuple[list[dict], dict | None, str]:
                        "evidencia_etapas_tempo_integral", ""),
                    etapas_inferidas_tempo_integral=res.get(
                        "etapas_inferidas_tempo_integral", ""),
+                   segmentos_fundamental=res.get("segmentos_fundamental", ""),
+                   evidencia_segmentos_fundamental=res.get(
+                       "evidencia_segmentos_fundamental", ""),
+                   segmentos_propostos_fundamental=res.get(
+                       "segmentos_propostos_fundamental", ""),
                    # Vazio quando o modelo resumiu em vez de citar: aí a frase
                    # não está literal no PDF e não há página para apontar.
                    pagina=", ".join(
@@ -1517,7 +1539,7 @@ def preencher_segmentos_fundamental(sh, uf: str = "", limite: int = 0,
         print(f"[{pos}/{len(alvo)}] {r.get('uf','')} · {nome}...", end=" ", flush=True)
         try:
             if nivel == "Não menciona":
-                resultado = segmentos_fundamental_do_plano("", nivel)
+                resultado = segmentos_e_propostas_do_plano("", nivel)
             else:
                 texto = " ".join(extrair_paginas_url(str(r.get("link", ""))))
                 # A citação que sustenta o tema vem primeiro: se ela nomeia o
