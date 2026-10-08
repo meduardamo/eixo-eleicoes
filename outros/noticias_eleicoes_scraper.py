@@ -17,6 +17,11 @@ divulgada, fato com potencial impacto eleitoral e impugnação de candidatura. O
 cinco viraram tema de alerta (ALERTA_TEMAS) e têm termo de busca próprio
 (TERMOS_FATO, TERMOS_VISITA, PAUTAS_UF).
 
+Em 08/10/2026, com o 1º turno encerrado, entrou a transição de governo nos
+estados no que toca às pastas de Educação e Saúde (pedido da Eduarda): quem
+entra, quem sai e quem cuida da área na equipe de transição. Tem termo de busca
+próprio (TERMOS_TRANSICAO) e tema de alerta ("transição").
+
 Secrets do email: BREVO_API_KEY, EMAIL, DESTINATARIOS_NOTICIAS (ou DESTINATARIOS).
 Sem eles a rodada segue normal, só não envia.
 """
@@ -264,6 +269,21 @@ TERMOS_VISITA = ('(Lula OR "Flávio Bolsonaro" OR presidenciável) '
                  '(visita OR desembarca OR comício OR caravana OR viagem '
                  'OR inauguração OR palanque OR "agenda no estado")')
 
+# Bloco 5: transição de governo nos estados, só nas pastas de Educação e Saúde
+# (08/10/2026). Como a visita, não depende do cargo e roda uma busca por estado,
+# com o nome por extenso. O primeiro grupo é o momento (transição, secretariado,
+# governo que entra) e o segundo é a pasta: sem o segundo vinha a transição
+# inteira, e sem o primeiro vinha o dia a dia das duas secretarias.
+TERMOS_TRANSICAO = ('(transição OR secretariado OR "novo governo" '
+                    'OR "governador eleito" OR "governadora eleita" '
+                    'OR "novo secretário" OR "nova secretária" '
+                    'OR "futuro secretário" OR "futura secretária") '
+                    '("Secretaria de Educação" OR "Secretaria de Saúde" '
+                    'OR "Secretaria da Educação" OR "Secretaria da Saúde" '
+                    'OR "secretário de Educação" OR "secretária de Educação" '
+                    'OR "secretário de Saúde" OR "secretária de Saúde" '
+                    'OR "pasta da Educação" OR "pasta da Saúde")')
+
 # Pauta local que já virou ativo da disputa em um estado e não sai por termo
 # genérico. Uma busca a mais por UF listada; para acrescentar outra, é só somar
 # a chave da UF com os termos entre parênteses.
@@ -279,8 +299,8 @@ for _nome, _sigla in NOME_UF.items():
 
 BLOCOS_CARGO = (TERMOS, TERMOS_CAMPANHA, TERMOS_FATO)
 # Nos sites regionais o site: já diz o estado e o cargo não entra na busca, então
-# o bloco de visita roda igual aos outros.
-BLOCOS = BLOCOS_CARGO + (TERMOS_VISITA,)
+# os blocos de visita e de transição rodam iguais aos outros.
+BLOCOS = BLOCOS_CARGO + (TERMOS_VISITA, TERMOS_TRANSICAO)
 
 
 def gerar_buscas(cargos=('presidente', 'governador', 'senador')):
@@ -292,6 +312,7 @@ def gerar_buscas(cargos=('presidente', 'governador', 'senador')):
             else:
                 buscas += [f"eleições 2026 {cargo} {uf} {termos}" for uf in UFS]
     buscas += [f"{UF_NOME[uf]} {TERMOS_VISITA}" for uf in UFS]
+    buscas += [f"{UF_NOME[uf]} {TERMOS_TRANSICAO}" for uf in UFS]
     buscas += [f"eleições 2026 {UF_NOME[uf]} {pauta}"
                for uf, pauta in PAUTAS_UF.items()]
     return buscas
@@ -402,7 +423,7 @@ def normalize_partido(raw) -> str:
 # aconteceu com o campo partido).
 TIPOS = ("agenda", "pesquisa", "debate", "aliança", "apoio", "crítica-educação",
          "proposta-educação", "visita-presidencial", "impugnação", "fato-eleitoral",
-         "outro")
+         "transição", "outro")
 _TIPO_ALIAS = {
     "alianca": "aliança", "aliancas": "aliança", "alianças": "aliança",
     "coligacao": "aliança", "coligação": "aliança", "federacao": "aliança",
@@ -429,6 +450,8 @@ _TIPO_ALIAS = {
     "registro de candidatura": "impugnação",
     "fato eleitoral": "fato-eleitoral", "impacto eleitoral": "fato-eleitoral",
     "fato com impacto eleitoral": "fato-eleitoral",
+    "transicao": "transição", "transição de governo": "transição",
+    "transicao de governo": "transição", "secretariado": "transição",
     "agendas": "agenda", "agenda de campanha": "agenda",
     "pesquisas": "pesquisa", "pesquisa eleitoral": "pesquisa",
 }
@@ -489,7 +512,8 @@ def normalize_status(raw) -> str:
 # fechou com o Fe (01/09) para o que a busca diária tem que cobrir. "Executivo" aqui é só governador ou presidente: pesquisa
 # ou apoio para Senado e Câmara não vira alerta, mesmo sendo notícia relevante.
 ALERTA_TEMAS = ("pesquisa-executivo", "apoio", "rompimento", "educação",
-                "debate", "visita-presidencial", "impugnação", "fato-eleitoral")
+                "debate", "visita-presidencial", "impugnação", "fato-eleitoral",
+                "transição")
 _TEMA_ALIAS = {
     "pesquisa": "pesquisa-executivo", "pesquisa executivo": "pesquisa-executivo",
     "pesquisa-eleitoral": "pesquisa-executivo", "pesquisa eleitoral": "pesquisa-executivo",
@@ -507,6 +531,9 @@ _TEMA_ALIAS = {
     "fato eleitoral": "fato-eleitoral", "impacto eleitoral": "fato-eleitoral",
     "fato com impacto eleitoral": "fato-eleitoral",
     "acontecimento": "fato-eleitoral",
+    "transicao": "transição", "transição de governo": "transição",
+    "transicao de governo": "transição", "transição-educação": "transição",
+    "transição-saúde": "transição", "secretariado": "transição",
     "educacao": "educação", "proposta-educação": "educação",
     "proposta-educacao": "educação", "proposta educação": "educação",
     "proposta de governo em educação": "educação", "crítica-educação": "educação",
@@ -522,7 +549,10 @@ TEMAS_EDUCACAO = ("educação",)
 # quem está no meio do caso, não o da disputa, então travar por cargo derrubaria
 # justamente o alerta que o time pediu (o caso do MA é um exemplo: o acusado não
 # é candidato ao executivo, o candidato ligado a ele é que interessa).
-TEMAS_LIVRES_DE_CARGO = TEMAS_EDUCACAO + ("debate", "fato-eleitoral")
+#
+# Transição entra pela mesma razão: quem está na notícia é o secretário que
+# entra ou sai, e o cargo dele vem como "outro".
+TEMAS_LIVRES_DE_CARGO = TEMAS_EDUCACAO + ("debate", "fato-eleitoral", "transição")
 _TEMA_VAZIO = {"", "nenhum", "none", "null", "nan", "não", "nao", "n/a"}
 
 # Só pesquisa desses institutos vira alerta (lista fechada, do prompt do time).
@@ -681,13 +711,13 @@ def classificar_com_gemini(titulo, trecho=""):
         '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | pesquisa | cobertura geral | não relacionado | indefinido",\n'
         '  "convencao": true ou false — true SOMENTE se a notícia trata diretamente de uma convenção partidária '
         "(data, realização, resultado ou decisão tomada em convenção). Independente do status da candidatura.\n"
-        '  "tipo": "agenda | pesquisa | debate | aliança | apoio | crítica-educação | proposta-educação | visita-presidencial | impugnação | fato-eleitoral | outro",\n'
+        '  "tipo": "agenda | pesquisa | debate | aliança | apoio | crítica-educação | proposta-educação | visita-presidencial | impugnação | fato-eleitoral | transição | outro",\n'
         '  "instituto": "Nome do instituto de pesquisa, se a notícia trata de pesquisa de intenção de voto '
         "(ex: Datafolha, Quaest, Ipec, AtlasIntel). null se não for pesquisa ou se o instituto não for citado\",\n"
         '  "abrangencia": "Só quando a notícia trata de pesquisa eleitoral: \'nacional\' se a pesquisa ouviu o '
         "Brasil inteiro, 'estadual' se ouviu só um estado. Repare que site regional publica pesquisa nacional "
         "o tempo todo: o que vale é quem foi ouvido, não quem publicou. null se não for pesquisa\",\n"
-        '  "alerta_tema": "pesquisa-executivo | apoio | rompimento | proposta-educação | debate | visita-presidencial | impugnação | fato-eleitoral | nenhum",\n'
+        '  "alerta_tema": "pesquisa-executivo | apoio | rompimento | proposta-educação | debate | visita-presidencial | impugnação | fato-eleitoral | transição | nenhum",\n'
         '  "confianca": "alto | médio | baixo"\n'
         "}\n\n"
         "Regras de preenchimento:\n"
@@ -743,6 +773,10 @@ def classificar_com_gemini(titulo, trecho=""):
         "operação policial, prisão, condenação, morte, afastamento, indefinição pública "
         "sobre disputar ou não, disputa em torno de um tema local) e que a notícia liga a "
         "um candidato, pré-candidato, partido ou governo da eleição de 2026\n"
+        "  - tipo='transição': transição de governo estadual depois da eleição, nas pastas de "
+        "Educação ou de Saúde: nome anunciado, confirmado, convidado ou cotado para a "
+        "secretaria, secretário que sai ou que fica, quem cuida da área na equipe de "
+        "transição, fusão, divisão ou criação de secretaria nessas duas áreas\n"
         "  - tipo='outro': não se encaixa em nenhum dos anteriores\n"
         "- confianca='alto': candidato, cargo e UF estão todos explícitos no texto\n"
         "- confianca='médio': algum campo foi inferido com boa certeza pelo contexto\n"
@@ -797,6 +831,20 @@ def classificar_com_gemini(titulo, trecho=""):
         "  Não conta: crime, operação, tragédia ou decisão judicial que a notícia não amarra "
         "a ninguém da disputa; notícia de gestão pública sem candidato na história; "
         "especulação de terceiro sobre o que um político faria\n"
+        "- 'transição': a notícia trata da transição de um governo ESTADUAL depois da "
+        "eleição de 2026 e diz respeito à Secretaria de Educação ou à Secretaria de Saúde "
+        "do estado. Precisa das DUAS coisas ao mesmo tempo:\n"
+        "  (1) é sobre a troca ou a montagem do governo: governador eleito ou reeleito "
+        "anuncia, confirma, convida ou sonda alguém para a secretaria; nome cotado para "
+        "a pasta; secretário que deixa o cargo ou é mantido; equipe de transição com "
+        "responsável ou grupo de trabalho da área; fusão, divisão, criação ou extinção "
+        "de secretaria;\n"
+        "  (2) a pasta é Educação ou Saúde, dita na notícia. Secretariado anunciado em "
+        "bloco conta se a notícia traz o nome para uma das duas.\n"
+        "  Não conta: rotina de gestão da secretaria atual (obra, programa, greve, "
+        "licitação) sem ligação com a troca de governo; outras pastas; secretaria "
+        "municipal; ministério do governo federal; promessa de campanha de candidato "
+        "que ainda disputa o 2º turno\n"
         "- 'nenhum': todo o resto, inclusive notícia relevante que não se encaixa nos temas acima\n"
         "- Na dúvida entre 'nenhum' e um tema que se encaixa, escolha o tema\n\n"
         "- Responda SOMENTE o objeto JSON, sem texto extra, sem markdown, sem bloco de código\n\n"
@@ -901,13 +949,16 @@ def _header_alerta(n) -> str:
         Alerta | EixoGov | Eleições | Subnacional | MG
         Alerta | EixoGov | Educação | Subnacional | GO
         Alerta | EixoGov | Eleições | Gov. Federal
+        Alerta | EixoGov | Transição | Subnacional | PR
 
     O terceiro campo separa os dois envios que o time faz (eleições e educação).
     O quarto é o escopo: "Gov. Federal" quando o fato é da disputa presidencial,
     e nada quando não deu pra saber a UF de uma disputa estadual, porque afirmar
     o escopo errado é pior do que omitir.
     """
-    assunto = "Educação" if n.get("alerta_tema") in TEMAS_EDUCACAO else "Eleições"
+    tema = n.get("alerta_tema")
+    assunto = ("Educação" if tema in TEMAS_EDUCACAO
+               else "Transição" if tema == "transição" else "Eleições")
     uf = _uf_relevante(n)
     if uf:
         return f"Alerta | EixoGov | {assunto} | Subnacional | {uf}"
@@ -1054,6 +1105,15 @@ def gerar_texto_alerta(n) -> str:
             "economia, bate-boca) só entra no segundo parágrafo, e só se sobrar espaço. "
             "Se a notícia mal falar de educação, escreva o pouco que ela traz de "
             "educação em vez de completar com os outros assuntos.\n\n")
+
+    if n.get("alerta_tema") == "transição":
+        angulo = (
+            "ÂNGULO OBRIGATÓRIO: este alerta é sobre a transição de governo no estado, "
+            "nas pastas de Educação e de Saúde. Título e primeiro parágrafo dizem quem "
+            "entra, quem sai ou quem cuida da área, com o cargo e a pasta escritos como "
+            "estão na notícia, e se o nome está confirmado, convidado ou só cotado. "
+            "Não trate como confirmado o que a notícia dá como cotado. Outras pastas "
+            "do mesmo anúncio só entram no segundo parágrafo, e só se sobrar espaço.\n\n")
 
     prompt = (
         "Você é um analista que produz alertas padronizados para WhatsApp, para uma "
@@ -1540,6 +1600,7 @@ ROTULO_TEMA = {
     "visita-presidencial": "Visita de presidenciável no estado",
     "impugnação": "Impugnação de candidatura",
     "fato-eleitoral": "Fato com impacto eleitoral",
+    "transição": "Transição de governo (Educação e Saúde)",
 }
 
 PAINEL_URL = os.getenv("PAINEL_NOTICIAS_URL",
