@@ -601,7 +601,24 @@ def instituto_prioritario(raw) -> str:
     return "Real Time Big Data" if "rtbd" in chave else ""
 
 
-def aplicar_regra_alerta(dados) -> dict:
+# Trava do alerta de transição. Na primeira rodada com o tema (08/10/2026, 10h45)
+# saíram 32 alertas e 20 eram transição em geral: equipe anunciada, cronograma,
+# governador que reúne o secretariado, sem nenhuma das duas pastas na notícia. O
+# modelo lia "transição" e marcava. A condição é estrutural (a notícia nomeia a
+# secretaria, o secretário ou a pasta de Educação ou de Saúde?), então fica em
+# código, como a do instituto nas pesquisas. "Educação" ou "saúde" soltas não
+# bastam: aparecem em qualquer lista de prioridades de governo.
+_RE_PASTA_TRANSICAO = re.compile(
+    r"secretari[oa]s?\s+(?:\w+\s+){0,3}?(?:de|da|do)\s+(?:estado\s+d[ae]\s+)?(?:educacao|saude)"
+    r"|(?:pasta|area|comando|titular)\s+(?:\w+\s+){0,2}?d[ae]\s+(?:educacao|saude)"
+    r"|\bseduc\b")
+
+
+def cita_pasta_de_educacao_ou_saude(texto) -> bool:
+    return bool(_RE_PASTA_TRANSICAO.search(_sem_acento(texto or "").lower()))
+
+
+def aplicar_regra_alerta(dados, texto: str = "") -> dict:
     """Confere em código o alerta que o Gemini propôs e derruba o que não passa.
 
     O modelo lê a notícia e sugere o tema; quem decide é esta função. As condições
@@ -632,6 +649,8 @@ def aplicar_regra_alerta(dados) -> dict:
         # quem falou ou de quem está no caso, não o da disputa
         tema = ""
     if dados.get("status") == "não relacionado":
+        tema = ""
+    if tema == "transição" and not cita_pasta_de_educacao_ou_saude(texto):
         tema = ""
 
     dados["alerta_tema"] = tema
@@ -844,7 +863,11 @@ def classificar_com_gemini(titulo, trecho=""):
         "  Não conta: rotina de gestão da secretaria atual (obra, programa, greve, "
         "licitação) sem ligação com a troca de governo; outras pastas; secretaria "
         "municipal; ministério do governo federal; promessa de campanha de candidato "
-        "que ainda disputa o 2º turno\n"
+        "que ainda disputa o 2º turno; e transição em geral (equipe de transição "
+        "anunciada, cronograma, reunião do secretariado, governador que diz que vai "
+        "trocar secretários) quando a notícia não nomeia a Secretaria de Educação nem a "
+        "de Saúde. Para este tema NÃO vale a regra da dúvida abaixo: sem a pasta dita "
+        "na notícia, é 'nenhum'\n"
         "- 'nenhum': todo o resto, inclusive notícia relevante que não se encaixa nos temas acima\n"
         "- Na dúvida entre 'nenhum' e um tema que se encaixa, escolha o tema\n\n"
         "- Responda SOMENTE o objeto JSON, sem texto extra, sem markdown, sem bloco de código\n\n"
@@ -880,7 +903,7 @@ def classificar_com_gemini(titulo, trecho=""):
     dados["convencao"] = "sim" if dados.get("convencao") is True else "não"
     abrang = str(dados.get("abrangencia") or "").strip().lower()
     dados["abrangencia"] = abrang if abrang in ("nacional", "estadual") else ""
-    return aplicar_regra_alerta(dados)
+    return aplicar_regra_alerta(dados, contexto)
 
 
 def _classificar_uma(n):
@@ -1113,7 +1136,10 @@ def gerar_texto_alerta(n) -> str:
             "entra, quem sai ou quem cuida da área, com o cargo e a pasta escritos como "
             "estão na notícia, e se o nome está confirmado, convidado ou só cotado. "
             "Não trate como confirmado o que a notícia dá como cotado. Outras pastas "
-            "do mesmo anúncio só entram no segundo parágrafo, e só se sobrar espaço.\n\n")
+            "do mesmo anúncio só entram no segundo parágrafo, e só se sobrar espaço. "
+            "Escreva só o que a notícia traz sobre Educação e Saúde: não diga que a "
+            "transição 'foca' ou 'prioriza' essas áreas se a notícia não disser, e não "
+            "registre o que a notícia NÃO informa (por exemplo, 'sem definir nomes').\n\n")
 
     prompt = (
         "Você é um analista que produz alertas padronizados para WhatsApp, para uma "
