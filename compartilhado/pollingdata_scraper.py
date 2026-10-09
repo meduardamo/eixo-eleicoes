@@ -764,6 +764,11 @@ SCORE_INSTITUTO = {
 
 MEIA_VIDA_AGREGADORES_DIAS = 30
 DIAS_MAX_INATIVIDADE_CANDIDATO = 60
+# Dia seguinte ao 1º turno (04/10/2026). No 2º turno, a partir do dia em que o
+# confronto tem pesquisa com campo encerrado desta data em diante, a média usa
+# só essas; as de antes eram hipótese de 2º turno. Enquanto o confronto não tem
+# nenhuma, a média segue com as anteriores. Decisão da Eduarda em 09/10/2026.
+INICIO_CAMPO_SEGUNDO_TURNO = pd.Timestamp("2026-10-05")
 COLUNA_MODELO_AMOSTRAL = "media_amostral_30d"
 COLUNA_MODELO_HIBRIDO = "media_hibrida_30d"
 COLUNA_DECLARADO = "declarado_hibrido_30d"
@@ -2371,6 +2376,14 @@ def _anexar_metadados_pesquisa(
     return df
 
 
+def _so_campo_pos_primeiro_turno(disponiveis: pd.DataFrame, turno) -> pd.DataFrame:
+    """No 2º turno, fica só com as pesquisas de campo posterior ao 1º turno, se houver."""
+    if str(turno).strip().lower() != "t2":
+        return disponiveis
+    posteriores = disponiveis[disponiveis["_data_disponivel"].ge(INICIO_CAMPO_SEGUNDO_TURNO)]
+    return disponiveis if posteriores.empty else posteriores
+
+
 def _calcular_serie_agregada_30d(
     df: pd.DataFrame,
     coluna_saida: str,
@@ -2399,6 +2412,7 @@ def _calcular_serie_agregada_30d(
         data_final = min(data_final, data_limite_cand)
         for data_ref in pd.date_range(grupo["_data_disponivel"].min(), data_final, freq="D"):
             disponiveis = grupo[grupo["_data_disponivel"].le(data_ref)].copy()
+            disponiveis = _so_campo_pos_primeiro_turno(disponiveis, chave[chaves_escopo.index("turno")])
             idade = (data_ref - disponiveis["_data_peso"]).dt.days.clip(lower=0)
             peso = disponiveis["_amostra_num"].pow(0.5) * (
                 2.0 ** (-idade / MEIA_VIDA_AGREGADORES_DIAS)
@@ -2447,6 +2461,7 @@ def _serie_declarado_30d(df: pd.DataFrame, datas_finais_escopo: dict) -> pd.Data
         data_final = datas_finais_escopo.get(chave, grupo["_data_disponivel"].max())
         for data_ref in pd.date_range(grupo["_data_disponivel"].min(), data_final, freq="D"):
             disponiveis = grupo[grupo["_data_disponivel"].le(data_ref)]
+            disponiveis = _so_campo_pos_primeiro_turno(disponiveis, chave[chaves_escopo.index("turno")])
             idade = (data_ref - disponiveis["_data_peso"]).dt.days.clip(lower=0)
             peso = (
                 disponiveis["_amostra_num"].pow(0.5)

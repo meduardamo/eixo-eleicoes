@@ -309,6 +309,48 @@ class CalculosPollingDataTest(unittest.TestCase):
 
         self.assertAlmostEqual(linha_gov[COLUNA_MODELO_HIBRIDO], 55.0)
 
+    def _confronto_t2(self, *itens: tuple[str, str, float]) -> pd.DataFrame:
+        linhas = []
+        for poll_id, data, percentual in itens:
+            linha = pesquisa(poll_id, data, percentual, "A+", candidato="Fulano")
+            linha["turno"] = "t2"
+            linha["disputa"] = "t2_fulano-beltrano"
+            linhas.append(linha)
+        return pd.DataFrame(linhas)
+
+    def test_segundo_turno_usa_so_campo_posterior_ao_primeiro_turno(self):
+        resultados = self._confronto_t2(
+            ("antes", "2026-10-03", 40),
+            ("depois", "2026-10-07", 50),
+        )
+        pesquisas = metadados_amostra(
+            ("antes", 1000, "2026-10-03"),
+            ("depois", 1000, "2026-10-07"),
+        )
+
+        calculado = calcular_agregadores_paralelos_resultados_bi(resultados, pesquisas)
+        serie = calculado.set_index("data_campo")[COLUNA_MODELO_HIBRIDO]
+
+        # Até a primeira pesquisa de campo posterior ao 1º turno, vale a anterior.
+        self.assertAlmostEqual(serie["2026-10-06"], 40.0)
+        self.assertAlmostEqual(serie["2026-10-07"], 50.0)
+
+    def test_segundo_turno_sem_pesquisa_nova_segue_com_as_anteriores(self):
+        resultados = self._confronto_t2(
+            ("p1", "2026-09-20", 40),
+            ("p2", "2026-10-03", 50),
+        )
+        pesquisas = metadados_amostra(
+            ("p1", 1000, "2026-09-20"),
+            ("p2", 1000, "2026-10-03"),
+        )
+
+        calculado = calcular_agregadores_paralelos_resultados_bi(resultados, pesquisas)
+        ultimo = calculado.sort_values("data_campo")[COLUNA_MODELO_HIBRIDO].iloc[-1]
+
+        self.assertGreater(ultimo, 40.0)
+        self.assertLess(ultimo, 50.0)
+
 
 if __name__ == "__main__":
     unittest.main()
