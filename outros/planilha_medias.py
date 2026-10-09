@@ -51,6 +51,7 @@ INICIO_SERIE = pd.Timestamp("2026-07-01")
 CONFRONTOS_2T = {"AC": "t2_rick-assis", "AM": "t2_seffair-aziz", "DF": "t2_leao-grass",
                  "ES": "t2_pazolini-ferraco", "RJ": "t2_ruas-paes", "RN": "t2_bezerra-xavier",
                  "TO": "t2_seabra-junior"}
+CONFRONTO_PRESIDENTE_2T = "t2_flavio-lula"
 NV = "Brancos, nulos e indecisos"
 
 SAI = {"Renúncia", "Indeferido", "Cancelado", "Falecido", "Cassado"}
@@ -266,6 +267,20 @@ def so_confrontos_reais(df):
     return df[df.uf.map(CONFRONTOS_2T) == df.disputa]
 
 
+def so_presidente_2t(df):
+    """Flávio x Lula nacional, o confronto de presidente que foi para o 2º turno."""
+    return df[(df.cargo == 'presidente') & (df.uf == 'BR') & (df.disputa == CONFRONTO_PRESIDENTE_2T)]
+
+
+def nome_do_bloco(uf):
+    return 'Brasil (BR) - Presidente' if uf == 'BR' else f'{NOMES_UF[uf]} ({uf})'
+
+
+def ordem_dos_blocos():
+    """Presidente primeiro, depois os estados em ordem alfabética."""
+    return ['BR'] + sorted(NOMES_UF, key=lambda k: sem_acento(NOMES_UF[k]).lower())
+
+
 def num(s):
     return pd.to_numeric(s.astype(str).str.replace(',', '.'), errors='coerce')
 
@@ -348,16 +363,19 @@ def montar_serie_semanal(dados, hoje, log=print):
 
 
 def montar_serie_segundo_turno(dados, hoje, log=print):
-    """Mesma série do 1º turno, um bloco por confronto de 2º turno de governador (`disputa`)."""
+    """Um bloco por confronto de 2º turno (`disputa`): presidente nacional e os de governador."""
     bi = dados['resultados_bi_t2']
-    bi = so_confrontos_reais(bi[(bi.cargo == 'governador') & (bi.turno == 't2') & (bi.tipo == 'candidato')]).copy()
+    bi = bi[(bi.turno == 't2') & (bi.tipo == 'candidato')]
+    bi = pd.concat([so_presidente_2t(bi), so_confrontos_reais(bi[bi.cargo == 'governador'])]).copy()
     bi['h'] = num(bi.media_hibrida_30d)
     bi['nv'] = 100 - num(bi.declarado_hibrido_30d)
     bi['d'] = pd.to_datetime(bi.data_campo)
     bi = bi[bi.h.notna()]
     nv = bi.drop_duplicates(['uf', 'disputa', 'd'])[['uf', 'disputa', 'd', 'nv']].rename(columns={'nv': 'h'})
     nv = nv[nv.h.notna()]
-    bi = filtrar_registrados(bi, dados['base'], log)
+    # O casamento com o TSE é pelo registro de governador; presidente segue com o nome da matriz.
+    bi = pd.concat([bi[bi.cargo == 'presidente'],
+                    filtrar_registrados(bi[bi.cargo == 'governador'], dados['base'], log)])
 
     datas = list(pd.date_range(INICIO_SERIE, hoje, freq='7D'))
     if datas[-1] < hoje.normalize():
@@ -371,16 +389,16 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
     grid, fmt, datas_cel, series_cel = [], [], [], []
     grid.append([f'SÉRIE SEMANAL 2º TURNO - MÉDIA PONDERADA (JULHO A {mes_fim})'])
     fmt.append((0, 0, 8, 'titulo'))
-    grid.append(['Confrontos de 2º turno para governador, com brancos, nulos e indecisos. '
+    grid.append(['Confrontos de 2º turno para presidente e governador, com brancos, nulos e indecisos. '
                  f'Valores em %. {atualizado(hoje)}'])
     fmt.append((1, 0, 8, 'sub'))
     grid.append(['Sem pesquisa nova do confronto, a série repete o último valor: veja a data da última pesquisa '
-                 'no título de cada bloco. * Candidatura indeferida pelo TSE, com recurso.'])
+                 'no título de cada bloco. Confronto com pesquisa feita depois do 1º turno usa só essas, e a série '
+                 'começa na primeira delas. * Candidatura indeferida pelo TSE, com recurso.'])
     fmt.append((2, 0, 8, 'sub'))
     grid.append([])
     largura_max = 0
-    ordem_ufs = sorted(NOMES_UF, key=lambda k: sem_acento(NOMES_UF[k]).lower())
-    for uf in ordem_ufs:
+    for uf in ordem_dos_blocos():
         for disputa in sorted(bi[bi.uf == uf].disputa.unique()):
             u = bi[(bi.uf == uf) & (bi.disputa == disputa)]
             fim = u.d.max()
@@ -401,7 +419,7 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
             r0 = len(grid)
             linha = [''] * (foto_col + 2)
             curto = ' x '.join(re.sub(r'\s*\([^)]*\)\s*\*?$', '', c) for c in vivos)
-            linha[0] = f'{NOMES_UF[uf]} ({uf}) - {curto} - última pesquisa em {fim:%d/%m}'
+            linha[0] = f'{nome_do_bloco(uf)} - {curto} - última pesquisa em {fim:%d/%m}'
             linha[foto_col] = f'{uf} - Foto atual'
             grid.append(linha)
             fmt += [(r0, 0, ncol, 'estado'), (r0, foto_col, foto_col + 2, 'estado')]
@@ -425,25 +443,28 @@ def montar_ultimas_t2(dados, hoje, log=print):
     """Últimas Pesquisas do 2º turno: por confronto, a Média Eixo e as duas pesquisas mais recentes."""
     from compartilhado import pollingdata_scraper as ps
     res = dados['resultados_t2']
-    res = so_confrontos_reais(res[(res.cargo == 'governador') & (res.turno == 't2')]).copy()
+    res = res[res.turno == 't2']
+    res = pd.concat([so_presidente_2t(res), so_confrontos_reais(res[res.cargo == 'governador'])]).copy()
     res['p'] = num(res.percentual)
     res['data_campo'] = pd.to_datetime(res.data_campo)
     pesq = dados['pesquisas_t2'].drop_duplicates('poll_id').set_index('poll_id')
     bi = dados['resultados_bi_t2']
-    bi = so_confrontos_reais(bi[(bi.cargo == 'governador') & (bi.turno == 't2') & (bi.tipo == 'candidato')]).copy()
+    bi = bi[(bi.turno == 't2') & (bi.tipo == 'candidato')]
+    bi = pd.concat([so_presidente_2t(bi), so_confrontos_reais(bi[bi.cargo == 'governador'])]).copy()
     bi['h'] = num(bi.media_hibrida_30d)
     bi['nv'] = 100 - num(bi.declarado_hibrido_30d)
     bi['d'] = pd.to_datetime(bi.data_campo)
     bi = bi[bi.h.notna()]
-    nomes, _ = nomes_publicados(pd.concat([bi[['uf', 'candidato_partido']],
-                                           res[res.tipo == 'candidato'][['uf', 'candidato_partido']]]),
+    # Presidente fica com o nome da matriz: o casamento com o TSE é pelo registro de governador.
+    nomes, _ = nomes_publicados(pd.concat([bi[bi.cargo == 'governador'][['uf', 'candidato_partido']],
+                                           res[(res.cargo == 'governador') & (res.tipo == 'candidato')][['uf', 'candidato_partido']]]),
                                 dados['base'], log=lambda *_: None)
     nome = lambda uf, cp: nomes.get((uf, cp), cp)
     curto = lambda n: re.sub(r'\s*\([^)]*\)\s*\*?$', '', n)
     f1 = lambda x: f'{x:.1f}'.replace('.', ',')
 
     linhas = []
-    for uf in sorted(NOMES_UF, key=lambda k: sem_acento(NOMES_UF[k]).lower()):
+    for uf in ordem_dos_blocos():
         for disputa in sorted(res[res.uf == uf].disputa.dropna().unique()):
             u_bi = bi[(bi.uf == uf) & (bi.disputa == disputa)]
             if u_bi.empty:
@@ -482,13 +503,13 @@ def montar_ultimas_t2(dados, hoje, log=print):
             if dias > 21:
                 obs += f'. Última pesquisa há {dias} dias'
             fmtp = lambda v: '-' if v is None else f1(v) + '%'
-            linhas.append([f'{NOMES_UF[uf]} ({uf})', f'{curto(a)} x {curto(b)}',
+            linhas.append([nome_do_bloco(uf), f'{curto(a)} x {curto(b)}',
                            a, f1(ma) + '%', b, f1(mb) + '%', f1(ma - mb) + ' p.p.', f1(mnv) + '%', f'{fim:%d/%m}']
                           + [x for pl in ps_lin for x in (pl[0], pl[1], fmtp(pl[2]), fmtp(pl[3]), fmtp(pl[4]))]
                           + [obs])
     N = len(linhas[0]) if linhas else 20
     grid = [[f'ÚLTIMAS PESQUISAS 2º TURNO - COMPARATIVO ENTRE LEVANTAMENTOS RECENTES ({MESES[hoje.month].upper()}/{hoje.year})'],
-            ['Por confronto de 2º turno para governador: a Média Ponderada Eixo e as duas pesquisas mais recentes registradas no TSE. '
+            ['Por confronto de 2º turno para presidente e governador: a Média Ponderada Eixo e as duas pesquisas mais recentes registradas no TSE. '
              + atualizado(hoje)],
             ['Os percentuais das pesquisas estão na ordem da Média (candidato A e candidato B). Brancos/Nulos inclui indecisos. '
              '* Candidatura com recurso.'],
