@@ -331,8 +331,8 @@ class CalculosPollingDataTest(unittest.TestCase):
         calculado = calcular_agregadores_paralelos_resultados_bi(resultados, pesquisas)
         serie = calculado.set_index("data_campo")[COLUNA_MODELO_HIBRIDO]
 
-        # Até a primeira pesquisa de campo posterior ao 1º turno, vale a anterior.
-        self.assertAlmostEqual(serie["2026-10-06"], 40.0)
+        # A série começa na primeira pesquisa de campo posterior ao 1º turno.
+        self.assertEqual(serie.index.min(), "2026-10-07")
         self.assertAlmostEqual(serie["2026-10-07"], 50.0)
 
     def test_segundo_turno_sem_pesquisa_nova_segue_com_as_anteriores(self):
@@ -348,6 +348,7 @@ class CalculosPollingDataTest(unittest.TestCase):
         calculado = calcular_agregadores_paralelos_resultados_bi(resultados, pesquisas)
         ultimo = calculado.sort_values("data_campo")[COLUNA_MODELO_HIBRIDO].iloc[-1]
 
+        self.assertEqual(calculado["data_campo"].min(), "2026-09-20")
         self.assertGreater(ultimo, 40.0)
         self.assertLess(ultimo, 50.0)
 

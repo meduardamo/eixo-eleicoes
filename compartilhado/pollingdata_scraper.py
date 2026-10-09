@@ -764,10 +764,12 @@ SCORE_INSTITUTO = {
 
 MEIA_VIDA_AGREGADORES_DIAS = 30
 DIAS_MAX_INATIVIDADE_CANDIDATO = 60
-# Dia seguinte ao 1º turno (04/10/2026). No 2º turno, a partir do dia em que o
-# confronto tem pesquisa com campo encerrado desta data em diante, a média usa
-# só essas; as de antes eram hipótese de 2º turno. Enquanto o confronto não tem
-# nenhuma, a média segue com as anteriores. Decisão da Eduarda em 09/10/2026.
+# Dia seguinte ao 1º turno (04/10/2026). No 2º turno, o confronto que tem
+# pesquisa com campo encerrado desta data em diante fica com a média só dessas:
+# a série começa na primeira delas e os dias anteriores saem sem média, porque
+# as pesquisas de antes eram hipótese de 2º turno. Enquanto o confronto não tem
+# nenhuma, a média segue inteira com as anteriores. Decisão da Eduarda em
+# 09/10/2026.
 INICIO_CAMPO_SEGUNDO_TURNO = pd.Timestamp("2026-10-05")
 COLUNA_MODELO_AMOSTRAL = "media_amostral_30d"
 COLUNA_MODELO_HIBRIDO = "media_hibrida_30d"
@@ -2384,6 +2386,17 @@ def _so_campo_pos_primeiro_turno(disponiveis: pd.DataFrame, turno) -> pd.DataFra
     return disponiveis if posteriores.empty else posteriores
 
 
+def _inicio_pos_primeiro_turno_por_escopo(df: pd.DataFrame, chaves_escopo: list[str]) -> dict:
+    """Dia da primeira pesquisa de campo posterior ao 1º turno em cada confronto de 2º turno."""
+    posteriores = df[
+        df["turno"].astype(str).str.strip().str.lower().eq("t2")
+        & df["_data_disponivel"].ge(INICIO_CAMPO_SEGUNDO_TURNO)
+    ]
+    if posteriores.empty:
+        return {}
+    return posteriores.groupby(chaves_escopo, dropna=False)["_data_disponivel"].min().to_dict()
+
+
 def _calcular_serie_agregada_30d(
     df: pd.DataFrame,
     coluna_saida: str,
@@ -2401,6 +2414,7 @@ def _calcular_serie_agregada_30d(
     datas_finais = datas_finais_escopo or (
         df.groupby(chaves_escopo, dropna=False)["_data_disponivel"].max().to_dict()
     )
+    inicios_pos = _inicio_pos_primeiro_turno_por_escopo(df, chaves_escopo)
     linhas = []
     for chave, grupo in df.groupby(chaves_serie, dropna=False):
         grupo = grupo.sort_values("_data_disponivel").copy()
@@ -2410,7 +2424,8 @@ def _calcular_serie_agregada_30d(
         data_final = datas_finais.get(chave_escopo, grupo["_data_disponivel"].max())
         data_limite_cand = grupo["_data_disponivel"].max() + pd.Timedelta(days=DIAS_MAX_INATIVIDADE_CANDIDATO)
         data_final = min(data_final, data_limite_cand)
-        for data_ref in pd.date_range(grupo["_data_disponivel"].min(), data_final, freq="D"):
+        data_inicial = max(grupo["_data_disponivel"].min(), inicios_pos.get(chave_escopo, pd.Timestamp.min))
+        for data_ref in pd.date_range(data_inicial, data_final, freq="D"):
             disponiveis = grupo[grupo["_data_disponivel"].le(data_ref)].copy()
             disponiveis = _so_campo_pos_primeiro_turno(disponiveis, chave[chaves_escopo.index("turno")])
             idade = (data_ref - disponiveis["_data_peso"]).dt.days.clip(lower=0)
@@ -2456,10 +2471,12 @@ def _serie_declarado_30d(df: pd.DataFrame, datas_finais_escopo: dict) -> pd.Data
         .reset_index()
     )
 
+    inicios_pos = _inicio_pos_primeiro_turno_por_escopo(por_pesquisa, chaves_escopo)
     linhas = []
     for chave, grupo in por_pesquisa.groupby(chaves_escopo, dropna=False):
         data_final = datas_finais_escopo.get(chave, grupo["_data_disponivel"].max())
-        for data_ref in pd.date_range(grupo["_data_disponivel"].min(), data_final, freq="D"):
+        data_inicial = max(grupo["_data_disponivel"].min(), inicios_pos.get(chave, pd.Timestamp.min))
+        for data_ref in pd.date_range(data_inicial, data_final, freq="D"):
             disponiveis = grupo[grupo["_data_disponivel"].le(data_ref)]
             disponiveis = _so_campo_pos_primeiro_turno(disponiveis, chave[chaves_escopo.index("turno")])
             idade = (data_ref - disponiveis["_data_peso"]).dt.days.clip(lower=0)
