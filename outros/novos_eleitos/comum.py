@@ -7,6 +7,7 @@ título de eleitor para cruzar bases diferentes.
 import io
 import json
 import os
+import threading
 import re
 import time
 import unicodedata
@@ -186,7 +187,10 @@ def em_cache(pasta, chave, buscar):
     valor = buscar()
     if valor is not None:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(valor, ensure_ascii=False))
+        # grava num temporário e troca: outra thread nunca lê o arquivo pela metade
+        tmp = p.with_name(f"{p.name}.{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(valor, ensure_ascii=False))
+        os.replace(tmp, p)
     return valor
 
 

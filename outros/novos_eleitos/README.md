@@ -21,8 +21,12 @@ Rodar sempre da raiz do repositório, na ordem:
 | 8 | `python -m outros.novos_eleitos.e8_assembleias_iu_marcela --universo pre` | depois da 4 ou da 5 | Assembleias, e quem sai da assembleia para a Câmara ou o Senado, cruzados com o levantamento do IU e com a planilha da Marcela |
 | 9 | `python -m outros.novos_eleitos.e9_organogramas --universo pre` | depois da 4 ou da 5 | Nomes que aparecem nos organogramas das secretarias estaduais de educação (pasta IN da Marcela, nov/2024). Todo casamento é "a conferir" |
 | 10 | `python -m outros.novos_eleitos.e10_consolidar --universo pre --publicar` | por último | Junta 4, 6, 8 e 9 pelo SQ_CANDIDATO e publica uma aba por Casa, só com as colunas pertinentes: "Mapeamento Senado/Câmara/Assembleias" (`pre`) ou "Eleitos Senado/Câmara/Assembleias" (`eleitos`) |
+| 13 | `python -m outros.novos_eleitos.e13_perfil_senado --grupo curso` | depois da eleição; `--grupo reeleitos` e `--grupo novos` em seguida | Perfil geral de cada senador da próxima legislatura, sem recorte de tema: ficha, comissões e frentes, autoria, relatorias, emendas, votações nominais e discursos com a nota taquigráfica, pela API do Senado. Tema pela classificação do Senado, traduzida para os temas da Câmara. Precisa de `SPREADSHEET_ID_CONGRESSO_ELEITO` |
+| 14 | `python -m outros.novos_eleitos.e14_perfil_camara --universo senado` | depois da 13 | As mesmas tabelas para o que o senador fez na Câmara (legislaturas de 2003 em diante): API para ficha, órgãos, frentes e discursos; arquivos anuais para autoria, emendas, votações e relator do último andamento |
+| 15 | `python -m outros.novos_eleitos.e15_origem_senado` | depois da 13 e da 14 | De onde vem cada senador: origem e mandatos (TSE), passagem pela Câmara e pelo Senado, cargos da ficha da Wikipedia (os da etapa 11 valem como estão), redes declaradas e links de plano de governo pela ficha do DivulgaCand de 2026 ou de 2022 |
+| 16 | `python -m outros.novos_eleitos.e16_planos_senado` | depois da 15 | Baixa os planos de governo dos senadores que foram governadores ou prefeitos, extrai o texto página a página (OCR quando o PDF é imagem) e conta em quantas páginas cada área é citada |
 
-Só as etapas 7, 7b e 10 gravam na planilha "Pré mapeamento". As outras geram CSV em `dados_novos_eleitos/`.
+Só as etapas 7, 7b e 10 gravam na planilha "Pré mapeamento". As outras geram CSV em `dados_novos_eleitos/`; as etapas 13 a 16 gravam em `perfil_senado_*`, `perfil_camara_senado`, `perfil_senado_origem` e `planos_senado`.
 Toda aba sai com o padrão das abas de dado do Radar: cabeçalho de 54 px, linhas de 21 px, Montserrat,
 largura de coluna pelo tamanho do conteúdo e primeiras colunas congeladas.
 
@@ -33,6 +37,7 @@ O repositório é público: nenhum id de planilha vai no código.
 - `GOOGLE_CREDENTIALS_PATH` (padrão `credentials.json`)
 - `SPREADSHEET_ID_TSE`: Candidaturas 2026 (TSE + Notícias), aba `candidaturas_divulgacand`
 - `SPREADSHEET_ID_RECANDIDATURAS`: Radar do Congresso 2026, só leitura (abas de competitividade, para a composição e a conferência)
+- `SPREADSHEET_ID_CONGRESSO_ELEITO`: planilha Congresso Eleito (2026), só leitura (aba `Senado eleito 2026`, universo das etapas 13 a 15)
 - `SPREADSHEET_ID_NOVOS_ELEITOS`: planilha "Pré mapeamento", onde todas as abas desta pasta são gravadas
 - `SPREADSHEET_ID_IU_ESTADUAIS`: levantamento de deputados estaduais do Instituto Unibanco (etapa 8)
 - `SPREADSHEET_ID_CE_ASSEMBLEIAS`: Composição CE - Assembleias, da Marcela (etapa 8)
