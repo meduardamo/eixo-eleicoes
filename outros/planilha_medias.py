@@ -49,7 +49,7 @@ INICIO_SERIE = pd.Timestamp("2026-07-01")
 # pelo resultado do 1º turno no TSE: UF -> `disputa` da matriz T2. Os demais
 # confrontos da matriz são hipóteses testadas antes de 04/10 e ficam de fora.
 CONFRONTOS_2T = {"AC": "t2_rick-assis", "AM": "t2_seffair-aziz", "DF": "t2_leao-grass",
-                 "ES": "t2_pazolini-ferraco", "RJ": "t2_ruas-paes", "RN": "t2_bezerra-xavier",
+                 "ES": "t2_pazolini-ferraco", "RN": "t2_bezerra-xavier",
                  "TO": "t2_seabra-junior"}
 CONFRONTO_PRESIDENTE_2T = "t2_flavio-lula"
 NV = "Brancos, nulos e indecisos"
