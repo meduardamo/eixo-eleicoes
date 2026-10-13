@@ -636,7 +636,9 @@ def gravar_serie_semanal(sh, grid, fmt, largura_max, datas_cel, series_cel, aba=
     fmt = [(0, 0, largura_max, 'titulo'), (1, 0, largura_max, 'sub'), (2, 0, largura_max, 'sub')] + fmt[3:]
     reqs = []
     for linha, c0, c1, est in fmt:
-        if est in ('titulo', 'sub', 'estado'):
+        # O título do bloco não é mesclado: célula mesclada corta o texto na borda, e solta
+        # ele transborda para a coluna vazia ao lado quando o nome do confronto é comprido.
+        if est in ('titulo', 'sub') or (est == 'estado' and c0 > 0):
             reqs.append({'mergeCells': {'range': {'sheetId': sid, 'startRowIndex': linha, 'endRowIndex': linha + 1,
                                                   'startColumnIndex': c0, 'endColumnIndex': c1},
                                         'mergeType': 'MERGE_ALL'}})
