@@ -426,13 +426,21 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
             grid.append(['Data'] + colunas + [''] + ['Candidato', '% Atual'])
             fmt += [(r0 + 1, 0, ncol, 'cabecalho'), (r0 + 1, foto_col, foto_col + 2, 'cabecalho')]
             atuais = [(cp, valor(series[cp], fim)) for cp in colunas]
-            for i, dt in enumerate(datas):
-                lin = [dt.strftime('%Y-%m-%d')]
-                lin += [valor(series[cp], min(dt, fim)) if dt >= series[cp].d.min() else '' for cp in colunas] + ['']
-                lin += list(atuais[i]) if i < len(atuais) else ['', '']
+            # Semana anterior ao começo da série não vira linha (o confronto com pesquisa
+            # pós 1º turno começa na primeira delas).
+            inicio = min(series[cp].d.min() for cp in colunas)
+            datas_bloco = [dt for dt in datas if dt >= inicio]
+            for i in range(max(len(datas_bloco), len(atuais))):
+                if i < len(datas_bloco):
+                    dt = datas_bloco[i]
+                    lin = [dt.strftime('%Y-%m-%d')]
+                    lin += [valor(series[cp], min(dt, fim)) if dt >= series[cp].d.min() else '' for cp in colunas]
+                else:
+                    lin = [''] * ncol
+                lin += [''] + (list(atuais[i]) if i < len(atuais) else ['', ''])
                 grid.append(lin)
-            datas_cel.append((r0 + 2, r0 + 2 + len(datas)))
-            series_cel.append((r0 + 2, r0 + 2 + len(datas), 1, ncol))
+            datas_cel.append((r0 + 2, r0 + 2 + len(datas_bloco)))
+            series_cel.append((r0 + 2, r0 + 2 + len(datas_bloco), 1, ncol))
             grid.append([])
             log(f'  {uf} {disputa}: última data {fim:%d/%m}, {atuais[:2]}')
     grid = [row + [''] * (largura_max - len(row)) for row in grid]
