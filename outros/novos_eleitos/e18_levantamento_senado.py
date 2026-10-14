@@ -12,10 +12,19 @@ Voto não conta: todo senador vota, e o voto mede posição, não iniciativa. Ho
 comemorativa, utilidade pública e outorga de rádio e TV ficam fora.
 
 Nível por tema: a parte que o tema ocupa nos registros de iniciativa do próprio senador.
-Alta a partir de 20%, Média de 8% a menos de 20%, Baixa abaixo de 8%, Sem registro quando não há
-nenhum. A célula traz o nível e o número de registros. A área vem da classificação da própria Casa;
-o público vem da classificação do Senado, quando ela diz, e de termos da ementa. O grau de informação diz quanto há de
-registro no total: com menos de 10, os níveis valem pouco.
+Alta a partir de 15%, Média de 7% a menos de 15%, Baixa abaixo de 7%, Sem registro quando não há
+nenhum. Uma matéria pode ter mais de uma área, e as partes somam em média 145% por senador: dividida
+igualmente entre as 22 áreas, cada uma ficaria com 6,6%, daí o corte da Média em 7%. A célula traz o nível e o
+número de registros. A área vem da classificação da própria Casa; o público vem da classificação do
+Senado, quando ela diz, e de termos da ementa. O grau de informação diz quanto há de registro no
+total: com menos de 10, os níveis valem pouco.
+
+Direitos humanos e cidadania: as Casas jogam nessa área toda matéria cuja classificação só diz o
+público (Proteção Social do Senado, Direitos Humanos e Minorias da Câmara). Cada uma dessas matérias
+foi lida e recebeu a área do assunto, em leitura_direitos_humanos.csv: violência e crime contra um
+público vão para Segurança, atendimento e serviço para a área do serviço, data e homenagem saem. Fica
+em Direitos humanos o que trata de discriminação, igualdade, direitos e garantias, acessibilidade,
+liberdades, migração e memória. O público continua marcado na coluna dele.
 
 Saída: dados_novos_eleitos/levantamento_senado/levantamento.csv e registros.csv (cada registro
 contado, com o tema atribuído).
@@ -170,14 +179,27 @@ def registros():
     loc = c.ler_csv("inteligov_senado/autoria.csv")
     soma(loc[loc.Papel == "Primeiro autor"], "Assembleia ou câmara municipal", "Primeiro autor",
          lambda r: [t for t in [LOCAL.get(r["Área"])] if t])
-    return pd.DataFrame(linhas).drop_duplicates(["Parlamentar", "Casa", "Registro", "Tema", "Matéria"])
+    df = pd.DataFrame(linhas)
+
+    # Direitos humanos e cidadania: vale a área dada na leitura de cada matéria
+    lidas = c.ler_csv("levantamento_senado/leitura_direitos_humanos.csv")
+    area_lida = dict(zip(zip(lidas.Casa, lidas["Matéria"]), lidas["Área pela leitura"]))
+    dh = df.Tema == DHC
+    chave = list(zip(df.Casa, df["Matéria"]))
+    nova = pd.Series([area_lida.get(k) for k in chave], index=df.index)
+    sem_leitura = dh & nova.isna()
+    if sem_leitura.any():
+        print(f"{df[sem_leitura].drop_duplicates(['Casa', 'Matéria']).shape[0]} matérias em Direitos humanos sem leitura: ficam na área")
+    df.loc[dh & nova.notna(), "Tema"] = nova[dh & nova.notna()]
+    df = df[df.Tema != "Fora (homenagem ou data)"]
+    return df.drop_duplicates(["Parlamentar", "Casa", "Registro", "Tema", "Matéria"])
 
 
 def nivel(n, total):
     if not n:
         return "Sem registro"
     parte = n / total
-    return f"{'Alta' if parte >= 0.20 else 'Média' if parte >= 0.08 else 'Baixa'} ({n})"
+    return f"{'Alta' if parte >= 0.15 else 'Média' if parte >= 0.07 else 'Baixa'} ({n})"
 
 
 def main():
