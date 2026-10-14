@@ -202,6 +202,49 @@ def nivel(n, total):
     return f"{'Alta' if parte >= 0.15 else 'Média' if parte >= 0.07 else 'Baixa'} ({n})"
 
 
+PLANO = {
+    "Saúde": SAU, "Educação": EDU, "Esporte e Lazer": ESP, "Segurança Pública": SEG, "Assistência Social": ASS,
+    "Direitos Humanos e Minorias": DHC, "Meio Ambiente": AMB, "Agropecuária": AGR, "Economia, Indústria e Emprego": ECO,
+    "Infraestrutura e Transporte": TRP, "Habitação e Cidades": CID, "Ciência, Tecnologia e Inovação": CTC,
+    "Cultura": CUL, "Gestão e Finanças Públicas": ADM, "Energia": ENE,
+}
+
+
+def sem_registro():
+    """Para quem tem grau de informação Baixo: o que o plano de governo e a imprensa dizem, por coluna.
+
+    Fica fora da régua Alta/Média/Baixa, que mede registro de iniciativa. Do plano, vale o mais recente
+    com texto: área citada em metade das páginas ou mais é prioridade, de um quarto a metade é citada.
+    Da imprensa, cada trecho foi lido e marcado como o que declara ou o que já fez em cargo anterior
+    (levantamento_senado/imprensa_sem_registro.csv).
+    """
+    notas = {}
+    planos = c.ler_csv("planos_senado/planos.csv")
+    planos = planos[planos["Situação"] == "Lido"].copy()
+    planos["ano"] = planos["Eleição"].str.extract(r"(\d{4})")[0].astype(int)
+    areas = c.ler_csv("planos_senado/areas.csv")
+    for nome, g in planos.sort_values("ano").groupby("Parlamentar"):
+        eleicao = g.iloc[-1]["Eleição"]
+        for r in areas[(areas.Parlamentar == nome) & (areas["Eleição"] == eleicao)].to_dict("records"):
+            citam, paginas = int(r["Páginas que citam"]), int(r["Páginas com texto"])
+            parte = citam / paginas if paginas else 0
+            if parte >= 0.25:
+                rotulo = "Prioridade no plano de governo" if parte >= 0.5 else "Citada no plano de governo"
+                notas.setdefault(nome, {}).setdefault(PLANO[r["Área"]], []).append(
+                    f"{rotulo} ({eleicao}, {citam} de {paginas} páginas)")
+    lidas = c.ler_csv("levantamento_senado/imprensa_sem_registro.csv")
+    for r in lidas.to_dict("records"):
+        alvo = IMPRENSA.get(r["Área"])
+        coluna = f"Público: {alvo}" if alvo in PUBLICOS else alvo if alvo in TEMAS else None
+        if not coluna:
+            continue
+        rotulos = (["Declara na imprensa"] if "Declara" in r["Tipo"] else []) + \
+                  (["Atuação anterior (imprensa)"] if "atuação" in r["Tipo"].lower() else [])
+        lista = notas.setdefault(r["Parlamentar"], {}).setdefault(coluna, [])
+        lista += [x for x in rotulos if x not in lista]
+    return notas
+
+
 def main():
     origem = c.ler_csv("perfil_senado_origem/origem.csv")
     senado = pd.concat([c.ler_csv(f"perfil_senado_{g}/resumo.csv") for g in ("curso", "reeleitos", "novos")]).drop_duplicates("Parlamentar").set_index("Parlamentar")
@@ -235,6 +278,12 @@ def main():
             "Comissões hoje (titular)": senado["Comissões hoje (titular)"].get(nome, ""),
             "_o": ordem.get(o["Situação"], 9)})
     df = pd.DataFrame(linhas).sort_values(["_o", "UF", "Parlamentar"]).drop(columns="_o")
+    for nome, colunas in sem_registro().items():
+        linha = (df.Parlamentar == nome) & (df["Grau de informação"] == "Baixo")
+        for coluna, textos in colunas.items():
+            atual = df.loc[linha, coluna]
+            extra = "; ".join(textos)
+            df.loc[linha, coluna] = atual.map(lambda v: extra if v == "Sem registro" else f"{v}; {extra}")
     pasta = c.caminho("levantamento_senado")
     pasta.mkdir(parents=True, exist_ok=True)
     df.to_csv(pasta / "levantamento.csv", index=False)
