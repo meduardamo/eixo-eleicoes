@@ -26,6 +26,8 @@ público vão para Segurança, atendimento e serviço para a área do serviço, 
 em Direitos humanos o que trata de discriminação, igualdade, direitos e garantias, acessibilidade,
 liberdades, migração e memória. O público continua marcado na coluna dele.
 
+Profissão: ocupações declaradas ao TSE e a área ligada a elas, da etapa 19 (perfil_pessoal.csv).
+
 Saída: dados_novos_eleitos/levantamento_senado/levantamento.csv e registros.csv (cada registro
 contado, com o tema atribuído).
 Rodar: python -m outros.novos_eleitos.e18_levantamento_senado
@@ -249,6 +251,7 @@ def main():
     origem = c.ler_csv("perfil_senado_origem/origem.csv")
     senado = pd.concat([c.ler_csv(f"perfil_senado_{g}/resumo.csv") for g in ("curso", "reeleitos", "novos")]).drop_duplicates("Parlamentar").set_index("Parlamentar")
     noticias = c.ler_csv("noticias_senado/noticias.csv")
+    pessoal = c.ler_csv("perfil_senado_origem/perfil_pessoal.csv").set_index("Parlamentar")
     reg = registros()
     ordem = {"Mandato em curso": 0, "Reeleito": 1, "Reeleita": 1, "Novo": 2, "Nova": 2}
     linhas = []
@@ -267,6 +270,8 @@ def main():
         linhas.append({
             "Parlamentar": nome, "Partido": o["Partido"], "UF": o["UF"], "Situação": o["Situação"],
             "De onde vem": o["De onde vem"], "Cargos não eletivos": o["Cargos não eletivos (Wikipedia)"],
+            "Profissão declarada (TSE)": pessoal["Ocupações declaradas ao TSE (ano da candidatura)"].get(nome, ""),
+            "Área ligada à profissão": pessoal["Área ligada à profissão"].get(nome, ""),
             "Câmara: legislaturas iniciadas em": o["Câmara: legislaturas iniciadas em"],
             "Grau de informação": "Alto" if total >= 50 else "Médio" if total >= 10 else "Baixo",
             "Registros de iniciativa": total,
