@@ -102,11 +102,31 @@ DESCRICAO = {
     ("PL 2681/2020", "Câmara"): ({"FMCSV": 1}, "licença-maternidade a partir da alta hospitalar"),
     ("PL 2534/2015", "Câmara"): ({"FMCSV": 1}, "licença-paternidade de quinze dias"),
     ("PL 7824/2017", "Câmara"): ({"FMCSV": 1}, "licença-paternidade de quinze dias"),
+    ("PDL 25/2025", "Câmara"): ({"Coletivo Feminista": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
+    ("PDL 35/2025", "Senado"): ({"Coletivo Feminista": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
+    ("PDL 138/2025", "Câmara"): ({"Coletivo Feminista": -1}, "susta resoluções do Conanda sobre o atendimento a vítimas de violência sexual"),
+    ("PDL 384/2024", "Senado"): ({"Coletivo Feminista": -1}, "susta resolução do Conanda sobre o atendimento a vítimas de violência sexual"),
 }
+# Votações no próprio projeto, pela descrição do cliente: (matéria, Casa, trecho do texto da votação, sentido do Sim
+# para cada cliente, rótulo).
+DESCRICAO_VOTOS = [
+    ("PDL 3/2025", "Câmara", "Aprovado o Projeto de Decreto Legislativo", {"Coletivo Feminista": -1},
+     "PDL 3/2025, que susta a resolução 258 do Conanda"),
+]
 
 
-def sinais_descricao(cliente, ja_na_base, senadores, aut):
+def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
     out = {n: [] for n in senadores}
+    for k, casa, trecho, sentidos, rot in DESCRICAO_VOTOS:
+        if cliente not in sentidos or k in ja_na_base:
+            continue
+        v = votos[(votos.k == k) & (votos.Casa == casa) & votos["Votação"].astype(str).str.contains(trecho, regex=False)
+                  & votos.Voto.isin(["Sim", "Não"])]
+        for r in v.itertuples():
+            if r.Parlamentar in out:
+                s = sentidos[cliente] * (1 if r.Voto == "Sim" else -1)
+                out[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {rot} (plenário da {casa}, {str(r.Data)[:4]}; "
+                                                       f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar)"))
     for (k, casa), (sentidos, rot) in DESCRICAO.items():
         if cliente not in sentidos or k in ja_na_base:
             continue
@@ -210,6 +230,7 @@ def main():
                     + [c.ler_csv("perfil_camara_senado/votos.csv").assign(Casa="Câmara")])
     for d in (aut, rel, vot):
         d["k"] = d["Matéria"].astype(str).str.extract(r"^(\S+ \d+/\d{4})")[0]
+    votos_todos = vot.copy()
     vot = vot[vot["Votação"].astype(str).str.contains(VOTO_PROJETO, regex=True)]
     # votação de consenso não entra como posição: sem nenhum Não (ou nenhum Sim) entre os parlamentares da base
     amostra = vot.groupby(["k", vot.Data.astype(str), vot.Colegiado.astype(str), vot["Votação"].astype(str)]).Voto.agg(
@@ -243,7 +264,7 @@ def main():
                 for n, s_ in sinais_pauta(pt.Pauta, pt._4 == "A favor", list(sinais), aut, com_votos).items():
                     sinais[n] += s_
         ja_na_base = {k for p in g.Projeto for k, _ in chaves(p)}
-        for n, s_ in sinais_descricao(cliente, ja_na_base, list(sinais), aut).items():
+        for n, s_ in sinais_descricao(cliente, ja_na_base, list(sinais), aut, votos_todos).items():
             sinais[n] += s_
         com_registro = 0
         for n, s in sinais.items():
