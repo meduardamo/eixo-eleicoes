@@ -20,7 +20,8 @@ cinco viraram tema de alerta (ALERTA_TEMAS) e têm termo de busca próprio
 Em 08/10/2026, com o 1º turno encerrado, entrou a transição de governo nos
 estados no que toca às pastas de Educação e Saúde (pedido da Eduarda): quem
 entra, quem sai e quem cuida da área na equipe de transição. Tem termo de busca
-próprio (TERMOS_TRANSICAO) e tema de alerta ("transição").
+próprio (TERMOS_TRANSICAO) e tema de alerta ("transição"). Em 15/10/2026 a lista
+de pastas passou de duas para doze (PASTAS_TRANSICAO).
 
 Secrets do email: BREVO_API_KEY, EMAIL, DESTINATARIOS_NOTICIAS (ou DESTINATARIOS).
 Sem eles a rodada segue normal, só não envia.
@@ -269,20 +270,17 @@ TERMOS_VISITA = ('(Lula OR "Flávio Bolsonaro" OR presidenciável) '
                  '(visita OR desembarca OR comício OR caravana OR viagem '
                  'OR inauguração OR palanque OR "agenda no estado")')
 
-# Bloco 5: transição de governo nos estados, só nas pastas de Educação e Saúde
-# (08/10/2026). Como a visita, não depende do cargo e roda uma busca por estado,
-# com o nome por extenso. O primeiro grupo é o momento (transição, secretariado,
-# governo que entra) e o segundo é a pasta: sem o segundo vinha a transição
-# inteira, e sem o primeiro vinha o dia a dia das duas secretarias.
-TERMOS_TRANSICAO = ('(transição OR secretariado OR "novo governo" '
+# Bloco 5: transição de governo nos estados, nas pastas de PASTAS_TRANSICAO
+# (08/10/2026, ampliado em 15/10). Como a visita, não depende do cargo e roda uma
+# busca por estado, com o nome por extenso. A busca traz só o momento (equipe de
+# transição, secretariado, governador eleito, secretário novo); a pasta fica com
+# o modelo e com a trava cita_pasta_da_transicao. Teste de 15/10: o Google
+# Notícias ignora o que passa de uns 30 termos, e a versão de 08/10, com o grupo
+# das pastas no fim, voltava o mesmo resultado com ou sem esse grupo. Seis termos
+# cabem com o nome de UF mais comprido e com site:dominio.
+TERMOS_TRANSICAO = ('("equipe de transição" OR secretariado '
                     'OR "governador eleito" OR "governadora eleita" '
-                    'OR "novo secretário" OR "nova secretária" '
-                    'OR "futuro secretário" OR "futura secretária") '
-                    '("Secretaria de Educação" OR "Secretaria de Saúde" '
-                    'OR "Secretaria da Educação" OR "Secretaria da Saúde" '
-                    'OR "secretário de Educação" OR "secretária de Educação" '
-                    'OR "secretário de Saúde" OR "secretária de Saúde" '
-                    'OR "pasta da Educação" OR "pasta da Saúde")')
+                    'OR "novo secretário" OR "nova secretária")')
 
 # Pauta local que já virou ativo da disputa em um estado e não sai por termo
 # genérico. Uma busca a mais por UF listada; para acrescentar outra, é só somar
@@ -601,20 +599,46 @@ def instituto_prioritario(raw) -> str:
     return "Real Time Big Data" if "rtbd" in chave else ""
 
 
+# Pastas acompanhadas na transição (lista da Eduarda, 15/10/2026). A chave é o
+# nome que vai para o prompt; o valor, os radicais sem acento que a trava procura
+# depois de "secretaria de", "pasta da" etc. Entram os nomes que os estados usam
+# para a mesma pasta (Mulher para Igualdade de Gênero, Desenvolvimento Social
+# para Assistência Social, Finanças para Fazenda).
+PASTAS_TRANSICAO = {
+    "Saúde": r"saude",
+    "Educação": r"educacao",
+    "Planejamento e Gestão": r"planejamento|gestao",
+    "Direitos Humanos": r"direitos humanos",
+    "Igualdade de Gênero": r"igualdade de genero|mulher(?:es)?",
+    "Igualdade Racial": r"igualdade racial",
+    "Fazenda e Orçamento": r"fazenda|orcamento|financas",
+    "Cultura": r"cultura",
+    "Ciência e Tecnologia, Educação Profissional e Ensino Superior":
+        r"ciencia|tecnologia|educacao profissional|ensino superior",
+    "Esportes": r"esportes?",
+    "Primeira Infância": r"primeira infancia",
+    "Assistência Social ou Proteção Social":
+        r"assistencia social|protecao social|desenvolvimento social",
+}
+PASTAS_TRANSICAO_TEXTO = "; ".join(PASTAS_TRANSICAO)
+
 # Trava do alerta de transição. Na primeira rodada com o tema (08/10/2026, 10h45)
 # saíram 32 alertas e 20 eram transição em geral: equipe anunciada, cronograma,
-# governador que reúne o secretariado, sem nenhuma das duas pastas na notícia. O
-# modelo lia "transição" e marcava. A condição é estrutural (a notícia nomeia a
-# secretaria, o secretário ou a pasta de Educação ou de Saúde?), então fica em
-# código, como a do instituto nas pesquisas. "Educação" ou "saúde" soltas não
-# bastam: aparecem em qualquer lista de prioridades de governo.
+# governador que reúne o secretariado, sem nenhuma pasta acompanhada na notícia.
+# O modelo lia "transição" e marcava. A condição é estrutural (a notícia nomeia a
+# secretaria, o secretário ou a pasta?), então fica em código, como a do
+# instituto nas pesquisas. O nome da área solto não basta: "educação" ou "saúde"
+# aparecem em qualquer lista de prioridades de governo. Até três palavras entre
+# o "de" e a área, para "Secretaria de Justiça e Direitos Humanos".
+_AREAS_TRANSICAO = "|".join(PASTAS_TRANSICAO.values())
 _RE_PASTA_TRANSICAO = re.compile(
-    r"secretari[oa]s?\s+(?:\w+\s+){0,3}?(?:de|da|do)\s+(?:estado\s+d[ae]\s+)?(?:educacao|saude)"
-    r"|(?:pasta|area|comando|titular)\s+(?:\w+\s+){0,2}?d[ae]\s+(?:educacao|saude)"
-    r"|\bseduc\b")
+    rf"secretari[oa]s?\s+(?:\w+\s+){{0,3}}?(?:de|da|do|das|dos)\s+(?:estado\s+d[ae]\s+)?"
+    rf"(?:[\w,]+\s+){{0,3}}?(?:{_AREAS_TRANSICAO})\b"
+    rf"|(?:pasta|area|comando|titular)\s+(?:\w+\s+){{0,2}}?d[aeo]s?\s+(?:{_AREAS_TRANSICAO})\b"
+    r"|\b(?:seduc|sefaz|seplag)\b")
 
 
-def cita_pasta_de_educacao_ou_saude(texto) -> bool:
+def cita_pasta_da_transicao(texto) -> bool:
     return bool(_RE_PASTA_TRANSICAO.search(_sem_acento(texto or "").lower()))
 
 
@@ -650,7 +674,7 @@ def aplicar_regra_alerta(dados, texto: str = "") -> dict:
         tema = ""
     if dados.get("status") == "não relacionado":
         tema = ""
-    if tema == "transição" and not cita_pasta_de_educacao_ou_saude(texto):
+    if tema == "transição" and not cita_pasta_da_transicao(texto):
         tema = ""
 
     dados["alerta_tema"] = tema
@@ -792,10 +816,11 @@ def classificar_com_gemini(titulo, trecho=""):
         "operação policial, prisão, condenação, morte, afastamento, indefinição pública "
         "sobre disputar ou não, disputa em torno de um tema local) e que a notícia liga a "
         "um candidato, pré-candidato, partido ou governo da eleição de 2026\n"
-        "  - tipo='transição': transição de governo estadual depois da eleição, nas pastas de "
-        "Educação ou de Saúde: nome anunciado, confirmado, convidado ou cotado para a "
-        "secretaria, secretário que sai ou que fica, quem cuida da área na equipe de "
-        "transição, fusão, divisão ou criação de secretaria nessas duas áreas\n"
+        "  - tipo='transição': transição de governo estadual depois da eleição, numa das "
+        f"pastas acompanhadas ({PASTAS_TRANSICAO_TEXTO}): nome anunciado, confirmado, "
+        "convidado ou cotado para a secretaria, secretário que sai ou que fica, quem "
+        "cuida da área na equipe de transição, fusão, divisão ou criação de secretaria "
+        "nessas áreas\n"
         "  - tipo='outro': não se encaixa em nenhum dos anteriores\n"
         "- confianca='alto': candidato, cargo e UF estão todos explícitos no texto\n"
         "- confianca='médio': algum campo foi inferido com boa certeza pelo contexto\n"
@@ -851,22 +876,26 @@ def classificar_com_gemini(titulo, trecho=""):
         "a ninguém da disputa; notícia de gestão pública sem candidato na história; "
         "especulação de terceiro sobre o que um político faria\n"
         "- 'transição': a notícia trata da transição de um governo ESTADUAL depois da "
-        "eleição de 2026 e diz respeito à Secretaria de Educação ou à Secretaria de Saúde "
-        "do estado. Precisa das DUAS coisas ao mesmo tempo:\n"
+        "eleição de 2026 e diz respeito a uma das secretarias estaduais acompanhadas: "
+        f"{PASTAS_TRANSICAO_TEXTO}. Vale também o nome que o estado dá à mesma pasta "
+        "(Secretaria da Mulher para Igualdade de Gênero, Desenvolvimento Social para "
+        "Assistência Social, Finanças para Fazenda, Justiça e Direitos Humanos). "
+        "Precisa das DUAS coisas ao mesmo tempo:\n"
         "  (1) é sobre a troca ou a montagem do governo: governador eleito ou reeleito "
         "anuncia, confirma, convida ou sonda alguém para a secretaria; nome cotado para "
         "a pasta; secretário que deixa o cargo ou é mantido; equipe de transição com "
         "responsável ou grupo de trabalho da área; fusão, divisão, criação ou extinção "
         "de secretaria;\n"
-        "  (2) a pasta é Educação ou Saúde, dita na notícia. Secretariado anunciado em "
-        "bloco conta se a notícia traz o nome para uma das duas.\n"
+        "  (2) a pasta é uma das acompanhadas, dita na notícia. Secretariado anunciado em "
+        "bloco conta se a notícia traz o nome para uma delas.\n"
         "  Não conta: rotina de gestão da secretaria atual (obra, programa, greve, "
-        "licitação) sem ligação com a troca de governo; outras pastas; secretaria "
+        "licitação) sem ligação com a troca de governo; pastas fora da lista (Casa Civil, "
+        "Segurança, Infraestrutura, Agricultura etc.); secretaria "
         "municipal; ministério do governo federal; promessa de campanha de candidato "
         "que ainda disputa o 2º turno; e transição em geral (equipe de transição "
         "anunciada, cronograma, reunião do secretariado, governador que diz que vai "
-        "trocar secretários) quando a notícia não nomeia a Secretaria de Educação nem a "
-        "de Saúde. Para este tema NÃO vale a regra da dúvida abaixo: sem a pasta dita "
+        "trocar secretários) quando a notícia não nomeia nenhuma das pastas "
+        "acompanhadas. Para este tema NÃO vale a regra da dúvida abaixo: sem a pasta dita "
         "na notícia, é 'nenhum'\n"
         "- 'nenhum': todo o resto, inclusive notícia relevante que não se encaixa nos temas acima\n"
         "- Na dúvida entre 'nenhum' e um tema que se encaixa, escolha o tema\n\n"
@@ -1132,12 +1161,12 @@ def gerar_texto_alerta(n) -> str:
     if n.get("alerta_tema") == "transição":
         angulo = (
             "ÂNGULO OBRIGATÓRIO: este alerta é sobre a transição de governo no estado, "
-            "nas pastas de Educação e de Saúde. Título e primeiro parágrafo dizem quem "
+            f"nas pastas acompanhadas ({PASTAS_TRANSICAO_TEXTO}). Título e primeiro parágrafo dizem quem "
             "entra, quem sai ou quem cuida da área, com o cargo e a pasta escritos como "
             "estão na notícia, e se o nome está confirmado, convidado ou só cotado. "
-            "Não trate como confirmado o que a notícia dá como cotado. Outras pastas "
-            "do mesmo anúncio só entram no segundo parágrafo, e só se sobrar espaço. "
-            "Escreva só o que a notícia traz sobre Educação e Saúde: não diga que a "
+            "Não trate como confirmado o que a notícia dá como cotado. Pastas fora "
+            "dessa lista, no mesmo anúncio, só entram no segundo parágrafo, e só se sobrar espaço. "
+            "Escreva só o que a notícia traz sobre essas pastas: não diga que a "
             "transição 'foca' ou 'prioriza' essas áreas se a notícia não disser, e não "
             "registre o que a notícia NÃO informa (por exemplo, 'sem definir nomes').\n\n")
 
@@ -1626,7 +1655,7 @@ ROTULO_TEMA = {
     "visita-presidencial": "Visita de presidenciável no estado",
     "impugnação": "Impugnação de candidatura",
     "fato-eleitoral": "Fato com impacto eleitoral",
-    "transição": "Transição de governo (Educação e Saúde)",
+    "transição": "Transição de governo nos estados",
 }
 
 PAINEL_URL = os.getenv("PAINEL_NOTICIAS_URL",
