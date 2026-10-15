@@ -47,7 +47,7 @@ def chaves(projeto):
 
 
 # Clientes do raspador do DOU (CLIENT_THEME_DATA) e do PDF de descrição que a base de pautas não tem.
-# Manual e Mevo ficam de fora: nenhum dos 81 tem projeto no tema (saúde digital, prescrição eletrônica, telemedicina).
+# Manual e Mevo estão no PDF, mas não são mais clientes (Eduarda, 15/10/2026).
 CLIENTES_FORA_DA_BASE = {
     "MegaEdu": ("Educação", "Conectividade das escolas e FUST"),
     "Fundação Itaú": ("Educação", "Acesso de jovens à educação profissional e tecnológica"),
