@@ -9,7 +9,7 @@ Sinais do senador em cada projeto (Senado e, para quem foi deputado, Câmara):
 - forte: primeiro autor; voto nominal no próprio projeto ou no parecer dele (Sim conta no sentido do projeto,
   Não no sentido contrário), desde que a votação tenha dividido os parlamentares da base (consenso não conta). Votação de emenda, destaque ou requerimento não conta, porque o sentido para o
   cliente depende do texto da emenda;
-- médio: coautor;
+- médio: coautor (de PEC não conta: assinatura de PEC é apoiamento, aparece só como evidência);
 - só evidência, sem contar: relatoria (o sentido depende do parecer, que não foi lido).
 Projeto Promotor dá sinal a favor do cliente; Detrator, contra.
 
@@ -63,7 +63,7 @@ PAUTAS = {
 
 
 # Sinais pela descrição do cliente (PDF "Monitor Legislativo e DOU - Segunda Etapa" e CLIENT_THEME_DATA do raspador
-# do DOU), com o sentido lido na ementa: +1 a favor do cliente, -1 contra. Ficam de fora as ementas que não mostram
+# do DOU), com o sentido lido na ementa e conferido no inteiro teor (texto e justificação) em 15/10/2026: +1 a favor do cliente, -1 contra. Ficam de fora as ementas que não mostram
 # o sentido e os projetos que já estão na base de pautas do cliente, que contam por lá. A confirmar com a
 # coordenação. Chave: (matéria, Casa da autoria).
 DESCRICAO = {
@@ -75,8 +75,6 @@ DESCRICAO = {
     ("PL 4414/2024", "Senado"): ({"IU": 1}, "magistério indígena e do campo"),
     ("PL 3756/2023", "Senado"): ({"IU": 1}, "bolsa permanência na educação básica"),
     ("PL 3166/2023", "Senado"): ({"ISG": 1}, "bolsa para estudantes do ensino médio"),
-    ("PL 3785/2026", "Câmara"): ({"ISG": 1}, "educação profissional no ensino médio"),
-    ("PL 4744/2023", "Senado"): ({"ISG": 1}, "educação profissional no ensino médio"),
     ("PL 1070/2021", "Senado"): ({"IU": 1}, "educação ambiental"),
     ("PL 3097/2021", "Senado"): ({"IU": 1}, "educação ambiental"),
     ("PL 4270/2020", "Câmara"): ({"IU": 1}, "educação ambiental"),
@@ -105,8 +103,8 @@ DESCRICAO = {
     ("PL 7824/2017", "Câmara"): ({"FMCSV": 1}, "licença-paternidade de quinze dias"),
     ("PDL 25/2025", "Câmara"): ({"Coletivo Feminista": -1, "Infinis": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
     ("PDL 35/2025", "Senado"): ({"Coletivo Feminista": -1, "Infinis": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
-    ("PDL 138/2025", "Câmara"): ({"Coletivo Feminista": -1, "Infinis": -1}, "susta resoluções do Conanda sobre o atendimento a vítimas de violência sexual"),
-    ("PDL 384/2024", "Senado"): ({"Coletivo Feminista": -1, "Infinis": -1}, "susta resolução do Conanda sobre o atendimento a vítimas de violência sexual"),
+    ("PDL 138/2025", "Câmara"): ({"Infinis": -1}, "susta as diretrizes do Conanda de proteção a adolescentes no sistema socioeducativo"),
+    ("PDL 384/2024", "Senado"): ({"Infinis": -1}, "susta as diretrizes do Conanda de proteção a adolescentes no sistema socioeducativo"),
     ("PLS 333/2003", "Senado"): ({"Vital Strategies": 1}, "proíbe patrocínio ao esporte e à cultura por fabricantes de fumígenos"),
     ("PLS 420/2005", "Senado"): ({"Vital Strategies": 1}, "proíbe fumar em bares e restaurantes"),
     ("PLS 151/2007", "Senado"): ({"Vital Strategies": 1}, "advertência nos rótulos de bebidas alcoólicas"),
@@ -194,8 +192,8 @@ DESCRICAO = {
     ("PL 7175/2017", "Câmara"): ({"IDEC": 1}, "cobertura de parto para gestantes que contratam plano"),
     ("PL 3579/2023", "Senado"): ({"IDEC": 1}, "cobertura do plano em emergência de saúde pública"),
     ("PL 1318/2020", "Câmara"): ({"IDEC": 1}, "veda corte do plano por inadimplência na pandemia"),
-    ("PLS 77/2017", "Senado"): ({"IDEC": 1}, "amplia a cobertura dos planos"),
-    ("PL 1073/2019", "Câmara"): ({"IDEC": 1}, "amplia a cobertura dos planos"),
+    ("PLS 77/2017", "Senado"): ({"IDEC": 1, "FMCSV": 1}, "cobertura do plano ao recém-nascido nos primeiros 90 dias"),
+    ("PL 1073/2019", "Câmara"): ({"IDEC": 1, "FMCSV": 1}, "cobertura do plano ao recém-nascido nos primeiros 90 dias"),
     ("PL 5412/2023", "Senado"): ({"IDEC": 1}, "veda recusa e rescisão unilateral de plano"),
     ("PEC 6/2026", "Senado"): ({"REMS": 1}, "regime tributário específico para organizações esportivas sem fins lucrativos"),
     ("PEC 14/2026", "Senado"): ({"REMS": 1}, "preserva o fomento indireto estadual e municipal ao esporte no IBS"),
@@ -240,6 +238,28 @@ DESCRICAO = {
     ("PL 638/2021", "Câmara"): ({"Umane": 1}, "atenção à obesidade no SUS"),
     ("PL 3055/2026", "Senado"): ({"ASBAI": 1}, "cobertura de fórmula para alergia à proteína do leite"),
     ("PL 4467/2021", "Senado"): ({"ASBAI": 1}, "recursos para pesquisa e produção de imunobiológicos"),
+    ("PEC 196/2016", "Câmara"): ({"FMCSV": 1}, "30 dias a mais de licença-maternidade por filho em parto múltiplo"),
+    ("PL 2218/2019", "Câmara"): ({"FMCSV": 1}, "licença-paternidade de 20 dias para policiais e bombeiros militares"),
+    ("PL 2679/2025", "Câmara"): ({"FMCSV": 1}, "licença-paternidade contada da alta da mãe ou do bebê"),
+    ("PL 2786/2019", "Câmara"): ({"FMCSV": 1}, "licença-paternidade de até 90 dias"),
+    ("PL 1575/2022", "Senado"): ({"IDEC": 1}, "rol da ANS exemplificativo"),
+    ("PDC 341/2016", "Câmara"): ({"IDEC": 1}, "susta reajuste de 12,5% dos medicamentos acima da inflação"),
+    ("PL 4231/2019", "Senado"): ({"IDEC": 1}, "limita novos registros de agrotóxicos"),
+    ("PL 494/2022", "Senado"): ({"IDEC": 1}, "reavaliação periódica de agrotóxicos"),
+    ("PL 1838/2022", "Câmara"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "exige autorização judicial para o aborto legal em caso de estupro"),
+    ("PL 1648/2023", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "comunicação à polícia de aborto autoprovocado"),
+    ("PDL 1154/2025", "Câmara"): ({"Infinis": -1, "UNFPA": -1}, "susta a resolução Conanda/CNDM que reconhece a violência vicária"),
+    ("PL 3000/2025", "Senado"): ({"Vital Strategies": 1}, "destruição de máquinas de cigarro ilegal (protocolo da OMS)"),
+    ("PL 5050/2013", "Câmara"): ({"Vital Strategies": 1}, "fotos de acidente nas embalagens de bebida alcoólica"),
+    ("PL 3348/2012", "Câmara"): ({"Infinis": 1, "Vital Strategies": 1, "IDEC": 1, "Umane": 1}, "proíbe venda de alimentos de baixo teor nutricional nas escolas"),
+    ("PL 354/2022", "Senado"): ({"Infinis": 1}, "Benefício de Erradicação da Fome"),
+    ("PL 1971/2011", "Câmara"): ({"Infinis": 1}, "recálculo do PNAE quando as matrículas crescem"),
+    ("PDL 521/2020", "Câmara"): ({"IU": 1}, "susta a redução de 8% do valor mínimo por aluno do Fundeb"),
+    ("PDL 522/2020", "Senado"): ({"IU": 1}, "susta a redução de 8% do valor mínimo por aluno do Fundeb"),
+    ("PL 2759/2015", "Câmara"): ({"IU": 1}, "participação da comunidade escolar na escolha do diretor"),
+    ("PL 3760/2026", "Senado"): ({"IU": 1}, "Fator Amazônico no financiamento da educação básica"),
+    ("PL 3762/2026", "Senado"): ({"IU": 1}, "Política Nacional Escola das Adolescências"),
+    ("PLS 649/2015", "Senado"): ({"Cactus": -1}, "obriga informar ao empregador o CID de transtorno mental do paciente"),
 }
 # Sinais que não estão na autoria de projeto: emendas lidas e posições documentadas no relatório "Congresso 2027:
 # apoiadores e detratores das agendas do Infinis" (Eixo, 05/10/2026). (senador, {cliente: sentido}, força, texto)
@@ -287,8 +307,10 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
         for r in aut[(aut.k == k) & (aut.Casa == casa) & aut.Papel.isin(["Primeiro autor", "Coautor"])].sort_values("Papel", ascending=False).drop_duplicates("Parlamentar").itertuples():
             if r.Parlamentar in out:
                 forte = r.Papel == "Primeiro autor"
-                out[r.Parlamentar].append(("forte" if forte else "médio", s,
-                    f"{'autor' if forte else 'coautor'} do {k} ({rot}; {'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar)"))
+                peso = "forte" if forte else ("evidência" if k.startswith("PEC") else "médio")
+                out[r.Parlamentar].append((peso, s if peso != "evidência" else 0,
+                    f"{'autor' if forte else 'coautor'} do {k} ({rot}; {'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar)"
+                    + (" (assinatura de PEC, não conta)" if peso == "evidência" else "")))
     return out
 
 
@@ -406,8 +428,9 @@ def main():
                 for r in aut[ok(aut) & aut.Papel.isin(["Primeiro autor", "Coautor"])].sort_values("Papel", ascending=False).drop_duplicates("Parlamentar").itertuples():
                     if r.Parlamentar in sinais:
                         forte = r.Papel == "Primeiro autor"
-                        sinais[r.Parlamentar].append(("forte" if forte else "médio", sentido,
-                            f"{'autor' if forte else 'coautor'} do {k} ({quem})"))
+                        peso = "forte" if forte else ("evidência" if k.startswith("PEC") else "médio")
+                        sinais[r.Parlamentar].append((peso, sentido if peso != "evidência" else 0,
+                            f"{'autor' if forte else 'coautor'} do {k} ({quem})" + (" (assinatura de PEC, não conta)" if peso == "evidência" else "")))
                 for r in vot[ok(vot) & vot.Voto.isin(["Sim", "Não"])].itertuples():
                     if r.Parlamentar in sinais:
                         s = sentido if r.Voto == "Sim" else -sentido
@@ -434,7 +457,7 @@ def main():
             fp, fn, mp, mn = f.count(1), f.count(-1), m.count(1), m.count(-1)
             rot = (("forte a favor", "fortes a favor", fp), ("forte contra", "fortes contra", fn),
                    ("médio a favor", "médios a favor", mp), ("médio contra", "médios contra", mn))
-            sinal_txt = "; ".join(f"{q} {um if q == 1 else varios}" for um, varios, q in rot if q) or "só relatoria"
+            sinal_txt = "; ".join(f"{q} {um if q == 1 else varios}" for um, varios, q in rot if q) or "só evidência, sem sinal que conte"
             linhas.append({"Área": area, "Cliente": cliente, "Senador": n,
                            "Partido": ficha.loc[n, "Partido"], "UF": ficha.loc[n, "UF"], "Cadeira": ficha.loc[n, "Cadeira"],
                            "Classificação": classifica(fp, fn, mp, mn),
