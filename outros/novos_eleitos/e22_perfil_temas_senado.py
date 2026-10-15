@@ -99,6 +99,11 @@ def main():
     # só o que muda a cadeira; as notas internas de conferência da planilha ficam de fora
     obs = {k: v for k, v in obs.set_index("Parlamentar")["Observação"].items() if v.startswith(("Disputa o 2º", "Eleito"))}
 
+    # novos: a fala vem da Câmara (plenário desde 2023) ou, sem mandato federal, da imprensa da eleição;
+    # nenhum era senador nas votações-chave, e o voto na Câmara entra na rodada da Câmara
+    col_fala = "O que defende (plenário, desde 2023)" if grupo != "novos" else "O que defende (plenário da Câmara desde 2023 ou imprensa)"
+    sem_fala = ("Nenhum discurso sobre o tema em plenário desde 2023." if grupo != "novos"
+                else "Nenhum discurso sobre o tema no plenário da Câmara desde 2023.")
     linhas = []
     for l in lev.sort_values(["UF", "Parlamentar"]).to_dict("records"):
         nome = l["Parlamentar"]
@@ -113,13 +118,14 @@ def main():
             linhas.append({
                 "Parlamentar": nome, "Partido": l["Partido"], "UF": l["UF"], "Tema": tema,
                 "O que fez": texto[nome][tema],
-                "O que defende (plenário, desde 2023)": fala.get(nome, {}).get(tema, "Nenhum discurso sobre o tema em plenário desde 2023."),
+                col_fala: fala.get(nome, {}).get(tema, sem_fala),
                 "Primeiro autor": int((m.Papel == "Primeiro autor").sum()),
                 "Relatorias com parecer": int((m.Papel == "Relatou (parecer)").sum()),
                 "Relatorias em curso": int((m.Papel == "Relator atual").sum()),
                 "Viraram lei": len(leis),
                 "Leis": "\n".join(f"{r['Matéria']}: {r['Situação da matéria']}" for r in leis.to_dict("records")),
-                "Como votou (votações que separam os senadores)": votos_do(nome, plen, com, tema),
+                "Como votou (votações que separam os senadores)": (votos_do(nome, plen, com, tema) if grupo != "novos" else
+                    "Não era senador nas votações-chave. Os votos na Câmara entram na rodada da Câmara."),
                 "Comissão do tema hoje": "; ".join(dict.fromkeys(comissao)) or "Não é membro",
                 "Frentes do tema no Senado": "; ".join(dict.fromkeys(frentes)),
                 "Observação sobre a cadeira": obs.get(nome, ""),
