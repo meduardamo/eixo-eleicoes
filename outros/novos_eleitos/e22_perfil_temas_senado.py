@@ -81,6 +81,30 @@ def sinteses(grupo, bloco="o_que_fez"):
     return d
 
 
+ORIENTACOES = None
+
+
+def orientacao(nome, data, mat):
+    """Orientação da liderança do partido do senador naquela votação (painel do Senado; só existe em votação nominal).
+    Mede o partido, não o senador: vai entre parênteses, ao lado do voto."""
+    global ORIENTACOES
+    if ORIENTACOES is None:
+        ORIENTACOES = json.loads(c.caminho("temas_clientes/orientacoes_senado.json").read_text())
+    reg = ORIENTACOES.get(f"{data}|{mat.split('/')[0]}")
+    if not reg or nome not in reg["partido"]:
+        return ""
+    partido = reg["partido"][nome]
+    nome_partido = {"Republica": "Republicanos"}.get(partido, partido)
+    o = reg["orientacoes"].get(partido)
+    return f" (orientação do {nome_partido}: {o.lower()})" if o else f" ({nome_partido} sem orientação registrada)"
+
+
+def requerimentos(nome, tema, aud, urg):
+    """Pedidos de audiência pública e requerimentos de urgência do senador no tema, desde 2023."""
+    partes = [t for t in (aud.get((nome, tema)), urg.get((nome, tema))) if t]
+    return " ".join(partes) or "Nenhum pedido de audiência pública nem requerimento de urgência no tema desde 2023."
+
+
 def votos_do(nome, plen, com, tema):
     linhas = []
     for t, onde, data, mat, trecho, rotulo in VOTACOES:
@@ -94,7 +118,7 @@ def votos_do(nome, plen, com, tema):
                     & com["Votação"].str.contains(trecho, regex=False)]
         voto = v.Voto.iloc[0] if len(v) else ("não era senador" if data < "2023-02-01" else
                                                "não votou" if onde == "plenário" else "não era membro ou não votou")
-        linhas.append(f"{rotulo}: {AUSENCIA.get(voto, voto)}")
+        linhas.append(f"{rotulo}: {AUSENCIA.get(voto, voto)}{orientacao(nome, data, mat) if onde == 'plenário' else ''}")
     return "\n".join(linhas) if linhas else "Sem votação nominal que separe os senadores neste tema."
 
 
@@ -141,6 +165,8 @@ def main():
     falas_com = json.loads(c.caminho("temas_clientes/falas_comissao.json").read_text())
     sem_fala = ("Nenhum discurso sobre o tema em plenário desde 2023." if grupo != "novos"
                 else "Nenhum discurso sobre o tema no plenário da Câmara desde 2023.")
+    aud = {(r.Parlamentar, r.Tema): r.Audiências for r in c.ler_csv("temas_clientes/aud_cells.csv").itertuples()}
+    urg = {(r.Parlamentar, r.Tema): r.Urgências for r in c.ler_csv("temas_clientes/urg_cells.csv").itertuples()}
     vcam = c.ler_csv("perfil_camara_senado/votos.csv")
     vcam = vcam[(vcam.Colegiado == "PLEN") & (vcam.Data >= "2023-02-01")]
     linhas = []
@@ -159,6 +185,8 @@ def main():
                 "O que fez": texto[nome][tema],
                 col_fala: " Em comissão: ".join(t for t in (fala.get(nome, {}).get(tema, sem_fala),
                                                             falas_com.get(nome, {}).get(tema)) if t),
+                "Requerimentos no tema (audiência e urgência, desde 2023)": (requerimentos(nome, tema, aud, urg) if grupo != "novos"
+                    else "Não era senador."),
                 "Primeiro autor": int((m.Papel == "Primeiro autor").sum()),
                 "Relatorias com parecer": int((m.Papel == "Relatou (parecer)").sum()),
                 "Relatorias em curso": int((m.Papel == "Relator atual").sum()),
