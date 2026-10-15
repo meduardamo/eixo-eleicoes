@@ -46,6 +46,14 @@ def chaves(projeto):
     return out
 
 
+# Clientes do raspador do DOU (CLIENT_THEME_DATA) e do PDF de descrição que a base de pautas não tem.
+# Manual e Mevo ficam de fora: nenhum dos 81 tem projeto no tema (saúde digital, prescrição eletrônica, telemedicina).
+CLIENTES_FORA_DA_BASE = {
+    "MegaEdu": ("Educação", "Conectividade das escolas e FUST"),
+    "Fundação Itaú": ("Educação", "Acesso de jovens à educação profissional e tecnológica"),
+    "Desiderata": ("Saúde", "Obesidade infantil, ultraprocessados e alimentação escolar"),
+}
+
 # O que faz cada projeto da base de pautas, para a evidência não sair só com o número (na falta, vai o nome da pauta).
 ROTULO_BASE = {
     "PEC 36/2025": "ICMS educacional para expandir o tempo integral",
@@ -111,10 +119,10 @@ DESCRICAO = {
     ("PL 3418/2021", "Câmara"): ({"IU": 1}, "atualização da lei do Fundeb"),
     ("PL 5665/2023", "Senado"): ({"IU": 1}, "prorrogação do PNE"),
     ("PL 3562/2020", "Câmara"): ({"IU": 1}, "Conselho Nacional de Educação"),
-    ("PL 1884/2023", "Senado"): ({"IU": 1}, "internet nas escolas"),
-    ("PL 810/2022", "Câmara"): ({"IU": 1}, "internet nas escolas"),
-    ("PLP 59/2021", "Senado"): ({"IU": 1}, "internet nas escolas"),
-    ("PL 3853/2020", "Senado"): ({"IU": 1}, "tablets e dados para estudantes"),
+    ("PL 1884/2023", "Senado"): ({"IU": 1, "MegaEdu": 1}, "internet nas escolas"),
+    ("PL 810/2022", "Câmara"): ({"IU": 1, "MegaEdu": 1}, "internet nas escolas"),
+    ("PLP 59/2021", "Senado"): ({"IU": 1, "MegaEdu": 1}, "internet nas escolas"),
+    ("PL 3853/2020", "Senado"): ({"IU": 1, "MegaEdu": 1}, "tablets e dados para estudantes"),
     ("PL 4978/2026", "Senado"): ({"IU": 1}, "educação étnico-racial e quilombola"),
     ("PL 3467/2025", "Senado"): ({"IU": 1}, "apoio às redes com baixo desempenho e alta vulnerabilidade"),
     ("PL 597/2022", "Câmara"): ({"IU": 1, "ISG": 1}, "recomposição da alfabetização"),
@@ -149,15 +157,15 @@ DESCRICAO = {
     ("PL 4710/2019", "Senado"): ({"Vital Strategies": 1}, "amplia a definição de bebida alcoólica e proíbe álcool nas escolas"),
     ("PL 2502/2023", "Senado"): ({"Vital Strategies": 1}, "restringe propaganda de bebidas alcoólicas"),
     ("PL 4605/2023", "Senado"): ({"Vital Strategies": 1}, "proíbe venda de tabaco em certos locais"),
-    ("PL 2183/2019", "Senado"): ({"Vital Strategies": 1}, "Cide sobre refrigerantes e bebidas açucaradas"),
-    ("PLS 8/2015", "Senado"): ({"Vital Strategies": 1}, "advertência nas embalagens de bebidas açucaradas"),
-    ("PL 1066/2019", "Câmara"): ({"Vital Strategies": 1}, "advertência nas embalagens de bebidas açucaradas"),
+    ("PL 2183/2019", "Senado"): ({"Vital Strategies": 1, "Desiderata": 1}, "Cide sobre refrigerantes e bebidas açucaradas"),
+    ("PLS 8/2015", "Senado"): ({"Vital Strategies": 1, "Desiderata": 1}, "advertência nas embalagens de bebidas açucaradas"),
+    ("PL 1066/2019", "Câmara"): ({"Vital Strategies": 1, "Desiderata": 1}, "advertência nas embalagens de bebidas açucaradas"),
     ("PL 2906/2019", "Câmara"): ({"Vital Strategies": 1}, "proíbe fumar em locais públicos"),
     ("PL 7466/2017", "Câmara"): ({"Vital Strategies": 1}, "imagens de advertência nas embalagens de bebidas alcoólicas"),
     ("PL 1492/2022", "Câmara"): ({"Vital Strategies": 1, "Infinis": 1}, "proíbe os dispositivos eletrônicos para fumar"),
     ("PL 2900/2023", "Câmara"): ({"Vital Strategies": 1, "Infinis": 1}, "proíbe dispositivos eletrônicos para fumar em ambientes fechados"),
-    ("PL 3966/2023", "Câmara"): ({"Vital Strategies": 1, "Umane": 1}, "reduz o consumo de ultraprocessados por crianças"),
-    ("PL 4501/2020", "Senado"): ({"Vital Strategies": 1, "Umane": 1}, "ultraprocessados nas escolas"),
+    ("PL 3966/2023", "Câmara"): ({"Vital Strategies": 1, "Umane": 1, "Desiderata": 1}, "reduz o consumo de ultraprocessados por crianças"),
+    ("PL 4501/2020", "Senado"): ({"Vital Strategies": 1, "Umane": 1, "Desiderata": 1}, "ultraprocessados nas escolas"),
     ("PL 4622/2023", "Senado"): ({"Vital Strategies": -1}, "inclui bebidas alcoólicas no regime fiscal das áreas de livre comércio"),
     ("PDL 383/2024", "Senado"): ({"IEPS": -1}, "susta a proibição de acolher crianças em comunidades terapêuticas"),
     ("PDL 326/2024", "Câmara"): ({"IEPS": -1}, "susta a proibição de acolher adolescentes em comunidades terapêuticas"),
@@ -236,9 +244,9 @@ DESCRICAO = {
     ("PL 3217/2026", "Câmara"): ({"REMS": 1}, "esporte inclusivo para crianças com TEA"),
     ("PEC 17/2023", "Senado"): ({"Infinis": 1}, "segurança alimentar como direito fundamental"),
     ("PL 1018/2024", "Senado"): ({"Infinis": 1}, "prevenção à insegurança alimentar nas escolas"),
-    ("PL 2754/2023", "Senado"): ({"Infinis": 1}, "reajuste do per capita da alimentação escolar pelo IPCA de alimentos"),
+    ("PL 2754/2023", "Senado"): ({"Infinis": 1, "Desiderata": 1}, "reajuste do per capita da alimentação escolar pelo IPCA de alimentos"),
     ("PL 996/2023", "Senado"): ({"Infinis": 1}, "cestas básicas para a rede de acolhimento a mulheres"),
-    ("PL 1751/2023", "Senado"): ({"Infinis": 1}, "per capita da merenda por indicadores socioeconômicos"),
+    ("PL 1751/2023", "Senado"): ({"Infinis": 1, "Desiderata": 1}, "per capita da merenda por indicadores socioeconômicos"),
     ("PL 3098/2020", "Senado"): ({"Infinis": 1}, "direito à cesta básica no SISAN"),
     ("PL 1/2024", "Senado"): ({"Infinis": 1}, "compra mínima da agricultura familiar no PNAE"),
     ("PL 3547/2019", "Câmara"): ({"Infinis": 1}, "cooperativas da agricultura familiar no PNAE"),
@@ -258,11 +266,11 @@ DESCRICAO = {
     ("PL 3282/2025", "Câmara"): ({"Cactus": 1}, "filtragem de conteúdo de automutilação nas plataformas"),
     ("PL 5328/2025", "Câmara"): ({"Cactus": 1}, "atenção integral à pessoa com depressão"),
     ("PL 3526/2024", "Senado"): ({"Umane": 1}, "medidor contínuo de glicose pelo SUS"),
-    ("PL 5586/2023", "Senado"): ({"Umane": 1}, "Estatuto da Pessoa com Obesidade"),
+    ("PL 5586/2023", "Senado"): ({"Umane": 1, "Desiderata": 1}, "Estatuto da Pessoa com Obesidade"),
     ("PL 140/2020", "Senado"): ({"Umane": 1}, "atendimento na política de prevenção do diabetes"),
     ("PL 1308/2026", "Senado"): ({"Umane": 1}, "Estatuto da Pessoa com Diabetes Tipo 1"),
-    ("PL 1684/2003", "Câmara"): ({"Umane": 1}, "atendimento integral à obesidade no SUS"),
-    ("PL 638/2021", "Câmara"): ({"Umane": 1}, "atenção à obesidade no SUS"),
+    ("PL 1684/2003", "Câmara"): ({"Umane": 1, "Desiderata": 1}, "atendimento integral à obesidade no SUS"),
+    ("PL 638/2021", "Câmara"): ({"Umane": 1, "Desiderata": 1}, "atenção à obesidade no SUS"),
     ("PL 3055/2026", "Senado"): ({"ASBAI": 1}, "cobertura de fórmula para alergia à proteína do leite"),
     ("PL 4467/2021", "Senado"): ({"ASBAI": 1}, "recursos para pesquisa e produção de imunobiológicos"),
     ("PEC 196/2016", "Câmara"): ({"FMCSV": 1}, "30 dias a mais de licença-maternidade por filho em parto múltiplo"),
@@ -278,28 +286,41 @@ DESCRICAO = {
     ("PDL 1154/2025", "Câmara"): ({"Infinis": -1, "UNFPA": -1}, "susta a resolução Conanda/CNDM que reconhece a violência vicária"),
     ("PL 3000/2025", "Senado"): ({"Vital Strategies": 1}, "destruição de máquinas de cigarro ilegal (protocolo da OMS)"),
     ("PL 5050/2013", "Câmara"): ({"Vital Strategies": 1}, "fotos de acidente nas embalagens de bebida alcoólica"),
-    ("PL 3348/2012", "Câmara"): ({"Infinis": 1, "Vital Strategies": 1, "IDEC": 1, "Umane": 1}, "proíbe venda de alimentos de baixo teor nutricional nas escolas"),
+    ("PL 3348/2012", "Câmara"): ({"Infinis": 1, "Vital Strategies": 1, "IDEC": 1, "Umane": 1, "Desiderata": 1}, "proíbe venda de alimentos de baixo teor nutricional nas escolas"),
     ("PL 354/2022", "Senado"): ({"Infinis": 1}, "Benefício de Erradicação da Fome"),
-    ("PL 1971/2011", "Câmara"): ({"Infinis": 1}, "recálculo do PNAE quando as matrículas crescem"),
+    ("PL 1971/2011", "Câmara"): ({"Infinis": 1, "Desiderata": 1}, "recálculo do PNAE quando as matrículas crescem"),
     ("PDL 521/2020", "Câmara"): ({"IU": 1}, "susta a redução de 8% do valor mínimo por aluno do Fundeb"),
     ("PDL 522/2020", "Senado"): ({"IU": 1}, "susta a redução de 8% do valor mínimo por aluno do Fundeb"),
     ("PL 2759/2015", "Câmara"): ({"IU": 1}, "participação da comunidade escolar na escolha do diretor"),
     ("PL 3760/2026", "Senado"): ({"IU": 1}, "Fator Amazônico no financiamento da educação básica"),
     ("PL 3762/2026", "Senado"): ({"IU": 1}, "Política Nacional Escola das Adolescências"),
     ("PLS 649/2015", "Senado"): ({"Cactus": -1}, "obriga informar ao empregador o CID de transtorno mental do paciente"),
+    ("PL 2935/2011", "Câmara"): ({"MegaEdu": 1}, "recursos do FUST para internet de alunos e professores da rede pública"),
+    ("PL 4394/2020", "Câmara"): ({"MegaEdu": 1}, "Programa Banda Larga Estudantil"),
+    ("PL 263/2024", "Senado"): ({"MegaEdu": 1}, "Programa Nacional de Conectividade com recursos do FUST"),
+    ("PL 4942/2025", "Câmara"): ({"MegaEdu": 1}, "Plano Nacional de Inclusão Digital"),
+    ("PL 3781/2023", "Senado"): ({"MegaEdu": -1}, "revoga a contribuição dos consumidores ao FUST"),
+    ("PL 3349/2025", "Senado"): ({"Fundação Itaú": 1, "ISG": 1}, "poupança para estudantes de baixa renda da educação profissional de nível médio"),
+    ("PL 3785/2026", "Câmara"): ({"Fundação Itaú": 1}, "Programa Conecta Trabalho, acesso à educação profissional"),
+    ("PL 4744/2023", "Senado"): ({"Fundação Itaú": 1}, "patrocínio a estudantes da educação profissional e superior"),
+    ("PL 7395/2010", "Câmara"): ({"Fundação Itaú": 1}, "Programa de Acesso ao Ensino Técnico"),
+    ("PL 1288/2011", "Câmara"): ({"Fundação Itaú": 1}, "Programa de Acesso ao Ensino Técnico"),
+    ("PL 4979/2026", "Senado"): ({"Fundação Itaú": 1}, "transporte para estudantes da rede federal de educação profissional"),
+    ("PL 3118/2024", "Senado"): ({"Fundação Itaú": 1}, "assistência a estudantes da educação profissional federal com o Fundo Social"),
+    ("PL 2813/2023", "Câmara"): ({"Fundação Itaú": 1}, "vaga no ensino noturno para trabalhadores e aprendizes"),
 }
 # Sinais que não estão na autoria de projeto: emendas lidas e posições documentadas no relatório "Congresso 2027:
 # apoiadores e detratores das agendas do Infinis" (Eixo, 05/10/2026). (senador, {cliente: sentido}, força, texto)
 SINAIS_DIRETOS = [
-    ("Efraim Filho", {"Vital Strategies": -1}, "forte", "autor da Emenda 1490 ao PLP 68/2024, que tira as bebidas açucaradas do Imposto Seletivo"),
-    ("Laércio Oliveira", {"Vital Strategies": -1}, "forte", "autor da Emenda 642 ao PLP 68/2024, que limita a 1% o Imposto Seletivo das bebidas açucaradas"),
+    ("Efraim Filho", {"Vital Strategies": -1, "Desiderata": -1}, "forte", "autor da Emenda 1490 ao PLP 68/2024, que tira as bebidas açucaradas do Imposto Seletivo"),
+    ("Laércio Oliveira", {"Vital Strategies": -1, "Desiderata": -1}, "forte", "autor da Emenda 642 ao PLP 68/2024, que limita a 1% o Imposto Seletivo das bebidas açucaradas"),
     ("Eduardo Gomes", {"Infinis": -1, "Vital Strategies": -1}, "forte", "relator, com parecer favorável, do PL 5008/2023, que regulamenta os cigarros eletrônicos (CAE)"),
     ("Veneziano Vital do Rêgo", {"Infinis": 1, "IEPS": 1}, "forte", "relator no Senado do PL 3383/2021, que virou a Lei 14.819/2024 (atenção psicossocial nas escolas)"),
     ("Carlos Portinho", {"Infinis": 1, "UNFPA": 1}, "forte", "autor da Emenda 741 ao PL 4/2025 (Código Civil), que fixa 18 anos como idade mínima para o casamento"),
-    ("Veneziano Vital do Rêgo", {"Vital Strategies": -1}, "forte", "autor da Emenda 1730 ao PLP 68/2024, que tira as bebidas açucaradas do Imposto Seletivo"),
-    ("Magno Malta", {"Vital Strategies": -1}, "forte", "autor da Emenda 1928 ao PLP 68/2024, que tira as bebidas açucaradas do Imposto Seletivo"),
+    ("Veneziano Vital do Rêgo", {"Vital Strategies": -1, "Desiderata": -1}, "forte", "autor da Emenda 1730 ao PLP 68/2024, que tira as bebidas açucaradas do Imposto Seletivo"),
+    ("Magno Malta", {"Vital Strategies": -1, "Desiderata": -1}, "forte", "autor da Emenda 1928 ao PLP 68/2024, que tira as bebidas açucaradas do Imposto Seletivo"),
     ("Tereza Cristina", {"Vital Strategies": -1}, "forte", "autora da Emenda 1873 ao PLP 68/2024, que escalona o Imposto Seletivo das bebidas alcoólicas para não passar a carga de 2023"),
-    ("Beto Faro", {"Vital Strategies": 1}, "forte", "autor da Emenda 2197 ao PLP 68/2024, que estende o Imposto Seletivo às bebidas ultraprocessadas"),
+    ("Beto Faro", {"Vital Strategies": 1, "Desiderata": 1}, "forte", "autor da Emenda 2197 ao PLP 68/2024, que estende o Imposto Seletivo às bebidas ultraprocessadas"),
     ("Omar Aziz", {"Infinis": 1, "Vital Strategies": 1}, "evidência", "contrário à regulamentação dos cigarros eletrônicos na CAE (declaração, sinal fraco)"),
 ]
 
@@ -428,6 +449,10 @@ def classifica(fp, fn, mp, mn):
 
 def main():
     base = c.ler_csv("temas_clientes/base_pautas.csv")
+    # clientes do DOU e do PDF de descrição que não estão na base de pautas: entram só pelos sinais da descrição
+    extra = pd.DataFrame([{"Área": a, "Cliente": cl, "Pauta": pa, "Cliente é": "", "Projeto": "", "Para o cliente": "", "Comentário": ""}
+                          for cl, (a, pa) in CLIENTES_FORA_DA_BASE.items()])
+    base = pd.concat([base, extra], ignore_index=True)
     comp = c.ler_csv("temas_clientes/posicoes_clientes_complemento.csv")
     base["Fonte da posição"] = "Coordenação"
     for r in comp.itertuples():
@@ -507,10 +532,10 @@ def main():
                            "Evidências": evidencias(s)})
         pautas = g.drop_duplicates("Pauta")
         resumo.append({"Área": area, "Cliente": cliente,
-                       "Pautas": "; ".join(f"{r.Pauta} ({r._4.lower() or 'posição não informada'})" for r in pautas.itertuples()),
+                       "Pautas": "; ".join(f"{r.Pauta} ({r._4.lower() or 'posição não informada'})" if r.Projeto else f"{r.Pauta} (fora da base de pautas; só pela descrição do cliente)" for r in pautas.itertuples()),
                        "Promotores": int((marcados["Para o cliente"] == "Promotor").sum()),
                        "Detratores": int((marcados["Para o cliente"] == "Detrator").sum()),
-                       "Aguardando": int((~g["Para o cliente"].isin(["Promotor", "Detrator"])).sum()),
+                       "Aguardando": int((~g["Para o cliente"].isin(["Promotor", "Detrator"]) & (g.Projeto != "")).sum()),
                        "Senadores com registro": com_registro,
                        "Posição fora da planilha": "; ".join(f"{r.Projeto}: {r._8}" for r in g.itertuples() if r._8 != "Coordenação")})
     c.salvar_csv(pd.DataFrame(linhas), "temas_clientes/clientes_classificacao.csv")
