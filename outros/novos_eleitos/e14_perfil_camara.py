@@ -138,6 +138,20 @@ def discursos_periodo(id_camara, inicio, fim, chave):
     return api_paginada(f"deputados/{id_camara}/discursos", {"dataInicio": inicio, "dataFim": fim}, chave)
 
 
+UFS = {"AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN",
+       "RS", "RO", "RR", "SC", "SP", "SE", "TO"}
+
+
+def do_proprio(transcricao, l):
+    """A API de discursos por deputado mistura homônimos: no código do Júlio Cesar (PSD/PI) vieram 174 falas do
+    Julio Cesar Ribeiro (Republicanos/DF). Fala cujo cabeçalho traz outra UF fica de fora."""
+    cab = re.match(r"\s*(?:O SR\.|A SRA\.)[^(]*\(([^)]*)\)", transcricao)
+    if not cab:
+        return True
+    ufs = {u for u in re.findall(r"\b[A-Z]{2}\b", cab.group(1)) if u in UFS}
+    return not ufs or bool(ufs & set(f"{l.get('UF na Câmara') or ''} {l.get('UF') or ''}".replace(";", " ").replace(",", " ").split()))
+
+
 def discursos(l):
     """Um ano por chamada e sem ordenação (com ordenarPor a API dá erro 500 da segunda página em
     diante). Ano que ainda assim dá erro é tentado mês a mês; o mês que falhar fica registrado."""
@@ -158,6 +172,8 @@ def discursos(l):
                     FALHAS.append({"Parlamentar": l["Parlamentar"], "Tabela": "discursos", "Período": f"{mes:02d}/{ano}",
                                    "Motivo": "A API da Câmara devolveu erro 500"})
         for p in lista or []:
+            if not do_proprio(p.get("transcricao") or "", l):
+                continue
             saida.append({"Parlamentar": l["Parlamentar"], "Data": (p.get("dataHoraInicio") or "")[:10],
                           "Tipo": p.get("tipoDiscurso") or "", "Casa": "CD", "Resumo": p.get("sumario") or "",
                           "Indexação": p.get("keywords") or "", "Link": p.get("urlTexto") or "",
