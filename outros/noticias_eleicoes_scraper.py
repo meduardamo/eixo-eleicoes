@@ -642,12 +642,44 @@ _RE_PASTA_TRANSICAO = re.compile(
     rf"|(?:pasta|area|comando|titular)\s+(?:\w+\s+){{0,2}}?d[aeo]s?\s+(?:{_AREAS_TRANSICAO})\b"
     r"|\b(?:seduc|sefaz|seplag)\b")
 
+# Termos que indicam prestação de contas rotineira de gestão atual (não é transição de governo)
+_RE_ROTINA_FISCAL = re.compile(
+    r"\b(?:secretari[oa]\s+(?:\w+\s+){0,3}?em\s+exercicio|"
+    r"disponibilidade\s+de\s+caixa|prestacao\s+de\s+contas|"
+    r"relatorio\s+(?:fiscal|de\s+gestao)|audiencia\s+publica\s+na\s+ale)\b")
+
+# Movimentação real de equipe / secretariado de novo governo
+_RE_TRANSICAO_EFETIVA = re.compile(
+    r"\b(?:novo[sa]?\s+secretari[oa]s?|futur[oa]\s+secretari[oa]s?|"
+    r"equipe\s+de\s+transicao|coordenador[a]?\s+da\s+transicao|"
+    r"cotad[oa]\s+(?:para|a|como)\b|"
+    r"anuncia(?:do|da|r)?\s+(?:o\s+)?secretariado|"
+    r"reforma\s+administrativa|"
+    r"nomea(?:do|da|r)?\s+(?:para\s+a\s+secretaria|secretari[oa]|desses\s+secretarios)|"
+    r"assume\s+(?:a\s+pasta|a\s+secretaria|o\s+comando)|"
+    r"convite\s+para\s+ser\s+secretari[oa])\b")
+
 
 def cita_pasta_da_transicao(texto) -> bool:
     return bool(_RE_PASTA_TRANSICAO.search(_sem_acento(texto or "").lower()))
 
 
-def aplicar_regra_alerta(dados, texto: str = "") -> dict:
+def eh_alerta_transicao_valido(texto) -> bool:
+    """Garante que a transição cita uma das 12 pastas E tem movimento real de troca/montagem de governo.
+
+    Derruba citações de passagem em prestação de contas fiscal de rotina (ex:
+    secretário da Fazenda em exercício apresentando contas quadrimestrais na
+    ALEP).
+    """
+    if not cita_pasta_da_transicao(texto):
+        return False
+    t_sem = _sem_acento(texto or "").lower()
+    if _RE_ROTINA_FISCAL.search(t_sem) and not _RE_TRANSICAO_EFETIVA.search(t_sem):
+        return False
+    return True
+
+
+def aplicar_regra_alerta(dados, texto: str = "", titulo: str = "") -> dict:
     """Confere em código o alerta que o Gemini propôs e derruba o que não passa.
 
     O modelo lê a notícia e sugere o tema; quem decide é esta função. As condições
@@ -679,8 +711,50 @@ def aplicar_regra_alerta(dados, texto: str = "") -> dict:
         tema = ""
     if dados.get("status") == "não relacionado":
         tema = ""
-    if tema == "transição" and not cita_pasta_da_transicao(texto):
+
+    if not titulo:
+        titulo = str(dados.get("titulo") or "")
+    if not titulo and "Manchete: " in texto:
+        try:
+            titulo = texto.split("Manchete: ", 1)[1].split("\n", 1)[0]
+        except Exception:
+            titulo = ""
+
+    texto_norm = _sem_acento(texto or "").lower()
+    titulo_norm = _sem_acento(titulo or "").lower()
+    conteudo_norm = f"{titulo_norm} {texto_norm}"
+    candidato = str(dados.get("candidato") or "").strip()
+    cand_norm = _sem_acento(candidato).lower()
+
+    if tema == "transição" and not eh_alerta_transicao_valido(texto):
         tema = ""
+
+    # Trava de Fato Eleitoral e Impugnação:
+    # (1) Votações rotineiras do Congresso (ex.: escala 6x1) não são fato eleitoral do executivo
+    # (2) Vagas administrativas em Tribunais de Contas (TCE) ou STF não mexem com a disputa do executivo
+    # (3) Fato eleitoral precisa ter um candidato nominalmente vinculado
+    if tema in ("fato-eleitoral", "impugnação"):
+        if re.search(r"\b6\s*[xX]\s*1\b", conteudo_norm) or "jornada de trabalho" in conteudo_norm or "fim da escala" in conteudo_norm:
+            tema = ""
+        elif any(p in conteudo_norm for p in ("vaga no tce", "vagas no tce", "vaga de conselheiro", "vagas abertas no tce", "conselheiro do tce", "vaga no stf", "vagas no stf")):
+            tema = ""
+        elif not candidato:
+            tema = ""
+
+    # Trava de Visita Presidencial:
+    if tema == "visita-presidencial":
+        # Visita pessoal ou familiar (ex: visita a familiar preso ou em hospital no DF)
+        if any(p in conteudo_norm for p in ("visita bolsonaro", "visita o pai", "visita ao pai", "visitar o pai")):
+            tema = ""
+        else:
+            # Em colunas com notas múltiplas, a manchete precisa ter conexão mínima com política ou o candidato
+            termos_politicos_titulo = (
+                "lula", "flavio", "bolsonaro", "eleicao", "eleicoes", "segundo turno",
+                "2o turno", "2º turno", "campanha", "comicio", "caravana", "palanque",
+                "presidente", "presidenciavel", "visita", "agenda",
+            )
+            if not any(t in titulo_norm for t in termos_politicos_titulo) and (not cand_norm or cand_norm not in titulo_norm):
+                tema = ""
 
     dados["alerta_tema"] = tema
     dados["alerta"] = "sim" if tema else "não"
@@ -938,7 +1012,7 @@ def classificar_com_gemini(titulo, trecho=""):
     dados["convencao"] = "sim" if dados.get("convencao") is True else "não"
     abrang = str(dados.get("abrangencia") or "").strip().lower()
     dados["abrangencia"] = abrang if abrang in ("nacional", "estadual") else ""
-    return aplicar_regra_alerta(dados, contexto)
+    return aplicar_regra_alerta(dados, contexto, titulo=titulo)
 
 
 def _classificar_uma(n):
