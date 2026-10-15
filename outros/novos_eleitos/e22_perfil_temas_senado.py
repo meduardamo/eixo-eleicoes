@@ -3,7 +3,8 @@
 Blocos de cada linha:
 - O que fez: síntese escrita a partir da leitura das matérias da etapa 21 (temas_clientes/o_que_fez_<grupo>_*.json),
   com número da matéria e da lei; designação de relatoria que terminou sem parecer do senador não entra;
-- O que defende: o que disse no plenário desde 2023, com data, pela leitura dos resumos de discurso do Senado
+- O que defende: o que disse no plenário desde 2023, com data, pela leitura dos resumos de discurso do Senado,
+  e o que disse nas comissões do tema (temas_clientes/falas_comissao.json, leitura das notas taquigráficas)
   (temas_clientes/o_que_defende_<grupo>_*.json). Resumo idêntico para vários senadores na mesma sessão só entra
   depois de conferido no texto da nota taquigráfica: o Senado repete o resumo de uma fala em quem falou depois;
 - Números: matérias de primeira autoria, relatorias com parecer, relatorias em curso e quantas viraram lei;
@@ -52,6 +53,23 @@ VOTACOES = [
     ("Primeira infância", "CE", "2024-02-20", "PL 826/2019", "PL 826/2019",
      "Vacinação nas escolas públicas, na CE em 20/02/2024 (Sim = aprovar)"),
 ]
+# novos senadores que eram deputados: votações nominais do plenário da Câmara nos mesmos temas, validadas em 15/10/2026.
+# Lei Geral do Esporte, cotas e celular não tiveram votação nominal no plenário da Câmara.
+VOTACOES_CAMARA = [
+    ("Saúde", "2023-06-14", "MPV 1165/2023", "Aprovada a Medida Provisória",
+     "Mais Médicos na Câmara, MPV 1165/2023 (Sim = aprovar; aprovada, 353 x 58)"),
+    ("Saúde", "2025-09-24", "PLP 163/2025", "Aprovado o Projeto de Lei Complementar nº 163",
+     "PLP 163/2025 na Câmara (Sim = tirar gasto temporário de saúde e educação do arcabouço fiscal; aprovado, 296 x 145)"),
+    ("Educação", "2025-09-24", "PLP 163/2025", "Aprovado o Projeto de Lei Complementar nº 163",
+     "PLP 163/2025 na Câmara (Sim = tirar gasto temporário de saúde e educação do arcabouço fiscal; aprovado, 296 x 145)"),
+    ("Educação", "2025-02-11", "PL 9133/2017", "Aprovado o Substitutivo",
+     "Matrícula negada, PL 9133/2017 na Câmara (Sim = suspender o credenciamento da escola que negar matrícula; aprovado, 297 x 107)"),
+    ("Esporte", "2023-12-21", "PL 3626/2023", "Rejeitada a Emenda do Senado Federal nº 3",
+     "Lei das bets na Câmara, Emenda 3 do Senado (Sim = manter fora da lei os jogos on-line, como cassino; rejeitada, 120 x 261)"),
+    ("Primeira infância", "2025-10-14", "PL 1924/2025", "Emenda de Plenário nº 2",
+     "EDI 0-5 na Câmara, Emenda de Plenário 2 (Sim = primeira infância começa na gestação; aprovada, 246 x 199)"),
+]
+VOTO_CAMARA = {"Artigo 17": "presidia a sessão", "Obstrução": "obstrução"}
 AUSENCIA = {"P-NRV": "presente, não votou", "AP": "em atividade parlamentar", "MIS": "em missão", "LS": "licença saúde",
             "LP": "licença particular", "NCom": "não compareceu", "Presidente (art. 51 RISF)": "presidia a sessão"}
 
@@ -80,6 +98,22 @@ def votos_do(nome, plen, com, tema):
     return "\n".join(linhas) if linhas else "Sem votação nominal que separe os senadores neste tema."
 
 
+def votos_camara(nome, vcam, tema):
+    """Voto do ex-deputado nas votações-chave da Câmara."""
+    meus = vcam[vcam.Parlamentar == nome]
+    if meus.empty:
+        return "Não era senador nem deputado nas votações-chave."
+    linhas = []
+    for t, data, mat, trecho, rotulo in VOTACOES_CAMARA:
+        if t != tema:
+            continue
+        v = meus[(meus.Data.str[:10] == data) & (meus["Matéria"] == mat) & meus["Votação"].str.contains(trecho, regex=False)]
+        # ausência não diz se faltou, estava licenciado ou fora do mandato: fica só o fato
+        voto = VOTO_CAMARA.get(v.Voto.iloc[0], v.Voto.iloc[0]) if len(v) else "sem voto registrado"
+        linhas.append(f"{rotulo}: {voto}")
+    return "\n".join(linhas) if linhas else "Sem votação nominal que separe os deputados neste tema."
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--grupo", choices=GRUPOS, required=True)
@@ -101,9 +135,14 @@ def main():
 
     # novos: a fala vem da Câmara (plenário desde 2023) ou, sem mandato federal, da imprensa da eleição;
     # nenhum era senador nas votações-chave, e o voto na Câmara entra na rodada da Câmara
-    col_fala = "O que defende (plenário, desde 2023)" if grupo != "novos" else "O que defende (plenário da Câmara desde 2023 ou imprensa)"
+    col_fala = ("O que defende (plenário e comissões, desde 2023)" if grupo != "novos"
+                else "O que defende (plenário da Câmara desde 2023 ou imprensa)")
+    # falas em comissão (CAS, CE, CEsp, CDH e CPI das Bets) lidas uma a uma; só existem para quem já era senador
+    falas_com = json.loads(c.caminho("temas_clientes/falas_comissao.json").read_text())
     sem_fala = ("Nenhum discurso sobre o tema em plenário desde 2023." if grupo != "novos"
                 else "Nenhum discurso sobre o tema no plenário da Câmara desde 2023.")
+    vcam = c.ler_csv("perfil_camara_senado/votos.csv")
+    vcam = vcam[(vcam.Colegiado == "PLEN") & (vcam.Data >= "2023-02-01")]
     linhas = []
     for l in lev.sort_values(["UF", "Parlamentar"]).to_dict("records"):
         nome = l["Parlamentar"]
@@ -118,14 +157,15 @@ def main():
             linhas.append({
                 "Parlamentar": nome, "Partido": l["Partido"], "UF": l["UF"], "Tema": tema,
                 "O que fez": texto[nome][tema],
-                col_fala: fala.get(nome, {}).get(tema, sem_fala),
+                col_fala: " Em comissão: ".join(t for t in (fala.get(nome, {}).get(tema, sem_fala),
+                                                            falas_com.get(nome, {}).get(tema)) if t),
                 "Primeiro autor": int((m.Papel == "Primeiro autor").sum()),
                 "Relatorias com parecer": int((m.Papel == "Relatou (parecer)").sum()),
                 "Relatorias em curso": int((m.Papel == "Relator atual").sum()),
                 "Viraram lei": len(leis),
                 "Leis": "\n".join(f"{r['Matéria']}: {r['Situação da matéria']}" for r in leis.to_dict("records")),
-                "Como votou (votações que separam os senadores)": (votos_do(nome, plen, com, tema) if grupo != "novos" else
-                    "Não era senador nas votações-chave. Os votos na Câmara entram na rodada da Câmara."),
+                ("Como votou (votações que separam os senadores)" if grupo != "novos" else "Como votou (Câmara, para quem era deputado)"): (votos_do(nome, plen, com, tema) if grupo != "novos" else
+                    votos_camara(nome, vcam, tema)),
                 "Comissão do tema hoje": "; ".join(dict.fromkeys(comissao)) or "Não é membro",
                 "Frentes do tema no Senado": "; ".join(dict.fromkeys(frentes)),
                 "Observação sobre a cadeira": obs.get(nome, ""),
