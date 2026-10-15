@@ -230,36 +230,39 @@ def google_news_rss(busca, max_itens=20, tentativas=3):
     return itens
 
 
-# Bloco 1: termos de candidatura (convenção etc.) + pesquisa de intenção de voto
-# (frases genéricas e nomes de institutos, o sinal mais forte).
-TERMOS = ('(convenção OR pré-candidato OR "coordenador de campanha" '
-          'OR "lançamento de candidatura" '
-          'OR "pesquisa eleitoral" OR "intenção de voto" OR "pesquisa de opinião" '
-          'OR Datafolha OR Quaest OR Ipec OR AtlasIntel OR "Paraná Pesquisas" '
-          'OR "Real Time Big Data")')
+# Limite do Google Notícias (teste de 15/10/2026): a consulta só vale até uns 30
+# termos e o resto é ignorado sem aviso. Os blocos de antes perdiam o fim da
+# lista (os seis institutos, "declara apoio" e educação, a parte policial). Cada
+# bloco abaixo foi testado inteiro em presidente, governador e senador por UF e
+# em site:dominio, acrescentando um termo inexistente no fim: com a busca
+# inteira, volta zero. Termo novo só entra se esse teste seguir dando zero, e na
+# ordem de importância, porque o que passa do limite é o fim.
+#
+# Os termos de pré-campanha (convenção, pré-candidato, lançamento e registro de
+# candidatura, troca de partido, coligação, federação) saíram em 15/10, com o 1º
+# turno encerrado, para abrir espaço.
 
-# Bloco 2: o que acontece na campanha depois que a candidatura está de pé —
-# agenda, debate, mudança de aliança, declaração de apoio e educação (para pegar
-# crítica sobre política pública de educação). Fica numa busca separada em vez de
-# entrar no bloco 1: o RSS do Google devolve no máximo ~20 itens por busca, então
-# um OR gigante faria os termos novos disputarem espaço com convenção/pesquisa e
-# ninguém apareceria direito. O Gemini separa depois pelo campo tipo.
-TERMOS_CAMPANHA = ('("agenda de campanha" OR comício OR caravana '
-                   'OR debate OR sabatina '
-                   'OR coligação OR aliança OR federação OR palanque '
-                   'OR "muda de partido" OR "troca de partido" '
-                   'OR "declara apoio" OR "declaração de apoio" OR "anuncia apoio" '
+# Bloco 1: pesquisa de intenção de voto (frases genéricas e nomes de institutos,
+# o sinal mais forte).
+TERMOS = ('("pesquisa eleitoral" OR "intenção de voto" '
+          'OR Datafolha OR Quaest OR Ipec OR AtlasIntel OR "Paraná Pesquisas" '
+          'OR "Real Time Big Data" OR "segundo turno")')
+
+# Bloco 2: o que acontece na campanha: apoio e neutralidade no 2º turno, debate,
+# agenda e educação (para pegar crítica sobre política pública de educação).
+# Fica numa busca separada em vez de entrar no bloco 1: o RSS do Google devolve
+# no máximo ~20 itens por busca, então um OR gigante faria os termos disputarem
+# espaço e ninguém apareceria direito. O Gemini separa depois pelo campo tipo.
+TERMOS_CAMPANHA = ('("declara apoio" OR "anuncia apoio" OR neutralidade '
+                   'OR debate OR sabatina OR comício OR caravana OR palanque '
                    'OR educação)')
 
-# Bloco 3: o que sai do calendário de campanha e ainda assim mexe com a disputa —
+# Bloco 3: o que sai do calendário de campanha e ainda assim mexe com a disputa:
 # impugnação de candidatura e fato com potencial impacto eleitoral. Os dois vieram
 # da pauta que a Jessica fechou com o Fe (01/09) e ficam juntos porque partilham o
 # vocabulário jurídico-policial; quem separa depois é o campo tipo.
-TERMOS_FATO = ('(impugnação OR "impugnar candidatura" OR "registro de candidatura" '
-               'OR "candidatura indeferida" OR indeferimento OR inelegibilidade '
-               'OR "ficha limpa" OR cassação OR "recurso ao TSE" '
-               'OR "operação da Polícia Federal" OR denúncia OR "acusado de" '
-               'OR investigado OR "vai ou fica" OR "desistir da candidatura")')
+TERMOS_FATO = ('(cassação OR inelegibilidade OR "recurso ao TSE" '
+               'OR "operação da PF" OR denúncia OR investigado OR impugnação)')
 
 # Bloco 4: visita de presidenciável no estado. Não depende do cargo em disputa,
 # então roda uma busca por estado em vez de uma por cargo × estado (seriam três
