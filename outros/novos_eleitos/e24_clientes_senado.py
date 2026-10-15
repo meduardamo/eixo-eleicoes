@@ -2,7 +2,8 @@
 
 Entrada: temas_clientes/base_pautas.csv (cópia da planilha "Eixo | Base de pautas por cliente", abas Clientes
 Educação, Saúde e Esporte) e temas_clientes/posicoes_clientes_complemento.csv (posição informada fora da planilha,
-a confirmar com a coordenação). Só entram projetos marcados Promotor ou Detrator; Dúvida e em branco aguardam.
+a confirmar com a coordenação). Entram os projetos marcados Promotor ou Detrator e, quando a marcação está em Dúvida
+ou em branco, os de pauta com posição A favor ou Contra, no sentido dessa posição (a confirmar); Depende do texto fica fora.
 
 Sinais do senador em cada projeto (Senado e, para quem foi deputado, Câmara):
 - forte: primeiro autor; voto nominal no próprio projeto ou no parecer dele (Sim conta no sentido do projeto,
@@ -63,7 +64,7 @@ PAUTAS = {
 
 # Sinais pela descrição do cliente (PDF "Monitor Legislativo e DOU - Segunda Etapa" e CLIENT_THEME_DATA do raspador
 # do DOU), com o sentido lido na ementa: +1 a favor do cliente, -1 contra. Ficam de fora as ementas que não mostram
-# o sentido e os projetos que já estão na base de pautas do cliente (inclusive os marcados Dúvida). A confirmar com a
+# o sentido e os projetos que já estão na base de pautas do cliente, que contam por lá. A confirmar com a
 # coordenação. Chave: (matéria, Casa da autoria).
 DESCRICAO = {
     ("PL 707/2015", "Câmara"): ({"ISG": 1, "IU": 1}, "ensino em tempo integral"),
@@ -240,21 +241,26 @@ def main():
     linhas, resumo = [], []
     for (area, cliente), g in base.groupby(["Área", "Cliente"], sort=False):
         marcados = g[g["Para o cliente"].isin(["Promotor", "Detrator"])]
+        # sem marcação (Dúvida ou em branco): vale o sentido da posição do cliente na pauta, a confirmar
+        pela_pauta = g[~g["Para o cliente"].isin(["Promotor", "Detrator"]) & g["Cliente é"].isin(["A favor", "Contra"])].copy()
+        pela_pauta["Para o cliente"] = pela_pauta["Cliente é"].map({"A favor": "Promotor", "Contra": "Detrator"})
+        pela_pauta["Fonte da posição"] = "pauta"
         sinais = {n: [] for n in senadores.Parlamentar}
-        for p in marcados.itertuples():
+        for p in pd.concat([marcados, pela_pauta]).itertuples():
             sentido = 1 if p._6 == "Promotor" else -1
+            quem = f"{p._6.lower()} para o cliente" + (", pela posição na pauta; marcação da coordenação pendente" if p._8 == "pauta" else "")
             for k, casa in chaves(p.Projeto):
                 ok = lambda d: (d.k == k) & ((d.Casa == casa) if casa else True)
                 for r in aut[ok(aut) & aut.Papel.isin(["Primeiro autor", "Coautor"])].sort_values("Papel", ascending=False).drop_duplicates("Parlamentar").itertuples():
                     if r.Parlamentar in sinais:
                         forte = r.Papel == "Primeiro autor"
                         sinais[r.Parlamentar].append(("forte" if forte else "médio", sentido,
-                            f"{'autor' if forte else 'coautor'} do {k} ({p._6.lower()} para o cliente)"))
+                            f"{'autor' if forte else 'coautor'} do {k} ({quem})"))
                 for r in vot[ok(vot) & vot.Voto.isin(["Sim", "Não"])].itertuples():
                     if r.Parlamentar in sinais:
                         s = sentido if r.Voto == "Sim" else -sentido
                         onde = r.Colegiado if r.Colegiado != "PLEN" else "plenário da Câmara"
-                        sinais[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {k} ({onde}, {str(r.Data)[:4]}; projeto {p._6.lower()} para o cliente)"))
+                        sinais[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {k} ({onde}, {str(r.Data)[:4]}; projeto {quem})"))
                 for r in rel[ok(rel)].drop_duplicates(["Parlamentar", "Colegiado"]).itertuples():
                     if r.Parlamentar in sinais:
                         sinais[r.Parlamentar].append(("evidência", 0, f"relator do {k} na {r.Colegiado} (sentido do parecer não lido)"))
