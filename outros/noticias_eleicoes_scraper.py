@@ -21,7 +21,9 @@ Em 08/10/2026, com o 1º turno encerrado, entrou a transição de governo nos
 estados no que toca às pastas de Educação e Saúde (pedido da Eduarda): quem
 entra, quem sai e quem cuida da área na equipe de transição. Tem termo de busca
 próprio (TERMOS_TRANSICAO) e tema de alerta ("transição"). Em 15/10/2026 a lista
-de pastas passou de duas para doze (PASTAS_TRANSICAO).
+de pastas passou de duas para doze (PASTAS_TRANSICAO). No mesmo dia o tipo "transição"
+passou a valer para todas as secretarias estaduais (fica na planilha e no
+painel), e o alerta por email continua só nas doze.
 
 Secrets do email: BREVO_API_KEY, EMAIL, DESTINATARIOS_NOTICIAS (ou DESTINATARIOS).
 Sem eles a rodada segue normal, só não envia.
@@ -819,11 +821,12 @@ def classificar_com_gemini(titulo, trecho=""):
         "operação policial, prisão, condenação, morte, afastamento, indefinição pública "
         "sobre disputar ou não, disputa em torno de um tema local) e que a notícia liga a "
         "um candidato, pré-candidato, partido ou governo da eleição de 2026\n"
-        "  - tipo='transição': transição de governo estadual depois da eleição, numa das "
-        f"pastas acompanhadas ({PASTAS_TRANSICAO_TEXTO}): nome anunciado, confirmado, "
-        "convidado ou cotado para a secretaria, secretário que sai ou que fica, quem "
-        "cuida da área na equipe de transição, fusão, divisão ou criação de secretaria "
-        "nessas áreas\n"
+        "  - tipo='transição': transição de governo estadual depois da eleição, em "
+        "QUALQUER secretaria ou na equipe de transição como um todo: nome anunciado, "
+        "confirmado, convidado ou cotado para uma secretaria, secretário que sai ou que "
+        "fica, equipe de transição e quem a integra, cronograma da transição, fusão, "
+        "divisão ou criação de secretaria. O tipo vale para todas as pastas; o "
+        "alerta_tema 'transição' é mais estrito (ver abaixo)\n"
         "  - tipo='outro': não se encaixa em nenhum dos anteriores\n"
         "- confianca='alto': candidato, cargo e UF estão todos explícitos no texto\n"
         "- confianca='médio': algum campo foi inferido com boa certeza pelo contexto\n"
