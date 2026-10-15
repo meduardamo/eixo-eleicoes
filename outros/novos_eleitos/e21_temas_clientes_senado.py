@@ -56,7 +56,8 @@ def situacao_camara(id_prop):
 
 
 def situacao(link):
-    m = re.search(r"materia/(\d+)", link)
+    # só link do Senado: o SAPL das câmaras municipais usa o mesmo formato "materia/<número>"
+    m = re.search(r"senado\.leg\.br/.*materia/(\d+)", link)
     if m:
         return situacao_senado(m.group(1))
     m = re.search(r"idProposicao=(\d+)", link)
