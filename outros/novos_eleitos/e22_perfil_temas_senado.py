@@ -3,6 +3,9 @@
 Blocos de cada linha:
 - O que fez: síntese escrita a partir da leitura das matérias da etapa 21 (temas_clientes/o_que_fez_<grupo>_*.json),
   com número da matéria e da lei; designação de relatoria que terminou sem parecer do senador não entra;
+- O que defende: o que disse no plenário desde 2023, com data, pela leitura dos resumos de discurso do Senado
+  (temas_clientes/o_que_defende_<grupo>_*.json). Resumo idêntico para vários senadores na mesma sessão só entra
+  depois de conferido no texto da nota taquigráfica: o Senado repete o resumo de uma fala em quem falou depois;
 - Números: matérias de primeira autoria, relatorias com parecer, relatorias em curso e quantas viraram lei;
 - Como votou: voto nas votações-chave do tema validadas em 15/10/2026 (VOTACOES), no plenário e nas comissões;
 - Força no tema: lugar hoje na comissão do tema e frentes do tema no Senado;
@@ -53,9 +56,9 @@ AUSENCIA = {"P-NRV": "presente, não votou", "AP": "em atividade parlamentar", "
             "LP": "licença particular", "NCom": "não compareceu", "Presidente (art. 51 RISF)": "presidia a sessão"}
 
 
-def sinteses(grupo):
+def sinteses(grupo, bloco="o_que_fez"):
     d = {}
-    for p in sorted(c.caminho("temas_clientes").glob(f"o_que_fez_{grupo}_*.json")):
+    for p in sorted(c.caminho("temas_clientes").glob(f"{bloco}_{grupo}_*.json")):
         d.update(json.loads(p.read_text()))
     return d
 
@@ -86,6 +89,7 @@ def main():
     mats = c.ler_csv(f"temas_clientes/materias_{grupo}.csv")
     mats = mats[mats.Papel != "Designado, saiu antes do parecer"]
     texto = sinteses(grupo)
+    fala = sinteses(grupo, "o_que_defende")
     c.falhar_se(set(lev.Parlamentar) - set(texto), f"sem síntese: {set(lev.Parlamentar) - set(texto)}")
     plen = pd.concat([c.ler_csv(f"perfil_senado_{g}/votos.csv") for g in GRUPOS])
     com = c.ler_csv("perfil_senado_comissoes/votos.csv")
@@ -109,6 +113,7 @@ def main():
             linhas.append({
                 "Parlamentar": nome, "Partido": l["Partido"], "UF": l["UF"], "Tema": tema,
                 "O que fez": texto[nome][tema],
+                "O que defende (plenário, desde 2023)": fala.get(nome, {}).get(tema, "Nenhum discurso sobre o tema em plenário desde 2023."),
                 "Primeiro autor": int((m.Papel == "Primeiro autor").sum()),
                 "Relatorias com parecer": int((m.Papel == "Relatou (parecer)").sum()),
                 "Relatorias em curso": int((m.Papel == "Relator atual").sum()),

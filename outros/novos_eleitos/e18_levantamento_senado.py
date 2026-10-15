@@ -7,7 +7,9 @@ suficiente só se aplica a uma pauta definida, e entra depois, em colunas própr
 
 O que conta como atuação num tema (registro de iniciativa):
 - matéria legislativa de que é o primeiro autor, no Senado, na Câmara, em assembleia ou câmara municipal;
-- matéria legislativa que relatou, no Senado ou na Câmara (na Câmara, só o relator do último andamento).
+- matéria legislativa que relatou, no Senado ou na Câmara (na Câmara, só o relator do último andamento). No Senado,
+  designação encerrada por redistribuição, troca na comissão, relator ad hoc ou fim de legislatura não conta:
+  o senador saiu antes de dar parecer.
 Voto não conta: todo senador vota, e o voto mede posição, não iniciativa. Homenagem, data
 comemorativa, utilidade pública e outorga de rádio e TV ficam fora.
 
@@ -37,6 +39,7 @@ import re
 import pandas as pd
 
 from outros.novos_eleitos import comum as c
+from outros.novos_eleitos.e21_temas_clientes_senado import PARECER
 
 # Dois eixos, como nas classificações oficiais (Senado, Comparative Agendas Project): a área de
 # política pública e o público a que a matéria se dirige. "Mulheres" é público, não área: um
@@ -162,7 +165,9 @@ def registros():
         aut = c.ler_csv(f"perfil_senado_{g}/autoria.csv")
         soma(aut[aut.Papel == "Primeiro autor"], "Senado", "Primeiro autor", lambda r: tema_senado(r["Classificação do Senado"]))
         rel = c.ler_csv(f"perfil_senado_{g}/relatorias.csv")
-        soma(rel[rel["Classificação do Senado"] != ""], "Senado", "Relatoria", lambda r: tema_senado(r["Classificação do Senado"]))
+        # só conta relatoria em que o senador chegou ao parecer ou que ainda está com ele
+        feita = rel["Motivo do encerramento"].isin(PARECER) | ((rel["Motivo do encerramento"] == "") & (rel["Destituição"] == ""))
+        soma(rel[(rel["Classificação do Senado"] != "") & feita], "Senado", "Relatoria", lambda r: tema_senado(r["Classificação do Senado"]))
 
     def tema_camara(r):
         ementa = c.sem_acento(str(r.get("Ementa", ""))).lower()
