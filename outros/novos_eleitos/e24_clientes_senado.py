@@ -24,6 +24,7 @@ Saída: temas_clientes/clientes_classificacao.csv e clientes_resumo.csv
 Rodar: python -m outros.novos_eleitos.e24_clientes_senado   (depois da 23)
 """
 import re
+from difflib import SequenceMatcher
 
 import pandas as pd
 
@@ -286,6 +287,7 @@ DESCRICAO_VOTOS = [
 
 def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
     out = {n: [] for n in senadores}
+    vistos = set()
     for k, casa, trecho, sentidos, rot in DESCRICAO_VOTOS:
         if cliente not in sentidos or k in ja_na_base:
             continue
@@ -308,6 +310,12 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
             if r.Parlamentar in out:
                 forte = r.Papel == "Primeiro autor"
                 peso = "forte" if forte else ("evidência" if k.startswith("PEC") else "médio")
+                # a mesma proposta reapresentada (ementa igual, no Senado e na Câmara ou em anos diferentes) conta uma vez
+                chave_texto = re.sub(r"\W+", " ", str(r.Ementa)).lower().strip()[:200]
+                if any(p == r.Parlamentar and x == s and SequenceMatcher(None, t, chave_texto).ratio() > 0.9 for p, t, x in vistos):
+                    out[r.Parlamentar].append(("evidência", 0, f"{'autor' if forte else 'coautor'} do {k} (mesma proposta reapresentada, conta uma vez)"))
+                    continue
+                vistos.add((r.Parlamentar, chave_texto, s))
                 out[r.Parlamentar].append((peso, s if peso != "evidência" else 0,
                     f"{'autor' if forte else 'coautor'} do {k} ({rot}; {'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar)"
                     + (" (assinatura de PEC, não conta)" if peso == "evidência" else "")))
@@ -341,6 +349,13 @@ def sinais_pauta(pauta, a_favor, senadores, aut, com):
             out[r.Parlamentar].append(("forte" if forte else "médio", lado,
                 f"{'autor' if forte else 'coautor'} do {r.k} ({cfg['autoria'][r.k]}; pauta {pauta.lower()})"))
     return out
+
+
+def evidencias(s):
+    """Lista numerada: primeiro o que pesa a favor, depois contra, por último o que só aparece como evidência."""
+    ordem = lambda x: (0 if x[1] > 0 else 1 if x[1] < 0 else 2, 0 if x[0] == "forte" else 1)
+    textos = dict.fromkeys(t for _, _, t in sorted(s, key=ordem))
+    return "\n".join(f"{i}. {t}" for i, t in enumerate(textos, 1))
 
 
 def placar(texto):
@@ -462,7 +477,7 @@ def main():
                            "Partido": ficha.loc[n, "Partido"], "UF": ficha.loc[n, "UF"], "Cadeira": ficha.loc[n, "Cadeira"],
                            "Classificação": classifica(fp, fn, mp, mn),
                            "Sinais": sinal_txt,
-                           "Evidências": "\n".join(dict.fromkeys(t for _, _, t in s))})
+                           "Evidências": evidencias(s)})
         pautas = g.drop_duplicates("Pauta")
         resumo.append({"Área": area, "Cliente": cliente,
                        "Pautas": "; ".join(f"{r.Pauta} ({r._4.lower() or 'posição não informada'})" for r in pautas.itertuples()),
