@@ -61,6 +61,64 @@ PAUTAS = {
 }
 
 
+# Sinais pela descrição do cliente (PDF "Monitor Legislativo e DOU - Segunda Etapa" e CLIENT_THEME_DATA do raspador
+# do DOU), com o sentido lido na ementa: +1 a favor do cliente, -1 contra. Ficam de fora as ementas que não mostram
+# o sentido e os projetos que já estão na base de pautas do cliente (inclusive os marcados Dúvida). A confirmar com a
+# coordenação. Chave: (matéria, Casa da autoria).
+DESCRICAO = {
+    ("PL 707/2015", "Câmara"): ({"ISG": 1, "IU": 1}, "ensino em tempo integral"),
+    ("PL 1228/2015", "Câmara"): ({"IU": 1}, "fundo de educação ambiental"),
+    ("PLP 243/2023", "Senado"): ({"ISG": 1, "IU": 1}, "permanência no ensino médio"),
+    ("PEC 36/2025", "Senado"): ({"ISG": 1}, "ensino em tempo integral"),
+    ("PL 1311/2023", "Senado"): ({"IU": 1}, "gestão democrática na distribuição do Fundeb"),
+    ("PL 4414/2024", "Senado"): ({"IU": 1}, "magistério indígena e do campo"),
+    ("PL 3756/2023", "Senado"): ({"IU": 1}, "bolsa permanência na educação básica"),
+    ("PL 3166/2023", "Senado"): ({"ISG": 1}, "bolsa para estudantes do ensino médio"),
+    ("PL 3785/2026", "Câmara"): ({"ISG": 1}, "educação profissional no ensino médio"),
+    ("PL 4744/2023", "Senado"): ({"ISG": 1}, "educação profissional no ensino médio"),
+    ("PL 1070/2021", "Senado"): ({"IU": 1}, "educação ambiental"),
+    ("PL 3097/2021", "Senado"): ({"IU": 1}, "educação ambiental"),
+    ("PL 4270/2020", "Câmara"): ({"IU": 1}, "educação ambiental"),
+    ("PL 5264/2025", "Câmara"): ({"IU": 1}, "insalubridade para o magistério"),
+    ("PL 1989/2023", "Senado"): ({"IU": 1}, "piso do magistério"),
+    ("PL 4372/2020", "Câmara"): ({"IU": 1}, "regulamentação do Fundeb"),
+    ("PL 3418/2021", "Câmara"): ({"IU": 1}, "atualização da lei do Fundeb"),
+    ("PL 5665/2023", "Senado"): ({"IU": 1}, "prorrogação do PNE"),
+    ("PL 3562/2020", "Câmara"): ({"IU": 1}, "Conselho Nacional de Educação"),
+    ("PL 1884/2023", "Senado"): ({"IU": 1}, "internet nas escolas"),
+    ("PL 810/2022", "Câmara"): ({"IU": 1}, "internet nas escolas"),
+    ("PLP 59/2021", "Senado"): ({"IU": 1}, "internet nas escolas"),
+    ("PL 3853/2020", "Senado"): ({"IU": 1}, "tablets e dados para estudantes"),
+    ("PL 4978/2026", "Senado"): ({"IU": 1}, "educação étnico-racial e quilombola"),
+    ("PL 3467/2025", "Senado"): ({"IU": 1}, "apoio às redes com baixo desempenho e alta vulnerabilidade"),
+    ("PL 597/2022", "Câmara"): ({"IU": 1, "ISG": 1}, "recomposição da alfabetização"),
+    ("PDL 237/2025", "Câmara"): ({"ISG": -1, "IU": -1}, "susta a resolução do CNE sobre os itinerários do ensino médio"),
+    ("PL 10185/2018", "Câmara"): ({"ISG": -1, "FMCSV": -1}, "autoriza a educação domiciliar"),
+    ("PL 5168/2026", "Câmara"): ({"ISG": -1, "FMCSV": -1}, "disciplina a educação domiciliar"),
+    ("PL 2577/2026", "Câmara"): ({"ISG": -1, "FMCSV": -1}, "anistia a pais pela educação domiciliar"),
+    ("PL 1477/2022", "Senado"): ({"FMCSV": 1}, "Benefício Primeira Infância"),
+    ("PL 729/2022", "Senado"): ({"FMCSV": 1}, "prioridade em creche para famílias do CadÚnico"),
+    ("PL 386/2023", "Senado"): ({"FMCSV": 1}, "licença-maternidade para prematuros"),
+    ("PL 2681/2020", "Câmara"): ({"FMCSV": 1}, "licença-maternidade a partir da alta hospitalar"),
+    ("PL 2534/2015", "Câmara"): ({"FMCSV": 1}, "licença-paternidade de quinze dias"),
+    ("PL 7824/2017", "Câmara"): ({"FMCSV": 1}, "licença-paternidade de quinze dias"),
+}
+
+
+def sinais_descricao(cliente, ja_na_base, senadores, aut):
+    out = {n: [] for n in senadores}
+    for (k, casa), (sentidos, rot) in DESCRICAO.items():
+        if cliente not in sentidos or k in ja_na_base:
+            continue
+        s = sentidos[cliente]
+        for r in aut[(aut.k == k) & (aut.Casa == casa) & aut.Papel.isin(["Primeiro autor", "Coautor"])].sort_values("Papel", ascending=False).drop_duplicates("Parlamentar").itertuples():
+            if r.Parlamentar in out:
+                forte = r.Papel == "Primeiro autor"
+                out[r.Parlamentar].append(("forte" if forte else "médio", s,
+                    f"{'autor' if forte else 'coautor'} do {k} ({rot}; {'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar)"))
+    return out
+
+
 def sinais_pauta(pauta, a_favor, senadores, aut, com):
     """Sinais do senador na pauta (Senado), com o sentido para o cliente: a favor da pauta mantém, contra inverte."""
     from outros.novos_eleitos.e23_parlamentares_senado import painel, chave
@@ -82,7 +140,7 @@ def sinais_pauta(pauta, a_favor, senadores, aut, com):
             if r.Parlamentar in out and r.Voto in ("Sim", "Não"):
                 s = sentido * lado * (1 if r.Voto == "Sim" else -1)
                 out[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {rot} ({data[:4]}; pauta {pauta.lower()})"))
-    for r in aut[aut.k.isin(cfg["autoria"]) & aut.Papel.isin(["Primeiro autor", "Coautor"])].drop_duplicates(["Parlamentar", "k"]).itertuples():
+    for r in aut[aut.k.isin(cfg["autoria"]) & aut.Papel.isin(["Primeiro autor", "Coautor"])].sort_values("Papel", ascending=False).drop_duplicates(["Parlamentar", "k"]).itertuples():
         if r.Parlamentar in out:
             forte = r.Papel == "Primeiro autor"
             out[r.Parlamentar].append(("forte" if forte else "médio", lado,
@@ -166,7 +224,7 @@ def main():
             sentido = 1 if p._6 == "Promotor" else -1
             for k, casa in chaves(p.Projeto):
                 ok = lambda d: (d.k == k) & ((d.Casa == casa) if casa else True)
-                for r in aut[ok(aut) & aut.Papel.isin(["Primeiro autor", "Coautor"])].drop_duplicates(["Parlamentar", "Papel"]).itertuples():
+                for r in aut[ok(aut) & aut.Papel.isin(["Primeiro autor", "Coautor"])].sort_values("Papel", ascending=False).drop_duplicates("Parlamentar").itertuples():
                     if r.Parlamentar in sinais:
                         forte = r.Papel == "Primeiro autor"
                         sinais[r.Parlamentar].append(("forte" if forte else "médio", sentido,
@@ -184,6 +242,9 @@ def main():
             if pt.Pauta in PAUTAS and pt._4 in ("A favor", "Contra"):
                 for n, s_ in sinais_pauta(pt.Pauta, pt._4 == "A favor", list(sinais), aut, com_votos).items():
                     sinais[n] += s_
+        ja_na_base = {k for p in g.Projeto for k, _ in chaves(p)}
+        for n, s_ in sinais_descricao(cliente, ja_na_base, list(sinais), aut).items():
+            sinais[n] += s_
         com_registro = 0
         for n, s in sinais.items():
             if not s:
