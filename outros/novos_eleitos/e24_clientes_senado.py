@@ -46,6 +46,32 @@ def chaves(projeto):
     return out
 
 
+# O que faz cada projeto da base de pautas, para a evidência não sair só com o número (na falta, vai o nome da pauta).
+ROTULO_BASE = {
+    "PEC 36/2025": "ICMS educacional para expandir o tempo integral",
+    "PL 3455/2024": "estende o Pé-de-Meia a mais alunos do ensino médio",
+    "PL 2556/2023": "gestão democrática na educação básica",
+    "PL 3385/2021": "programa emergencial de aprendizagem",
+    "PL 5299/2025": "composição da Câmara de Educação Básica do CNE",
+    "PL 1338/2022": "regulamenta a educação domiciliar",
+    "RQS 495/2026": "urgência para o PL 1338/2022, de educação domiciliar",
+    "PL 3262/2019": "tira a educação domiciliar do crime de abandono intelectual",
+    "PL 1924/2025": "Política Nacional Integrada da Primeira Infância",
+    "PL 4282/2025": "Política Nacional Integrada da Primeira Infância",
+    "PL 2294/2024": "Exame Nacional de Proficiência em Medicina",
+    "PL 2470/2026": "saúde mental e proteção do apostador nas bets",
+    "PL 4/2025": "reforma do Código Civil",
+    "PL 278/2026": "regime tributário dos datacenters (Redata)",
+    "PL 2338/2023": "marco da inteligência artificial",
+    "PL 4501/2020": "proíbe ultraprocessados nas escolas",
+    "PEC 32/2015": "maioridade penal aos 16 anos",
+    "PLP 11/2026": "entidades sem fins lucrativos fora do corte de benefícios fiscais",
+    "PEC 14/2026": "fomento indireto ao esporte no IBS",
+    "PL 7419/2006": "lei dos planos de saúde",
+    "PL 6622/2025": "prevenção ao casamento infantil",
+    "PL 3080/2020": "marco legal do autismo",
+}
+
 # Sinais na pauta, além dos projetos listados: votações nominais do Senado que separam os senadores na pauta e
 # projetos de autoria cujo sentido a ementa mostra. sentido +1 = Sim vai na direção de quem é a favor da pauta.
 PAUTAS = {
@@ -313,7 +339,7 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
                 # a mesma proposta reapresentada (ementa igual, no Senado e na Câmara ou em anos diferentes) conta uma vez
                 chave_texto = re.sub(r"\W+", " ", str(r.Ementa)).lower().strip()[:200]
                 if any(p == r.Parlamentar and x == s and SequenceMatcher(None, t, chave_texto).ratio() > 0.9 for p, t, x in vistos):
-                    out[r.Parlamentar].append(("evidência", 0, f"{'autor' if forte else 'coautor'} do {k} (mesma proposta reapresentada, conta uma vez)"))
+                    out[r.Parlamentar].append(("evidência", 0, f"{'autor' if forte else 'coautor'} do {k} ({rot}; mesma proposta reapresentada, conta uma vez)"))
                     continue
                 vistos.add((r.Parlamentar, chave_texto, s))
                 out[r.Parlamentar].append((peso, s if peso != "evidência" else 0,
@@ -439,21 +465,22 @@ def main():
             sentido = 1 if p._6 == "Promotor" else -1
             quem = f"{p._6.lower()} para o cliente" + (", pela posição na pauta; marcação da coordenação pendente" if p._8 == "pauta" else "")
             for k, casa in chaves(p.Projeto):
+                desc = ROTULO_BASE.get(k, p.Pauta.lower())
                 ok = lambda d: (d.k == k) & ((d.Casa == casa) if casa else True)
                 for r in aut[ok(aut) & aut.Papel.isin(["Primeiro autor", "Coautor"])].sort_values("Papel", ascending=False).drop_duplicates("Parlamentar").itertuples():
                     if r.Parlamentar in sinais:
                         forte = r.Papel == "Primeiro autor"
                         peso = "forte" if forte else ("evidência" if k.startswith("PEC") else "médio")
                         sinais[r.Parlamentar].append((peso, sentido if peso != "evidência" else 0,
-                            f"{'autor' if forte else 'coautor'} do {k} ({quem})" + (" (assinatura de PEC, não conta)" if peso == "evidência" else "")))
+                            f"{'autor' if forte else 'coautor'} do {k} ({desc}; {quem})" + (" (assinatura de PEC, não conta)" if peso == "evidência" else "")))
                 for r in vot[ok(vot) & vot.Voto.isin(["Sim", "Não"])].itertuples():
                     if r.Parlamentar in sinais:
                         s = sentido if r.Voto == "Sim" else -sentido
                         onde = r.Colegiado if r.Colegiado != "PLEN" else "plenário da Câmara"
-                        sinais[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {k} ({onde}, {str(r.Data)[:4]}; projeto {quem})"))
+                        sinais[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {k} ({desc}; {onde}, {str(r.Data)[:4]}; projeto {quem})"))
                 for r in rel[ok(rel)].drop_duplicates(["Parlamentar", "Colegiado"]).itertuples():
                     if r.Parlamentar in sinais:
-                        sinais[r.Parlamentar].append(("evidência", 0, f"relator do {k} na {r.Colegiado} (sentido do parecer não lido)"))
+                        sinais[r.Parlamentar].append(("evidência", 0, f"relator do {k} ({desc}) na {r.Colegiado} (sentido do parecer não lido)"))
         com_votos = c.ler_csv("perfil_senado_comissoes/votos.csv")
         for pt in g.drop_duplicates("Pauta").itertuples():
             if pt.Pauta in PAUTAS and pt._4 in ("A favor", "Contra"):
