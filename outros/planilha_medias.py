@@ -430,11 +430,16 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
             # pós 1º turno começa na primeira delas).
             inicio = min(series[cp].d.min() for cp in colunas)
             datas_bloco = [dt for dt in datas if dt >= inicio]
+            linhas_bloco = [[dt.strftime('%Y-%m-%d')]
+                            + [valor(series[cp], min(dt, fim)) if dt >= series[cp].d.min() else ''
+                               for cp in colunas]
+                            for dt in datas_bloco]
+            # Semana que termina igual a hoje não vira linha: fica só a de hoje.
+            if len(linhas_bloco) >= 2 and linhas_bloco[-2][1:] == linhas_bloco[-1][1:]:
+                del datas_bloco[-2], linhas_bloco[-2]
             for i in range(max(len(datas_bloco), len(atuais))):
                 if i < len(datas_bloco):
-                    dt = datas_bloco[i]
-                    lin = [dt.strftime('%Y-%m-%d')]
-                    lin += [valor(series[cp], min(dt, fim)) if dt >= series[cp].d.min() else '' for cp in colunas]
+                    lin = list(linhas_bloco[i])
                 else:
                     lin = [''] * ncol
                 lin += [''] + (list(atuais[i]) if i < len(atuais) else ['', ''])
