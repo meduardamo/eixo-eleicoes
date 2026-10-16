@@ -422,13 +422,13 @@ def evidencias(s):
     def limpa(t):
         t = re.sub(r"; (a favor|contra) pela descrição do cliente, a confirmar\)", "; lado pela descrição do cliente, a confirmar)", t)
         t = re.sub(r"(projeto )?(promotor|detrator) para o cliente, pela posição na pauta; marcação da coordenação pendente",
-                   "lado pela posição do cliente na pauta; coordenação ainda não marcou", t)
-        t = re.sub(r"(projeto )?(promotor|detrator) para o cliente", r"marcado \2 pela coordenação", t)
+                   "lado pela posição do cliente na pauta; precisa de checagem dos coordenadores", t)
+        t = re.sub(r"(projeto )?(promotor|detrator) para o cliente", r"projeto \2 para o cliente", t)
         t = re.sub(r"; pauta ([^)]+)\)", r"; pauta \1, lado pela posição do cliente)", t)
         t = re.sub(r"\b(autora?|coautora?|relatora?) do PEC", r"\1 da PEC", t)
         t = t.replace(" na PLEN ", " no plenário ").replace("(sentido do parecer não lido)", "(parecer ainda não lido, por isso não conta)")
-        t = re.sub(r"(a favor|contra) pela descrição do cliente, a confirmar", "lado tirado da descrição do cliente, a confirmar com a coordenação", t)
-        t = t.replace("lado pela descrição do cliente, a confirmar", "lado tirado da descrição do cliente, a confirmar com a coordenação")
+        t = re.sub(r"(a favor|contra) pela descrição do cliente, a confirmar", "lado tirado da descrição do cliente; precisa de checagem dos coordenadores", t)
+        t = t.replace("lado pela descrição do cliente, a confirmar", "lado tirado da descrição do cliente; precisa de checagem dos coordenadores")
         t = t.replace("; CCJC,", "; CCJ da Câmara,").replace("(CCJC,", "(CCJ da Câmara,")
         t = tira_aninhado(t)
         t = re.sub(r"\) \(", "; ", t)
