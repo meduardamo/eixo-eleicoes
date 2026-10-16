@@ -332,7 +332,7 @@ SINAIS_DIRETOS = [
 # para cada cliente, rótulo).
 DESCRICAO_VOTOS = [
     ("PDL 3/2025", "Câmara", "Aprovado o Projeto de Decreto Legislativo", {"Coletivo Feminista": -1},
-     "PDL 3/2025, que susta a resolução 258 do Conanda"),
+     "PDL 3/2025, que susta a resolução 258 do Conanda sobre o atendimento, inclusive o aborto legal, de meninas vítimas de violência sexual (Sim = sustar a resolução)"),
 ]
 
 
@@ -405,12 +405,33 @@ def sinais_pauta(pauta, a_favor, senadores, aut, com):
 def evidencias(s):
     """Lista numerada em três blocos com título: a favor do cliente, contra o cliente e o que não conta.
     O texto de cada item diz de onde vem o lado (coordenação, descrição do cliente ou posição na pauta)."""
+    def tira_aninhado(t):
+        """Parêntese dentro de parêntese vira vírgula, para a frase não ficar ((...))."""
+        out, nivel = [], 0
+        for ch in t:
+            if ch == "(":
+                nivel += 1
+                out.append("(" if nivel == 1 else ", ")
+            elif ch == ")":
+                out.append(")" if nivel == 1 else "")
+                nivel = max(nivel - 1, 0)
+            else:
+                out.append(ch)
+        return re.sub(r"\s+,", ",", "".join(out))
+
     def limpa(t):
         t = re.sub(r"; (a favor|contra) pela descrição do cliente, a confirmar\)", "; lado pela descrição do cliente, a confirmar)", t)
         t = re.sub(r"(projeto )?(promotor|detrator) para o cliente, pela posição na pauta; marcação da coordenação pendente",
                    "lado pela posição do cliente na pauta; coordenação ainda não marcou", t)
         t = re.sub(r"(projeto )?(promotor|detrator) para o cliente", r"marcado \2 pela coordenação", t)
         t = re.sub(r"; pauta ([^)]+)\)", r"; pauta \1, lado pela posição do cliente)", t)
+        t = re.sub(r"\b(autora?|coautora?|relatora?) do PEC", r"\1 da PEC", t)
+        t = t.replace(" na PLEN ", " no plenário ").replace("(sentido do parecer não lido)", "(parecer ainda não lido, por isso não conta)")
+        t = re.sub(r"(a favor|contra) pela descrição do cliente, a confirmar", "lado tirado da descrição do cliente, a confirmar com a coordenação", t)
+        t = t.replace("lado pela descrição do cliente, a confirmar", "lado tirado da descrição do cliente, a confirmar com a coordenação")
+        t = t.replace("; CCJC,", "; CCJ da Câmara,").replace("(CCJC,", "(CCJ da Câmara,")
+        t = tira_aninhado(t)
+        t = re.sub(r"\) \(", "; ", t)
         return t
     blocos = [("A favor do cliente", [t for k, x, t in s if x > 0]),
               ("Contra o cliente", [t for k, x, t in s if x < 0]),
@@ -524,7 +545,7 @@ def main():
                     if r.Parlamentar in sinais:
                         s = sentido if r.Voto == "Sim" else -sentido
                         onde = r.Colegiado if r.Colegiado != "PLEN" else "plenário da Câmara"
-                        sinais[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {k} ({desc}; {onde}, {str(r.Data)[:4]}; projeto {quem})"))
+                        sinais[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {k} ({desc}; {onde}, {str(r.Data)[:4]}; Sim = aprovar o projeto, {quem})"))
                 for r in rel[ok(rel)].drop_duplicates(["Parlamentar", "Colegiado"]).itertuples():
                     if r.Parlamentar in sinais:
                         sinais[r.Parlamentar].append(("evidência", 0, f"relator do {k} ({desc}) na {r.Colegiado} (sentido do parecer não lido)"))
