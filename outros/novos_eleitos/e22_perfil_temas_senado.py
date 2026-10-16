@@ -160,8 +160,9 @@ def main():
     # novos: a fala vem da Câmara (plenário desde 2023) ou, sem mandato federal, da imprensa da eleição;
     # nenhum era senador nas votações-chave, e o voto na Câmara entra na rodada da Câmara
     col_fala = ("O que defende (plenário e comissões, desde 2023)" if grupo != "novos"
-                else "O que defende (plenário da Câmara desde 2023 ou imprensa)")
-    # falas em comissão (CAS, CE, CEsp, CDH e CPI das Bets) lidas uma a uma; só existem para quem já era senador
+                else "O que defende (plenário e comissões da Câmara desde 2023, ou imprensa)")
+    # falas em comissão lidas uma a uma: Senado (CAS, CE, CEsp, CDH e CPI das Bets) e, para ex-deputados, Câmara
+    # (Saúde, Educação, Previdência e Família, Direitos Humanos; notas taquigráficas do escriba)
     falas_com = json.loads(c.caminho("temas_clientes/falas_comissao.json").read_text())
     sem_fala = ("Nenhum discurso sobre o tema em plenário desde 2023." if grupo != "novos"
                 else "Nenhum discurso sobre o tema no plenário da Câmara desde 2023.")
