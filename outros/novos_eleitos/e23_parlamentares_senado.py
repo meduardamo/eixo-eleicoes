@@ -130,23 +130,95 @@ def limpa_cargo(x):
     return x[0].upper() + x[1:] if x else x
 
 
-def relevancia(cargos, presidencias, liderancas):
+def periodo_legivel(periodo):
+    """2019-atual vira "desde 2019"; 2015-2019 vira "2015 a 2019"; vários períodos separados por vírgula."""
+    per = str(periodo or "").strip()
+    if not per or per == "nan":
+        return ""
+    partes = []
+    for p in re.split(r"\s*[;,]\s*", per):
+        m = re.match(r"(\d{4})\s*(?:-|a)\s*atual", p)
+        partes.append(f"desde {m.group(1)}" if m else p.replace("-", " a "))
+    return ", ".join(partes)
+
+
+def junta_periodos(periodos):
+    """Junta períodos que se tocam ou se sobrepõem: 2021 a 2023 + 2023 a 2025 = 2021 a 2025; 2016 dentro de 2015 a 2016 some."""
+    faixas, soltos = [], []
+    for p in periodos:
+        m = re.fullmatch(r"(\d{4})(?: a (\d{4}))?|desde (\d{4})", p)
+        if not m:
+            soltos.append(p)
+            continue
+        ini = int(m.group(1) or m.group(3))
+        fim = 9999 if m.group(3) else int(m.group(2) or ini)
+        faixas.append([ini, fim])
+    juntas = []
+    for ini, fim in sorted(faixas):
+        if juntas and ini <= juntas[-1][1]:
+            juntas[-1][1] = max(juntas[-1][1], fim)
+        else:
+            juntas.append([ini, fim])
+    fmt = lambda i, f: f"desde {i}" if f == 9999 else (str(i) if i == f else f"{i} a {f}")
+    return [fmt(i, f) for i, f in juntas] + soltos
+
+
+def junta_cargos(cargos):
+    """Mesmo cargo em mais de uma linha vira um item só, com os períodos juntos e em ordem."""
+    por_nome = {}
+    for nome, per in cargos:
+        por_nome.setdefault(nome, [])
+        por_nome[nome] += [p for p in periodo_legivel(per).split(", ") if p]
+    out = []
+    for n, ps in por_nome.items():
+        ps = junta_periodos(ps)
+        out.append(f"{n} ({', '.join(ps)})" if ps else n)
+    return out
+
+
+def mandato_senado(cargos, cadeira):
+    """Em qual mandato no Senado o senador está. Devolve (texto, é o primeiro mandato)."""
+    inicios = [int(m.group(1)) for x, per in cargos if re.search(r"(?i)^Senador", x) and "atual" in str(per)
+               for m in [re.match(r"\s*(\d{4})", str(per))] if m]
+    if not inicios or cadeira == "Eleito em 2026":
+        return "", False
+    ini = min(inicios)
+    if cadeira == "Reeleito em 2026":
+        n = max((2019 - ini) // 8 + 1, 1)
+        return f"Senador desde {ini}, reeleito para o {n + 1}º mandato", False
+    n = max((2023 - ini) // 8 + 1, 1)
+    return f"{n}º mandato no Senado (desde {ini})", n == 1
+
+
+def relevancia(cargos, presidencias, liderancas, cadeira=""):
     """4 = poder de agenda nacional (governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da
     República, líder hoje do governo, da oposição, da maioria ou da minoria); 3 = prefeito, vice-governador, secretário
     de estado, presidente de Assembleia, Mesa do Senado, líder de partido ou bloco hoje, presidente de comissão
     permanente hoje; 2 = outro mandato eletivo ou cargo anterior; 1 = primeiro mandato eletivo."""
-    cargos = [limpa_cargo(x) for x in cargos if str(x).strip()]
+    cargos = [(re.sub(r"Senador(a)? da República", r"Senador\1", limpa_cargo(x)), per) for x, per in cargos if str(x).strip()]
+    # ser senador hoje não define relevância (todos são); o mandato em curso aparece só como "Nº mandato no Senado"
+    no_senado, primeiro = mandato_senado(cargos, cadeira)
+    cargos = [(x, per) for x, per in cargos if not (re.search(r"(?i)^Senador", x) and "atual" in str(per))]
     regras = [(4, r"(?i)^Governador(a)? (do|da|de)\b|Ministr|(?<!vice-)presidente d[ao] (Senado|Câmara dos Deputados)|Líder do governo|Presidente da República|^Vice-presidente(?! d[oa] (Senado|Câmara|Clube|Conselho|Comissão))( d[oa] (Brasil|República))?$"),
               (3, r"(?i)Vice-governador|(?<!vice-)Prefeit|Secretári[oa] (de Estado|Estadual|.*d[oa] (Estado|Bahia|Ceará|Piauí|Pernambuco|Paraíba|Goiás|Maranhão))|Presidente da Assembleia|Vice-presidente d[oa] Senado|Secretári[oa] da Mesa")]
     for nivel, rx in regras:
-        achou = [x for x in cargos if re.search(rx, x)]
         lid = [t for n, t in liderancas if n == nivel]
+        achou = [(x, per) for x, per in cargos if re.search(rx, x)]
+        if any(t.startswith("Líder hoje: governo") for n, t in liderancas):
+            # a liderança do governo hoje já aparece como "Líder hoje"; não repetir pelo cargo
+            achou = [(x, per) for x, per in achou if not (re.search(r"(?i)Líder do governo", x) and "atual" in str(per))]
+        achou = junta_cargos(achou)
         if nivel == 3 and presidencias:
             lid.append("Preside hoje: " + ", ".join(presidencias))
         if achou or lid:
             return nivel, "; ".join(dict.fromkeys(lid + achou[:3]))
-    anteriores = cargos[:3]
-    return (2, "; ".join(dict.fromkeys(anteriores))) if anteriores else (1, "Primeiro mandato eletivo")
+    anteriores = junta_cargos(cargos)[:3]
+    # o mandato no Senado só aparece quando é ele que define o nível (sem outro cargo)
+    if anteriores:
+        return 2, "; ".join(anteriores)
+    if no_senado and not primeiro:
+        return 2, no_senado
+    return 1, "Primeiro mandato eletivo" + (f": Senado, desde {re.search(r'\d{4}', no_senado).group(0)}" if no_senado else "")
 
 
 def profissao_recente(txt):
@@ -199,7 +271,8 @@ def main():
             cad[n] = r
     cargos["Período"] = cargos["Período"].replace("", None)
     senado_agora = cargos.Cargo.str.contains("Senador", na=False) & (cargos["Período"].astype(str).str.contains("atual") | cargos["Período"].isna())
-    cargos = cargos[~senado_agora | (cargos.Parlamentar.map(cad) == "Reeleito em 2026") & cargos["Período"].notna()].copy()
+    # o mandato em curso fica (relevancia() o transforma em "Nº mandato no Senado"); sai só o de 2027 sem período
+    cargos = cargos[~(senado_agora & cargos["Período"].isna())].copy()
     futuro = cargos.Cargo.str.match(r"Governador(a)? ", na=False) & cargos["Período"].isna()
     cargos.loc[futuro, "Cargo"] = cargos.loc[futuro, "Cargo"] + " (eleito em 2026)"
     col = pd.concat([c.ler_csv(f"perfil_senado_{g}/colegiados.csv") for g in GRUPOS])
@@ -216,7 +289,7 @@ def main():
         meus_col = col[col.Parlamentar == nome]
         titular = sorted({r.Sigla for r in meus_col.itertuples() if r.Sigla in PERMANENTES and r.Papel in ("Titular", "Presidente", "Vice-presidente")})
         pres = sorted({r.Sigla for r in meus_col.itertuples() if r.Sigla in PERMANENTES and r.Papel == "Presidente"})
-        nivel, porque = relevancia(cargos[cargos.Parlamentar == nome].Cargo.astype(str).tolist(), pres, lideres.get(nome, []))
+        nivel, porque = relevancia(list(zip(cargos[cargos.Parlamentar == nome].Cargo.astype(str), cargos[cargos.Parlamentar == nome]["Período"])), pres, lideres.get(nome, []), l0["Cadeira"])
         k = chave(nome)
         k = k if k in tot else next((x for x in tot if k in x or x in k), k)
         n = tot.get(k, 0)
