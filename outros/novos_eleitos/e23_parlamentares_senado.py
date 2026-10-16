@@ -10,9 +10,11 @@ Regras (as mesmas da aba Metodologia):
 - Governismo: votações nominais do plenário desde fev/2023 em que a liderança do Governo orientou Sim ou Não; conta
   o voto Sim/Não do senador igual à orientação. Base a partir de 85%, Oposição até 65%, Independente entre os dois.
   Menos de 20 votações (ministro no período, por exemplo) fica sem posição.
-- Relevância: 4 = foi ou é governador, ministro, presidente do Senado ou da Câmara, líder do governo;
-  3 = outro cargo no Executivo (vice-governador, prefeito, secretário de estado), presidente de Assembleia ou
-  presidente de comissão permanente do Senado hoje; 2 = mandato eletivo anterior; 1 = primeiro mandato.
+- Relevância: 4 = foi ou é governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da República,
+  ou é hoje líder do governo, da oposição, da maioria ou da minoria; 3 = prefeito, vice-governador, secretário de
+  estado, presidente de Assembleia, Mesa do Senado, líder de partido ou bloco hoje ou presidente de comissão
+  permanente hoje; 2 = outro mandato eletivo ou cargo anterior; 1 = primeiro mandato. Lideranças pela API do Senado
+  (composicao/lideranca), vigentes na data da rodada.
 - Proximidade no tema: pontos por comissão do tema (titular ou suplente 1, presidente 2), projetos como primeiro autor
   (5 ou mais 1, 15 ou mais 2), relatorias com parecer (2 ou mais 1) e lei aprovada (1); 0 ponto = 1, 1 a 2 = 2,
   3 a 4 = 3, 5 ou mais = 4.
@@ -89,28 +91,94 @@ def governismo(datas):
     return tot, com
 
 
-def relevancia(cargos, presidencias):
-    cargos = [re.sub(r"^[\s,;.]+", "", x) for x in cargos]
-    regras = [(4, r"(?i)^Governador(a)? (do|da|de)\b|Ministr|Presidente d[ao] (Senado|Câmara dos Deputados)|Líder do governo|Presidente da República|Vice-presidente (do Brasil|da República)"),
-              (3, r"Vice-governador|Prefeit|Secretári[oa] (de Estado|Estadual|.*d[oa] (Estado|Bahia|Ceará|Piauí|Pernambuco|Paraíba|Goiás|Maranhão))|Presidente da Assembleia")]
+def liderancas_atuais():
+    """Lideranças vigentes no Senado, na Câmara e no Congresso (dados abertos do Senado), por nome do parlamentar."""
+    cache = c.DADOS / "cache" / "liderancas.json"
+    try:
+        req = urllib.request.Request("https://legis.senado.leg.br/dadosabertos/composicao/lideranca", headers={"Accept": "application/json"})
+        dados = json.loads(urllib.request.urlopen(req, timeout=60).read())
+        cache.write_text(json.dumps(dados, ensure_ascii=False))
+    except Exception:
+        dados = json.loads(cache.read_text())
+    out = {}
+    for d in dados:
+        if d.get("dataTermino"):
+            continue
+        tipo, unidade = d.get("descricaoTipoLideranca", ""), d.get("descricaoTipoUnidadeLideranca", "")
+        if not tipo.startswith("Líder"):
+            continue
+        casa = {"SF": "Senado", "CD": "Câmara", "CN": "Congresso"}.get(d.get("casa"), "")
+        alvo = re.sub(r"^Liderança (d[oa] |de )", "", unidade)
+        alvo = re.sub(r" n[oa] (Senado Federal|Câmara dos Deputados|Congresso Nacional)$", "", alvo)
+        if alvo == "Partido" or alvo == "Bloco":
+            alvo = f"{alvo.lower()} ({d.get('siglaPartidoFiliacao') or d.get('siglaPartido') or ''})"
+        elif alvo.startswith("Bancada"):
+            alvo = alvo.lower()
+        else:
+            alvo = alvo.lower()
+        nivel = 4 if re.match(r"(?i)(governo|oposição|maioria|minoria)", alvo) else 3
+        out.setdefault(d["nomeParlamentar"], []).append((nivel, f"Líder hoje: {alvo} no {casa}" if casa != "Câmara" else f"Líder hoje: {alvo} na Câmara"))
+    return out
+
+
+def limpa_cargo(x):
+    x = re.sub(r"^[\s,;.]+", "", x)
+    x = re.sub(r"(\d+\.ª,? (e )?)+", "", x)
+    x = re.sub(r"^Vice-presidente do Brasil$", "Vice-presidente da República", x)
+    x = re.sub(r" do Brasil\b", "", x)
+    x = re.sub(r"\bde de\b", "de", x)
+    return x[0].upper() + x[1:] if x else x
+
+
+def relevancia(cargos, presidencias, liderancas):
+    """4 = poder de agenda nacional (governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da
+    República, líder hoje do governo, da oposição, da maioria ou da minoria); 3 = prefeito, vice-governador, secretário
+    de estado, presidente de Assembleia, Mesa do Senado, líder de partido ou bloco hoje, presidente de comissão
+    permanente hoje; 2 = outro mandato eletivo ou cargo anterior; 1 = primeiro mandato eletivo."""
+    cargos = [limpa_cargo(x) for x in cargos if str(x).strip()]
+    regras = [(4, r"(?i)^Governador(a)? (do|da|de)\b|Ministr|(?<!vice-)presidente d[ao] (Senado|Câmara dos Deputados)|Líder do governo|Presidente da República|^Vice-presidente(?! d[oa] (Senado|Câmara|Clube|Conselho|Comissão))( d[oa] (Brasil|República))?$"),
+              (3, r"(?i)Vice-governador|(?<!vice-)Prefeit|Secretári[oa] (de Estado|Estadual|.*d[oa] (Estado|Bahia|Ceará|Piauí|Pernambuco|Paraíba|Goiás|Maranhão))|Presidente da Assembleia|Vice-presidente d[oa] Senado|Secretári[oa] da Mesa")]
     for nivel, rx in regras:
-        achou = [x for x in cargos if re.search(rx, x)][:3]
-        if achou:
-            return nivel, "; ".join(dict.fromkeys(achou))
+        achou = [x for x in cargos if re.search(rx, x)]
+        lid = [t for n, t in liderancas if n == nivel]
         if nivel == 3 and presidencias:
-            return 3, "Presidente hoje: " + ", ".join(presidencias)
-    anteriores = [x for x in cargos if x][:3]
+            lid.append("Preside hoje: " + ", ".join(presidencias))
+        if achou or lid:
+            return nivel, "; ".join(dict.fromkeys(lid + achou[:3]))
+    anteriores = cargos[:3]
     return (2, "; ".join(dict.fromkeys(anteriores))) if anteriores else (1, "Primeiro mandato eletivo")
 
 
+def profissao_recente(txt):
+    """Só a ocupação declarada ao TSE na candidatura mais recente."""
+    txt = str(txt)
+    if not txt or "(" not in txt:
+        return "Declarou só o cargo que exercia" if "cargo" in txt else txt
+    itens = re.findall(r"([^;()]+?)\s*\(([\d, ]+)\)", txt)
+    if not itens:
+        return txt
+    ocup, anos = max(itens, key=lambda x: max(int(a) for a in re.findall(r"\d{4}", x[1])))
+    return f"{ocup.strip()} ({max(int(a) for a in re.findall(r'\d{4}', anos))})"
+
+
 def proximidade(linha):
+    """Nota de 1 a 4 e a conta que leva a ela (vai na nota da célula)."""
     com = str(linha["Comissão do tema hoje"])
-    pts = 2 if "Presidente" in com else (1 if com and com != "Não é membro" else 0)
+    p_com = 2 if "Presidente" in com else (1 if com and com != "Não é membro" else 0)
     autor = int(linha["Primeiro autor"])
-    pts += 2 if autor >= 15 else (1 if autor >= 5 else 0)
-    pts += int(linha["Relatorias com parecer"]) >= 2
-    pts += int(linha["Viraram lei"]) >= 1
-    return 1 if pts == 0 else 2 if pts <= 2 else 3 if pts <= 4 else 4
+    p_aut = 2 if autor >= 15 else (1 if autor >= 5 else 0)
+    rel = int(linha["Relatorias com parecer"])
+    p_rel = int(rel >= 2)
+    leis = int(linha["Viraram lei"])
+    p_lei = int(leis >= 1)
+    pts = p_com + p_aut + p_rel + p_lei
+    nota = 1 if pts == 0 else 2 if pts <= 2 else 3 if pts <= 4 else 4
+    conta = (f"{pts} ponto{'s' if pts != 1 else ''} (1 = 0 ponto; 2 = 1 a 2; 3 = 3 a 4; 4 = 5 ou mais)\n"
+             f"Comissão do tema: {com if com else 'não é membro'} (+{p_com})\n"
+             f"Projetos como primeiro autor no tema: {autor} (+{p_aut}; 5 ou mais = 1, 15 ou mais = 2)\n"
+             f"Relatorias com parecer no tema: {rel} (+{p_rel}; 2 ou mais = 1)\n"
+             f"Viraram lei: {leis} (+{p_lei})")
+    return nota, conta
 
 
 def main():
@@ -134,13 +202,15 @@ def main():
     datas = sorted(set(plen[plen.Data >= "2023-02-01"].Data.str[:10]))
     tot, com_gov = governismo(datas)
 
+    lideres = liderancas_atuais()
+    notas_ficha = {}
     linhas = []
     for nome, g in perfis.groupby("Parlamentar", sort=False):
         l0 = g.iloc[0]
         meus_col = col[col.Parlamentar == nome]
         titular = sorted({r.Sigla for r in meus_col.itertuples() if r.Sigla in PERMANENTES and r.Papel in ("Titular", "Presidente", "Vice-presidente")})
         pres = sorted({r.Sigla for r in meus_col.itertuples() if r.Sigla in PERMANENTES and r.Papel == "Presidente"})
-        nivel, porque = relevancia(cargos[cargos.Parlamentar == nome].Cargo.astype(str).tolist(), pres)
+        nivel, porque = relevancia(cargos[cargos.Parlamentar == nome].Cargo.astype(str).tolist(), pres, lideres.get(nome, []))
         k = chave(nome)
         k = k if k in tot else next((x for x in tot if k in x or x in k), k)
         n = tot.get(k, 0)
@@ -153,16 +223,19 @@ def main():
             posicao = "Base" if pct >= 85 else "Oposição" if pct <= 65 else "Independente"
             gov = f"{pct}% ({n} votações)"
         prox = {t: proximidade(g[g.Tema == t].iloc[0]) for t in TEMAS}
+        for t in TEMAS:
+            notas_ficha[f"{nome}|{t}"] = prox[t][1]
         info = lev.loc[nome] if nome in lev.index else {}
         linhas.append({
             "Senador": nome, "Partido": l0["Partido"], "UF": l0["UF"], "Cadeira": l0["Cadeira"],
-            "De onde vem": info.get("De onde vem", ""), "Profissão declarada (TSE)": info.get("Profissão declarada (TSE)", ""),
+            "De onde vem": info.get("De onde vem", ""), "Profissão declarada (TSE)": profissao_recente(info.get("Profissão declarada (TSE)", "")),
             "Posição no Senado": posicao, "Governismo": gov, "Relevância política (1 a 4)": nivel, "Por quê": porque,
             "Comissões permanentes (titular)": ", ".join(titular), "Preside hoje": ", ".join(pres),
-            **{f"Proximidade: {t} (1 a 4)": prox[t] for t in TEMAS},
+            **{f"Proximidade: {t} (1 a 4)": prox[t][0] for t in TEMAS},
         })
     ficha = pd.DataFrame(linhas).sort_values("Senador", key=lambda s: s.map(chave))
     c.salvar_csv(ficha, "temas_clientes/parlamentares.csv")
+    (c.DADOS / "temas_clientes" / "parlamentares_notas.json").write_text(json.dumps(notas_ficha, ensure_ascii=False, indent=1))
 
     # votações-chave
     com = c.ler_csv("perfil_senado_comissoes/votos.csv")
