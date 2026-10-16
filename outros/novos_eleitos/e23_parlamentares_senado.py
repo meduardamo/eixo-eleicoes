@@ -196,7 +196,8 @@ def relevancia(cargos, presidencias, liderancas, cadeira=""):
     """4 = poder de agenda nacional (governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da
     República, líder hoje do governo, da oposição, da maioria ou da minoria); 3 = prefeito, vice-governador, secretário
     de estado, presidente de Assembleia, Mesa do Senado, líder de partido ou bloco hoje, presidente de comissão
-    permanente hoje; 2 = outro mandato eletivo ou cargo anterior; 1 = primeiro mandato eletivo."""
+    permanente hoje; 2 = outro mandato eletivo ou cargo anterior; 1 = primeiro mandato eletivo.
+    Na main, quem está entre os Cabeças do Congresso do DIAP 2026 sobe para no mínimo 3."""
     cargos = [(re.sub(r"Senador(a)? da República", r"Senador\1", limpa_cargo(x)), per) for x, per in cargos if str(x).strip()]
     # ser senador hoje não define relevância (todos são); o mandato em curso aparece só como "Nº mandato no Senado"
     no_senado, primeiro = mandato_senado(cargos, cadeira)
@@ -284,6 +285,11 @@ def main():
     tot, com_gov = governismo(datas)
 
     lideres = liderancas_atuais()
+    # Cabeças do Congresso do DIAP (etapa 26): Cabeça em 2026 garante nível 3; em ascensão só aparece no texto
+    try:
+        diap = c.ler_csv("temas_clientes/diap_cabecas.csv").set_index("Senador")["2026"].to_dict()
+    except FileNotFoundError:
+        diap = {}
     notas_ficha = {}
     linhas = []
     for nome, g in perfis.groupby("Parlamentar", sort=False):
@@ -292,6 +298,14 @@ def main():
         titular = sorted({r.Sigla for r in meus_col.itertuples() if r.Sigla in PERMANENTES and r.Papel in ("Titular", "Presidente", "Vice-presidente")})
         pres = sorted({r.Sigla for r in meus_col.itertuples() if r.Sigla in PERMANENTES and r.Papel == "Presidente"})
         nivel, porque = relevancia(list(zip(cargos[cargos.Parlamentar == nome].Cargo.astype(str), cargos[cargos.Parlamentar == nome]["Período"])), pres, lideres.get(nome, []), l0["Cadeira"])
+        d = diap.get(nome, "")
+        if d.startswith("Cabeça"):
+            perfil = d.split(": ", 1)[1].split(" (")[0] if ": " in d else ""
+            texto = f"Cabeça do Congresso, DIAP 2026{' (' + perfil + ')' if perfil else ''}"
+            porque = f"{texto}; {porque}" if nivel < 3 else f"{porque}; {texto}"
+            nivel = max(nivel, 3)
+        elif d.startswith("Em ascensão"):
+            porque = f"{porque}; em ascensão no DIAP 2026"
         k = chave(nome)
         k = k if k in tot else next((x for x in tot if k in x or x in k), k)
         n = tot.get(k, 0)
