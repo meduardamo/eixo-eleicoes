@@ -178,7 +178,9 @@ def junta_cargos(cargos):
 
 def mandato_senado(cargos, cadeira):
     """Em qual mandato no Senado o senador está. Devolve (texto, é o primeiro mandato)."""
-    inicios = [int(m.group(1)) for x, per in cargos if re.search(r"(?i)^Senador", x) and "atual" in str(per)
+    if not any(re.search(r"(?i)^Senador", x) and "atual" in str(per) for x, per in cargos):
+        return "", False
+    inicios = [int(m.group(1)) for x, per in cargos if re.search(r"(?i)^Senador", x)
                for m in [re.match(r"\s*(\d{4})", str(per))] if m]
     if not inicios or cadeira == "Eleito em 2026":
         return "", False
@@ -200,7 +202,7 @@ def relevancia(cargos, presidencias, liderancas, cadeira=""):
     no_senado, primeiro = mandato_senado(cargos, cadeira)
     cargos = [(x, per) for x, per in cargos if not (re.search(r"(?i)^Senador", x) and "atual" in str(per))]
     regras = [(4, r"(?i)^Governador(a)? (do|da|de)\b|Ministr|(?<!vice-)presidente d[ao] (Senado|Câmara dos Deputados)|Líder do governo|Presidente da República|^Vice-presidente(?! d[oa] (Senado|Câmara|Clube|Conselho|Comissão))( d[oa] (Brasil|República))?$"),
-              (3, r"(?i)Vice-governador|(?<!vice-)Prefeit|Secretári[oa] (de Estado|Estadual|.*d[oa] (Estado|Bahia|Ceará|Piauí|Pernambuco|Paraíba|Goiás|Maranhão))|Presidente da Assembleia|Vice-presidente d[oa] Senado|Secretári[oa] da Mesa")]
+              (3, r"(?i)Vice-governador|(?<!vice-)Prefeit|Secretári[oa] (de Estado|Estadual|.*d[eoa] (Estado|Bahia|Ceará|Piauí|Pernambuco|Paraíba|Goiás|Maranhão))|Presidente da Assembleia|Vice-presidente d[oa] Senado|Secretári[oa] da Mesa")]
     for nivel, rx in regras:
         lid = [t for n, t in liderancas if n == nivel]
         achou = [(x, per) for x, per in cargos if re.search(rx, x)]
