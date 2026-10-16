@@ -401,10 +401,28 @@ def sinais_pauta(pauta, a_favor, senadores, aut, com):
 
 
 def evidencias(s):
-    """Lista numerada: primeiro o que pesa a favor, depois contra, por último o que só aparece como evidência."""
-    ordem = lambda x: (0 if x[1] > 0 else 1 if x[1] < 0 else 2, 0 if x[0] == "forte" else 1)
-    textos = dict.fromkeys(t for _, _, t in sorted(s, key=ordem))
-    return "\n".join(f"{i}. {t}" for i, t in enumerate(textos, 1))
+    """Lista numerada em três blocos com título: a favor do cliente, contra o cliente e o que não conta.
+    O texto de cada item diz de onde vem o lado (coordenação, descrição do cliente ou posição na pauta)."""
+    def limpa(t):
+        t = re.sub(r"; (a favor|contra) pela descrição do cliente, a confirmar\)", "; lado pela descrição do cliente, a confirmar)", t)
+        t = re.sub(r"(projeto )?(promotor|detrator) para o cliente, pela posição na pauta; marcação da coordenação pendente",
+                   "lado pela posição do cliente na pauta; coordenação ainda não marcou", t)
+        t = re.sub(r"(projeto )?(promotor|detrator) para o cliente", r"marcado \2 pela coordenação", t)
+        t = re.sub(r"; pauta ([^)]+)\)", r"; pauta \1, lado pela posição do cliente)", t)
+        return t
+    blocos = [("A favor do cliente", [t for k, x, t in s if x > 0]),
+              ("Contra o cliente", [t for k, x, t in s if x < 0]),
+              ("Não conta (só registro)", [t for k, x, t in s if x == 0])]
+    out, i = [], 0
+    for titulo, itens in blocos:
+        itens = list(dict.fromkeys(itens))
+        if not itens:
+            continue
+        out.append(titulo.upper())
+        for t in itens:
+            i += 1
+            out.append(f"{i}. {limpa(t)}")
+    return "\n".join(out)
 
 
 def placar(texto):
