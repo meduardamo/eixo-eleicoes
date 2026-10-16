@@ -4,7 +4,7 @@ Parlamentares, uma linha por senador, em três blocos:
 - Identidade: partido, UF, cadeira, de onde vem, profissão declarada ao TSE, trajetória (cargos com fonte);
 - Força política: posição no Senado pelo governismo, relevância política de 1 a 4 e o cargo que a define,
   comissões de que é titular hoje e presidências vigentes;
-- Proximidade de 1 a 4 em cada tema dos clientes, pelos números da etapa 22.
+- Atuação em cada tema dos clientes (Não atua, Pouco, Atua, Referência), pelos números da etapa 22.
 
 Regras (as mesmas da aba Metodologia):
 - Governismo: votações nominais do plenário desde fev/2023 em que a liderança do Governo orientou Sim ou Não; conta
@@ -161,8 +161,14 @@ def profissao_recente(txt):
     return f"{ocup.strip()} ({max(int(a) for a in re.findall(r'\d{4}', anos))})"
 
 
+ATUACAO = ["Não atua", "Pouco", "Atua", "Referência"]
+
+
 def proximidade(linha):
-    """Nota de 1 a 4 e a conta que leva a ela (vai na nota da célula)."""
+    """Atuação no tema em palavra (Não atua, Pouco, Atua, Referência) e os fatos que levam a ela (nota da célula).
+    Regra: comissão do tema hoje (membro 1, presidente 2), projetos como primeiro autor (5 ou mais 1, 15 ou mais 2),
+    relatorias com parecer (2 ou mais 1), virou lei (1); soma 0 = Não atua, 1 a 2 = Pouco, 3 a 4 = Atua, 5 ou mais =
+    Referência."""
     com = str(linha["Comissão do tema hoje"])
     p_com = 2 if "Presidente" in com else (1 if com and com != "Não é membro" else 0)
     autor = int(linha["Primeiro autor"])
@@ -172,12 +178,12 @@ def proximidade(linha):
     leis = int(linha["Viraram lei"])
     p_lei = int(leis >= 1)
     pts = p_com + p_aut + p_rel + p_lei
-    nota = 1 if pts == 0 else 2 if pts <= 2 else 3 if pts <= 4 else 4
-    conta = (f"{pts} ponto{'s' if pts != 1 else ''} (1 = 0 ponto; 2 = 1 a 2; 3 = 3 a 4; 4 = 5 ou mais)\n"
-             f"Comissão do tema: {com if com else 'não é membro'} (+{p_com})\n"
-             f"Projetos como primeiro autor no tema: {autor} (+{p_aut}; 5 ou mais = 1, 15 ou mais = 2)\n"
-             f"Relatorias com parecer no tema: {rel} (+{p_rel}; 2 ou mais = 1)\n"
-             f"Viraram lei: {leis} (+{p_lei})")
+    nota = ATUACAO[0 if pts == 0 else 1 if pts <= 2 else 2 if pts <= 4 else 3]
+    partes = [f"Comissão do tema hoje: {com}" if com and com != "Não é membro" else "Não está na comissão do tema",
+              f"{autor} projeto{'s' if autor != 1 else ''} do tema como primeiro autor",
+              f"{rel} relatoria{'s' if rel != 1 else ''} do tema com parecer",
+              f"{leis} vir{'aram' if leis != 1 else 'ou'} lei"]
+    conta = "\n".join(partes)
     return nota, conta
 
 
@@ -231,7 +237,7 @@ def main():
             "De onde vem": info.get("De onde vem", ""), "Profissão declarada (TSE)": profissao_recente(info.get("Profissão declarada (TSE)", "")),
             "Posição no Senado": posicao, "Governismo": gov, "Relevância política (1 a 4)": nivel, "Por quê": porque,
             "Comissões permanentes (titular)": ", ".join(titular), "Preside hoje": ", ".join(pres),
-            **{f"Proximidade: {t} (1 a 4)": prox[t][0] for t in TEMAS},
+            **{f"Atuação: {t}": prox[t][0] for t in TEMAS},
         })
     ficha = pd.DataFrame(linhas).sort_values("Senador", key=lambda s: s.map(chave))
     c.salvar_csv(ficha, "temas_clientes/parlamentares.csv")
