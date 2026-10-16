@@ -86,10 +86,12 @@ ROTULO_BASE = {
 # projetos de autoria cujo sentido a ementa mostra. sentido +1 = Sim vai na direção de quem é a favor da pauta.
 PAUTAS = {
     "Apostas online e saúde mental": {
-        "votacoes": [("2023-12-12", "PL 3626", (37, 27), +1, "Emenda 139 da lei das bets (tirar jogos on-line e cassino)"),
-                     ("2023-12-12", "PL 3626", (25, 36), +1, "Emenda 157 da lei das bets (proibir publicidade em arenas e patrocínio)"),
-                     ("2025-12-17", "RQS 857", (28, 36), -1, "urgência do PL 2234 (legaliza cassinos e jogos)")],
-        "comissao": [("2024-06-19", "CCJ", "PL 2234/2022", -1, "relatório do PL 2234 na CCJ (legaliza cassinos e jogos)")],
+        "lado": "o cliente defende restringir as apostas",
+        "lado_contra": "o cliente defende ampliar as apostas",
+        "votacoes": [("2023-12-12", "PL 3626", (37, 27), +1, "Emenda 139 à lei das bets, que tirava os jogos on-line e o cassino virtual da lei (Sim = restringir as apostas)"),
+                     ("2023-12-12", "PL 3626", (25, 36), +1, "Emenda 157 à lei das bets, que proibia publicidade de apostas em arenas e patrocínio (Sim = restringir as apostas)"),
+                     ("2025-12-17", "RQS 857", (28, 36), -1, "urgência do PL 2234, que legaliza cassinos e jogos de azar (Sim = acelerar a legalização)")],
+        "comissao": [("2024-06-19", "CCJ", "PL 2234/2022", -1, "relatório do PL 2234 na CCJ, que legaliza cassinos e jogos de azar (Sim = aprovar a legalização)")],
         "autoria": {"PL 2372/2025": "proíbe toda publicidade de apostas", "PL 2662/2025": "crime de operar e divulgar apostas virtuais",
                     "PL 2985/2023": "proíbe publicidade de apostas", "PL 3718/2024": "limitação das apostas",
                     "PL 3754/2025": "idade mínima de 21 anos para apostar", "PL 3765/2026": "limite mensal de depósitos em apostas",
@@ -386,17 +388,17 @@ def sinais_pauta(pauta, a_favor, senadores, aut, com):
             voto = (p.get("voto") or "").upper()
             if n and voto in ("SIM", "NÃO"):
                 s = sentido * lado * (1 if voto == "SIM" else -1)
-                out[n].append(("forte", s, f"votou {voto.capitalize().replace('Nao', 'Não')} na {rot} (plenário do Senado, {data[:4]}; pauta {pauta.lower()})"))
+                out[n].append(("forte", s, f"votou {voto.capitalize().replace('Nao', 'Não')} na {rot} (plenário do Senado, {data[:4]}); {cfg['lado'] if a_favor else cfg['lado_contra']}"))
     for data, colegiado, mat, sentido, rot in cfg["comissao"]:
         for r in com[(com.Data == data) & (com.Colegiado == colegiado) & (com["Matéria"] == mat)].itertuples():
             if r.Parlamentar in out and r.Voto in ("Sim", "Não"):
                 s = sentido * lado * (1 if r.Voto == "Sim" else -1)
-                out[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {rot} ({data[:4]}; pauta {pauta.lower()})"))
+                out[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {rot} ({data[:4]}); {cfg['lado'] if a_favor else cfg['lado_contra']}"))
     for r in aut[aut.k.isin(cfg["autoria"]) & aut.Papel.isin(["Primeiro autor", "Coautor"])].sort_values("Papel", ascending=False).drop_duplicates(["Parlamentar", "k"]).itertuples():
         if r.Parlamentar in out:
             forte = r.Papel == "Primeiro autor"
             out[r.Parlamentar].append(("forte" if forte else "médio", lado,
-                f"{'autor' if forte else 'coautor'} do {r.k} ({cfg['autoria'][r.k]}; pauta {pauta.lower()})"))
+                f"{'autor' if forte else 'coautor'} do {r.k} ({cfg['autoria'][r.k]}); {cfg['lado'] if a_favor else cfg['lado_contra']}"))
     return out
 
 
