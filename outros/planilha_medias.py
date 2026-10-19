@@ -4,7 +4,8 @@
 Governador, 2º turno, um bloco por confronto. Lê o cache Parquet que o `05 - Rebuild BI` acabou de publicar
 (`resultados_bi`, `resultados`, `pesquisas` da matriz T2) e a `base_dadosabertos` da
 planilha de candidaturas, e regrava as duas abas inteiras. Não recalcula média: a série é
-a `media_hibrida_30d` do `resultados_bi`, a mesma dos painéis.
+a `media_hibrida_30d` do `resultados_bi`, a mesma dos painéis. Exceção: o presidente nacional
+usa a série "após 1º turno" do PollingData (`media_pollingdata_presidente`).
 
 Brancos, nulos e indecisos = 100 - `declarado_hibrido_30d` (a fatia que declarou candidato,
 medida pesquisa a pesquisa com o mesmo peso da média).
@@ -52,6 +53,9 @@ CONFRONTOS_2T = {"AC": "t2_rick-assis", "AM": "t2_seffair-aziz", "DF": "t2_leao-
                  "ES": "t2_pazolini-ferraco", "RN": "t2_bezerra-xavier",
                  "TO": "t2_seabra-junior"}
 CONFRONTO_PRESIDENTE_2T = "t2_flavio-lula"
+# Presidente nacional usa a média do PollingData (decisão da Eduarda em 19/10/2026).
+URL_CAPA_PD = "https://flex.pollingdata.com.br/api/pdvoto/capa-dinamica.js"
+URL_PD_APOS_1T = "https://www.pollingdata.com.br/2026/presidente/br/t2_flavio-lula_apos_1o_turno"
 NV = "Brancos, nulos e indecisos"
 
 SAI = {"Renúncia", "Indeferido", "Cancelado", "Falecido", "Cassado"}
@@ -131,11 +135,57 @@ def env(nome):
     return valor
 
 
+def media_pollingdata_presidente(hoje, log=print):
+    """Série do PollingData para Flávio x Lula no 2º turno, só pesquisas pós 1º turno.
+
+    É a curva "Turno 2 (após 1º turno)" da capa do PDVoto, que o próprio site publica em
+    `capa-dinamica.js` sem login. Já vem com o viés de cada instituto corrigido pelo modelo
+    deles. Corta no dia da última pesquisa: depois dela a curva só projeta até a eleição.
+    Devolve linhas no formato do `resultados_bi` (h = candidato, nv = não válidos).
+    """
+    import requests
+    r = requests.get(URL_CAPA_PD, params={'t': int(hoje.timestamp())}, timeout=60,
+                     headers={'User-Agent': 'Mozilla/5.0'})
+    r.raise_for_status()
+    texto = r.text
+    d = json.loads(texto[texto.index('{'):texto.rindex('}') + 1])
+    cen = next(p for p in d['previsao'] if p.get('url') == URL_PD_APOS_1T)
+    ultima = pd.to_datetime(max(p['x'] for p in cen['pesquisas']), unit='ms').normalize()
+    fim = min(ultima, hoje.normalize())
+    pontos = {}
+    for s in cen['series']:
+        for t, v, *_ in s['pts']:
+            dt = pd.to_datetime(t, unit='ms').normalize()
+            if dt <= fim:
+                pontos.setdefault(dt, {})[s['nome']] = v
+    linhas = [{'cargo': 'presidente', 'uf': 'BR', 'disputa': CONFRONTO_PRESIDENTE_2T, 'tipo': 'candidato',
+               'candidato_partido': cp, 'd': dt, 'h': v, 'nv': vals.get('Não Válido')}
+              for dt, vals in pontos.items() for cp, v in vals.items() if cp != 'Não Válido']
+    log(f"  PollingData presidente: {len(cen['pesquisas'])} pesquisas, última {ultima:%d/%m}, "
+        f"{ {k: v for k, v in pontos[max(pontos)].items()} }")
+    return pd.DataFrame(linhas)
+
+
+def trocar_presidente_por_pollingdata(bi, dados):
+    """Tira o presidente nacional da média Eixo e põe a série do PollingData no lugar."""
+    pd_br = dados.get('presidente_pd')
+    if pd_br is None or pd_br.empty:
+        return bi
+    fora = (bi.cargo == 'presidente') & (bi.uf == 'BR')
+    return pd.concat([bi[~fora], pd_br], ignore_index=True)
+
+
 def carregar(creds):
     sessao = AuthorizedSession(creds)
     t2 = env(MATRIZ_T2_ENV)
     dados = {f'{aba}_t2': baixar_cache(sessao, t2, aba) for aba in ('resultados_bi', 'resultados', 'pesquisas')}
     dados['base'] = baixar_cache(sessao, env(CANDIDATURAS_ENV), 'base_dadosabertos')
+    hoje = pd.Timestamp.now(tz='America/Sao_Paulo').tz_localize(None)
+    try:
+        dados['presidente_pd'] = media_pollingdata_presidente(hoje)
+    except Exception as e:  # sem o PollingData, presidente volta para a média Eixo e o título avisa
+        print(f'  PollingData indisponível ({e}); presidente fica com a média Eixo')
+        dados['presidente_pd'] = None
     return dados
 
 
@@ -272,8 +322,10 @@ def so_presidente_2t(df):
     return df[(df.cargo == 'presidente') & (df.uf == 'BR') & (df.disputa == CONFRONTO_PRESIDENTE_2T)]
 
 
-def nome_do_bloco(uf):
-    return 'Brasil (BR) - Presidente' if uf == 'BR' else f'{NOMES_UF[uf]} ({uf})'
+def nome_do_bloco(uf, media_pd=False):
+    if uf != 'BR':
+        return f'{NOMES_UF[uf]} ({uf})'
+    return 'Brasil (BR) - Presidente' + (' (média PollingData)' if media_pd else '')
 
 
 def ordem_dos_blocos():
@@ -371,6 +423,7 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
     bi['nv'] = 100 - num(bi.declarado_hibrido_30d)
     bi['d'] = pd.to_datetime(bi.data_campo)
     bi = bi[bi.h.notna()]
+    bi = trocar_presidente_por_pollingdata(bi, dados)
     nv = bi.drop_duplicates(['uf', 'disputa', 'd'])[['uf', 'disputa', 'd', 'nv']].rename(columns={'nv': 'h'})
     nv = nv[nv.h.notna()]
     # O casamento com o TSE é pelo registro de governador; presidente segue com o nome da matriz.
@@ -394,10 +447,12 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
     fmt.append((1, 0, 8, 'sub'))
     grid.append(['Sem pesquisa nova do confronto, a série repete o último valor: veja a data da última pesquisa '
                  'no título de cada bloco. Confronto com pesquisa feita depois do 1º turno usa só essas, e a série '
-                 'começa na primeira delas. * Candidatura indeferida pelo TSE, com recurso.'])
+                 'começa na primeira delas. Presidente usa a média do PollingData (pesquisas pós 1º turno, com '
+                 'correção do viés de cada instituto). * Candidatura indeferida pelo TSE, com recurso.'])
     fmt.append((2, 0, 8, 'sub'))
     grid.append([])
     largura_max = 0
+    usa_pd = dados.get('presidente_pd') is not None
     for uf in ordem_dos_blocos():
         for disputa in sorted(bi[bi.uf == uf].disputa.unique()):
             u = bi[(bi.uf == uf) & (bi.disputa == disputa)]
@@ -419,7 +474,7 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
             r0 = len(grid)
             linha = [''] * (foto_col + 2)
             curto = ' x '.join(re.sub(r'\s*\([^)]*\)\s*\*?$', '', c) for c in vivos)
-            linha[0] = f'{nome_do_bloco(uf)} - {curto} - última pesquisa em {fim:%d/%m}'
+            linha[0] = f'{nome_do_bloco(uf, usa_pd)} - {curto} - última pesquisa em {fim:%d/%m}'
             linha[foto_col] = f'{uf} - Foto atual'
             grid.append(linha)
             fmt += [(r0, 0, ncol, 'estado'), (r0, foto_col, foto_col + 2, 'estado')]
@@ -468,6 +523,7 @@ def montar_ultimas_t2(dados, hoje, log=print):
     bi['nv'] = 100 - num(bi.declarado_hibrido_30d)
     bi['d'] = pd.to_datetime(bi.data_campo)
     bi = bi[bi.h.notna()]
+    bi = trocar_presidente_por_pollingdata(bi, dados)
     # Presidente fica com o nome da matriz: o casamento com o TSE é pelo registro de governador.
     nomes, _ = nomes_publicados(pd.concat([bi[bi.cargo == 'governador'][['uf', 'candidato_partido']],
                                            res[(res.cargo == 'governador') & (res.tipo == 'candidato')][['uf', 'candidato_partido']]]),
@@ -476,9 +532,11 @@ def montar_ultimas_t2(dados, hoje, log=print):
     curto = lambda n: re.sub(r'\s*\([^)]*\)\s*\*?$', '', n)
     f1 = lambda x: f'{x:.1f}'.replace('.', ',')
 
+    usa_pd = dados.get('presidente_pd') is not None
     linhas = []
     for uf in ordem_dos_blocos():
         for disputa in sorted(res[res.uf == uf].disputa.dropna().unique()):
+            media = 'Média PollingData' if uf == 'BR' and usa_pd else 'Média Eixo'
             u_bi = bi[(bi.uf == uf) & (bi.disputa == disputa)]
             if u_bi.empty:
                 continue
@@ -508,26 +566,27 @@ def montar_ultimas_t2(dados, hoje, log=print):
             if lid[1] is not None and lid[0] != lid[1]:
                 obs = f'Pesquisas divergem: a mais recente aponta {curto(lid[0])}, a anterior {curto(lid[1])}'
             elif lid[0] is not None and lid[0] != a:
-                obs = f'Pesquisa mais recente aponta {curto(lid[0])}, a Média Eixo {curto(a)}'
+                obs = f'Pesquisa mais recente aponta {curto(lid[0])}, a {media} {curto(a)}'
             elif all(m is not None and m <= 3 for m in marg):
                 obs = 'Margem estreita nas duas pesquisas'
             else:
-                obs = f'{curto(a)} à frente nas duas pesquisas e na Média Eixo'
+                obs = f'{curto(a)} à frente nas duas pesquisas e na {media}'
             if dias > 21:
                 obs += f'. Última pesquisa há {dias} dias'
             fmtp = lambda v: '-' if v is None else f1(v) + '%'
-            linhas.append([nome_do_bloco(uf), f'{curto(a)} x {curto(b)}',
+            linhas.append([nome_do_bloco(uf, usa_pd), f'{curto(a)} x {curto(b)}',
                            a, f1(ma) + '%', b, f1(mb) + '%', f1(ma - mb) + ' p.p.', f1(mnv) + '%', f'{fim:%d/%m}']
                           + [x for pl in ps_lin for x in (pl[0], pl[1], fmtp(pl[2]), fmtp(pl[3]), fmtp(pl[4]))]
                           + [obs])
     N = len(linhas[0]) if linhas else 20
     grid = [[f'ÚLTIMAS PESQUISAS 2º TURNO - COMPARATIVO ENTRE LEVANTAMENTOS RECENTES ({MESES[hoje.month].upper()}/{hoje.year})'],
-            ['Por confronto de 2º turno para presidente e governador: a Média Ponderada Eixo e as duas pesquisas mais recentes registradas no TSE. '
+            ['Por confronto de 2º turno para presidente e governador: a Média Ponderada e as duas pesquisas mais recentes registradas no TSE. '
              + atualizado(hoje)],
             ['Os percentuais das pesquisas estão na ordem da Média (candidato A e candidato B). Brancos/Nulos inclui indecisos. '
+             'Presidente usa a média do PollingData (pesquisas pós 1º turno, com correção do viés de cada instituto). '
              '* Candidatura com recurso.'],
             [],
-            ['ESTADO', 'CONFRONTO', 'MÉDIA PONDERADA (EIXO)', '', '', '', '', '', '', '1ª PESQUISA (MAIS RECENTE)', '', '', '', '',
+            ['ESTADO', 'CONFRONTO', 'MÉDIA PONDERADA', '', '', '', '', '', '', '1ª PESQUISA (MAIS RECENTE)', '', '', '', '',
              '2ª PESQUISA (ANTERIOR)', '', '', '', '', 'OBSERVAÇÕES'],
             ['Estado', 'Confronto', 'Candidato A', '%', 'Candidato B', '%', 'Margem', 'Brancos/Nulos', 'Última pesquisa',
              'Instituto (Data)', 'Registro TSE', 'A', 'B', 'Brancos/Nulos',
