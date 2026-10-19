@@ -771,6 +771,10 @@ DIAS_MAX_INATIVIDADE_CANDIDATO = 60
 # nenhuma, a média segue inteira com as anteriores. Decisão da Eduarda em
 # 09/10/2026.
 INICIO_CAMPO_SEGUNDO_TURNO = pd.Timestamp("2026-10-05")
+# Presidente nacional no 2º turno usa a média do PollingData (aplicar_media_pollingdata_presidente).
+DISPUTA_PRESIDENTE_T2 = "t2_flavio-lula"
+URL_CAPA_PD = "https://flex.pollingdata.com.br/api/pdvoto/capa-dinamica.js"
+URL_PD_APOS_1T = "https://www.pollingdata.com.br/2026/presidente/br/t2_flavio-lula_apos_1o_turno"
 COLUNA_MODELO_AMOSTRAL = "media_amostral_30d"
 COLUNA_MODELO_HIBRIDO = "media_hibrida_30d"
 COLUNA_DECLARADO = "declarado_hibrido_30d"
@@ -2613,6 +2617,67 @@ def calcular_agregadores_paralelos_resultados_bi(
     return paralelos.merge(declarado, on=chaves_escopo + ["data_campo"], how="left")
 
 
+def serie_pollingdata_presidente() -> pd.DataFrame:
+    """Curva "Turno 2 (após 1º turno)" de Flávio x Lula do PollingData, um valor por dia.
+
+    O site publica a curva sem login em `capa-dinamica.js`. O modelo deles corrige o viés de
+    cada instituto antes da média. Corta no dia da última pesquisa: depois dela a curva só
+    projeta até a eleição. Colunas: data_campo, candidato_partido, valor.
+    """
+    import requests
+
+    r = requests.get(URL_CAPA_PD, timeout=60, headers={"User-Agent": "Mozilla/5.0"})
+    r.raise_for_status()
+    d = json.loads(r.text[r.text.index("{"):r.text.rindex("}") + 1])
+    cen = next(p for p in d["previsao"] if p.get("url") == URL_PD_APOS_1T)
+    ultima = max(p["x"] for p in cen["pesquisas"])
+    linhas = [
+        {"data_campo": pd.to_datetime(t, unit="ms").strftime("%Y-%m-%d"),
+         "candidato_partido": s["nome"], "valor": v}
+        for s in cen["series"] for t, v, *_ in s["pts"] if t <= ultima
+    ]
+    return pd.DataFrame(linhas)
+
+
+def aplicar_media_pollingdata_presidente(df: pd.DataFrame) -> pd.DataFrame:
+    """Presidente nacional no 2º turno: troca a média Eixo pela do PollingData.
+
+    Decisão da Eduarda em 19/10/2026: a média do presidente em tudo da Eixo é a do PollingData.
+    Vale para as linhas de Flávio x Lula no BR com campo a partir de INICIO_CAMPO_SEGUNDO_TURNO;
+    `media_hibrida_30d` recebe o valor da curva deles no dia e `declarado_hibrido_30d` vira
+    100 - não válidos. Dia sem valor na curva fica vazio. Sem resposta do site, segue a média
+    Eixo e o log avisa. Governador e presidente por UF não mudam (eles não publicam).
+    """
+    alvo = (
+        df["cargo"].astype(str).str.lower().eq("presidente")
+        & df["uf"].astype(str).str.upper().eq("BR")
+        & df["turno"].astype(str).str.lower().eq("t2")
+        & df["disputa"].astype(str).eq(DISPUTA_PRESIDENTE_T2)
+        & pd.to_datetime(df["data_campo"], errors="coerce").ge(INICIO_CAMPO_SEGUNDO_TURNO)
+    )
+    if not alvo.any():
+        return df
+    try:
+        serie = serie_pollingdata_presidente()
+    except Exception as e:
+        print(f"  [pollingdata] curva do presidente indisponível ({e}); fica a média Eixo")
+        return df
+    valor = serie.set_index(["data_campo", "candidato_partido"])["valor"].to_dict()
+    nv = serie[serie["candidato_partido"].eq("Não Válido")].set_index("data_campo")["valor"].to_dict()
+    df = df.copy()
+    for col in (COLUNA_MODELO_HIBRIDO, COLUNA_DECLARADO):
+        df[col] = pd.to_numeric(df[col], errors="coerce") if col in df.columns else float("nan")
+    datas = pd.to_datetime(df.loc[alvo, "data_campo"]).dt.strftime("%Y-%m-%d")
+    df.loc[alvo, COLUNA_MODELO_HIBRIDO] = [
+        valor.get((d, cp), float("nan")) for d, cp in zip(datas, df.loc[alvo, "candidato_partido"])
+    ]
+    df.loc[alvo, COLUNA_DECLARADO] = [round(100 - nv[d], 4) if d in nv else float("nan") for d in datas]
+    ultimo = serie["data_campo"].max()
+    print(f"  [pollingdata] presidente BR 2º turno com a média do PollingData: {alvo.sum()} linhas, "
+          f"curva até {ultimo}: {serie[serie.data_campo.eq(ultimo)].set_index('candidato_partido')['valor'].to_dict()}")
+    return df
+
+
 def construir_resultados_bi(
     df_resultados: pd.DataFrame,
     df_pesquisas: pd.DataFrame | None = None,
@@ -2711,6 +2776,8 @@ def construir_resultados_bi(
             on=chaves_paralelos,
             how="left",
         )
+
+    df_candidatos = aplicar_media_pollingdata_presidente(df_candidatos)
 
     for col in cols:
         if col not in df_candidatos.columns:
