@@ -396,8 +396,7 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
     fmt.append((1, 0, 8, 'sub'))
     grid.append(['Sem pesquisa nova do confronto, a série repete o último valor: veja a data da última pesquisa '
                  'no título de cada bloco. Confronto com pesquisa feita depois do 1º turno usa só essas, e a série '
-                 'começa na primeira delas. Presidente usa a média do PollingData (pesquisas pós 1º turno, com '
-                 'correção do viés de cada instituto). * Candidatura indeferida pelo TSE, com recurso.'])
+                 'começa na primeira delas. * Candidatura indeferida pelo TSE, com recurso.'])
     fmt.append((2, 0, 8, 'sub'))
     grid.append([])
     largura_max = 0
@@ -529,7 +528,6 @@ def montar_ultimas_t2(dados, hoje, log=print):
             ['Por confronto de 2º turno para presidente e governador: a Média Ponderada e as duas pesquisas mais recentes registradas no TSE. '
              + atualizado(hoje)],
             ['Os percentuais das pesquisas estão na ordem da Média (candidato A e candidato B). Brancos/Nulos inclui indecisos. '
-             'Presidente usa a média do PollingData (pesquisas pós 1º turno, com correção do viés de cada instituto). '
              '* Candidatura com recurso.'],
             [],
             ['ESTADO', 'CONFRONTO', 'MÉDIA PONDERADA', '', '', '', '', '', '', '1ª PESQUISA (MAIS RECENTE)', '', '', '', '',
