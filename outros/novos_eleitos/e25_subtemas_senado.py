@@ -2,12 +2,16 @@
 
 Subtemas tirados da taxonomia dos planos de governo (outros/analise_planos.py) e das pautas dos clientes:
 tempo integral e recomposição das aprendizagens (ISG, IU), alfabetização (Lemann), conectividade (MegaEdu),
-fatores de risco como tabaco, álcool e alimentação (Vital, IDEC, Umane), planos de saúde (IDEC, IEPS),
+tabaco e álcool (Vital), alimentação saudável e ultraprocessados (Desiderata, IDEC, Umane), violência contra
+crianças, adolescentes e mulheres e casamento infantil (Vital, Infinis, Coletivo, UNFPA), planos de saúde (IDEC, IEPS),
 saúde mental, drogas e apostas (Cactus, IEPS), incentivo ao esporte (REMS), primeira infância (FMCSV) etc.
 
 Cada matéria da etapa 21 (primeira autoria e relatorias com parecer, Senado e Câmara) foi lida pela ementa e
 recebeu um ou dois subtemas: dados_novos_eleitos/temas_clientes/subtemas_lidos.csv (2.060 matérias, leitura
-de 16/10/2026). Ensino superior e o que não cabe em subtema de cliente ficam fora das colunas.
+de 16/10/2026; em 19/10 o antigo FR foi relido e dividido em TA e AS). Violência (VI) vem de outra leitura,
+temas_clientes/violencia_lidos.csv (19/10/2026): as 525 matérias da base completa do levantamento (etapa 18) com
+público mulheres ou crianças em segurança, direitos humanos, direito civil ou assistência, ou com termo de
+violência, lidas uma a uma; 330 entraram. Ensino superior e o que não cabe em subtema de cliente ficam fora das colunas.
 
 Nível por subtema, pelo número de matérias distintas do senador no subtema (autor ou relator):
 0 = Não atua; 1 = Pouco; 2 a 4 = Atua; 5 ou mais = Referência. A nota da célula lista as matérias.
@@ -28,7 +32,9 @@ SUBTEMAS = [
     ("Saúde", "MA", "Hospitais e alta complexidade no SUS"),
     ("Saúde", "UE", "Urgência e emergência em saúde"),
     ("Saúde", "SME", "Saúde mental, drogas e apostas"),
-    ("Saúde", "FR", "Tabaco, álcool, alimentação e prevenção de doenças"),
+    ("Saúde", "TA", "Tabaco e álcool"),
+    ("Saúde", "AS", "Alimentação saudável, ultraprocessados e agrotóxicos"),
+    ("Saúde", "VI", "Violência contra crianças, adolescentes e mulheres e casamento infantil"),
     ("Saúde", "PS", "Planos de saúde"),
     ("Saúde", "MV", "Medicamentos e vacinas"),
     ("Saúde", "DC", "Doenças e condições de saúde específicas"),
@@ -71,7 +77,15 @@ def main():
         for s in str(r.Subtemas).split(","):
             tema, s = JUNTA.get((r._1, s), (r._1, s))
             cod.setdefault((r.Casa, r.Matéria), set()).add((tema, s))
+    # violência quase toda caiu em Segurança na etapa 18, fora das matérias dos quatro temas: entra pela base completa
+    viol = c.ler_csv("temas_clientes/violencia_lidos.csv")
+    for r in viol.itertuples():
+        cod.setdefault((r.Casa, r.Matéria), set()).add(("Saúde", "VI"))
+    reg = c.ler_csv("levantamento_senado/registros.csv").drop_duplicates(["Parlamentar", "Casa", "Matéria", "Registro"])
+    reg = reg.merge(viol[["Casa", "Matéria"]], on=["Casa", "Matéria"])
+    reg = reg.assign(**{"Ano": reg.Matéria.str.extract(r"/(\d{4})")[0], "Virou lei": ""})
     mats = pd.concat([c.ler_csv(f"temas_clientes/materias_{g}.csv") for g in GRUPOS])
+    mats = pd.concat([mats, reg[[k for k in mats.columns if k in reg.columns]]]).reindex(columns=mats.columns)
     nomes = list(dict.fromkeys(n for g in GRUPOS for n in c.ler_csv(f"temas_clientes/perfil_{g}.csv").Parlamentar))
     linhas, notas = [], {}
     for nome in nomes:
