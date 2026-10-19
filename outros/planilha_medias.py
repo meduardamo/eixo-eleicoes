@@ -666,17 +666,17 @@ def gravar_serie_semanal(sh, grid, fmt, largura_max, datas_cel, series_cel, aba=
                 'textFormat': {'foregroundColor': fg, 'bold': bold, 'fontSize': size, 'italic': italic,
                                'fontFamily': 'Montserrat'}}},
             'fields': 'userEnteredFormat'}})
-    # Formato que a Jess aplicou na aba: data dd/mmm e série sem casa decimal (a foto atual fica com 1 casa).
+    # Data dd/mmm; série e foto atual com 1 casa decimal (pedido da Eduarda em 19/10/2026).
     for r0, r1 in datas_cel:
         reqs.append({'repeatCell': {
             'range': {'sheetId': sid, 'startRowIndex': r0, 'endRowIndex': r1, 'startColumnIndex': 0, 'endColumnIndex': 1},
             'cell': {'userEnteredFormat': {'numberFormat': {'type': 'DATE', 'pattern': 'dd/mmm'}}},
             'fields': 'userEnteredFormat.numberFormat'}})
-    for r0, r1, c0, c1 in series_cel:
-        reqs.append({'repeatCell': {
-            'range': {'sheetId': sid, 'startRowIndex': r0, 'endRowIndex': r1, 'startColumnIndex': c0, 'endColumnIndex': c1},
-            'cell': {'userEnteredFormat': {'numberFormat': {'type': 'NUMBER', 'pattern': '0'}}},
-            'fields': 'userEnteredFormat.numberFormat'}})
+    reqs.append({'repeatCell': {
+        'range': {'sheetId': sid, 'startRowIndex': 4, 'endRowIndex': len(grid), 'startColumnIndex': 1,
+                  'endColumnIndex': largura_max},
+        'cell': {'userEnteredFormat': {'numberFormat': {'type': 'NUMBER', 'pattern': '0.0'}}},
+        'fields': 'userEnteredFormat.numberFormat'}})
 
     def altura(i0, i1, px):
         return {'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'ROWS', 'startIndex': i0,
