@@ -322,10 +322,8 @@ def so_presidente_2t(df):
     return df[(df.cargo == 'presidente') & (df.uf == 'BR') & (df.disputa == CONFRONTO_PRESIDENTE_2T)]
 
 
-def nome_do_bloco(uf, media_pd=False):
-    if uf != 'BR':
-        return f'{NOMES_UF[uf]} ({uf})'
-    return 'Brasil (BR) - Presidente' + (' (média PollingData)' if media_pd else '')
+def nome_do_bloco(uf):
+    return 'Brasil (BR) - Presidente' if uf == 'BR' else f'{NOMES_UF[uf]} ({uf})'
 
 
 def ordem_dos_blocos():
@@ -452,7 +450,6 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
     fmt.append((2, 0, 8, 'sub'))
     grid.append([])
     largura_max = 0
-    usa_pd = dados.get('presidente_pd') is not None
     for uf in ordem_dos_blocos():
         for disputa in sorted(bi[bi.uf == uf].disputa.unique()):
             u = bi[(bi.uf == uf) & (bi.disputa == disputa)]
@@ -474,7 +471,7 @@ def montar_serie_segundo_turno(dados, hoje, log=print):
             r0 = len(grid)
             linha = [''] * (foto_col + 2)
             curto = ' x '.join(re.sub(r'\s*\([^)]*\)\s*\*?$', '', c) for c in vivos)
-            linha[0] = f'{nome_do_bloco(uf, usa_pd)} - {curto} - última pesquisa em {fim:%d/%m}'
+            linha[0] = f'{nome_do_bloco(uf)} - {curto} - última pesquisa em {fim:%d/%m}'
             linha[foto_col] = f'{uf} - Foto atual'
             grid.append(linha)
             fmt += [(r0, 0, ncol, 'estado'), (r0, foto_col, foto_col + 2, 'estado')]
@@ -574,7 +571,7 @@ def montar_ultimas_t2(dados, hoje, log=print):
             if dias > 21:
                 obs += f'. Última pesquisa há {dias} dias'
             fmtp = lambda v: '-' if v is None else f1(v) + '%'
-            linhas.append([nome_do_bloco(uf, usa_pd), f'{curto(a)} x {curto(b)}',
+            linhas.append([nome_do_bloco(uf), f'{curto(a)} x {curto(b)}',
                            a, f1(ma) + '%', b, f1(mb) + '%', f1(ma - mb) + ' p.p.', f1(mnv) + '%', f'{fim:%d/%m}']
                           + [x for pl in ps_lin for x in (pl[0], pl[1], fmtp(pl[2]), fmtp(pl[3]), fmtp(pl[4]))]
                           + [obs])
