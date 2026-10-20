@@ -14,7 +14,10 @@ público mulheres ou crianças em segurança, direitos humanos, direito civil ou
 violência, lidas uma a uma; 330 entraram. Em 20/10 as 865 ementas de Educação foram relidas para dois subtemas novos,
 pedidos por ISG e IU: infraestrutura escolar (IN: obras, reforma, condições mínimas, água, mobiliário, normas de
 segurança do prédio; 12 matérias, uma delas lida em Primeira infância) e adaptação e emergência climática nas escolas
-(CL: 2 matérias). Defesa civil no currículo e o programa do RS para o ensino superior ficaram fora. Ensino superior e o que não cabe em subtema de cliente ficam fora das colunas.
+(CL: 2 matérias). Defesa civil no currículo e o programa do RS para o ensino superior ficaram fora.
+Também em 20/10: as 170 matérias da base completa com termo escolar que a Casa classificou fora de Educação foram lidas
+uma a uma; 40 são de educação básica e entraram com o código do subtema (temas_clientes/educacao_outros_temas_lidos.csv;
+o PL 4501/2020, ultraprocessados nas escolas, conta também em Saúde). Ensino superior e o que não cabe em subtema de cliente ficam fora das colunas.
 
 Nível por subtema, pelo número de matérias distintas do senador no subtema (autor ou relator):
 0 = Não atua; 1 = Pouco; 2 a 4 = Atua; 5 ou mais = Referência. A nota da célula lista as matérias.
@@ -77,7 +80,9 @@ NIVEL = lambda n: "Não atua" if n == 0 else "Pouco" if n == 1 else "Atua" if n 
 
 
 def main():
-    lidos = c.ler_csv("temas_clientes/subtemas_lidos.csv")
+    # educação que a Casa classificou em outro tema (orçamento, segurança, tributos etc.) entra pela base completa
+    extra = c.ler_csv("temas_clientes/educacao_outros_temas_lidos.csv")
+    lidos = pd.concat([c.ler_csv("temas_clientes/subtemas_lidos.csv"), extra])
     cod = {}
     for r in lidos.itertuples():
         for s in str(r.Subtemas).split(","):
@@ -88,7 +93,7 @@ def main():
     for r in viol.itertuples():
         cod.setdefault((r.Casa, r.Matéria), set()).add(("Saúde", "VI"))
     reg = c.ler_csv("levantamento_senado/registros.csv").drop_duplicates(["Parlamentar", "Casa", "Matéria", "Registro"])
-    reg = reg.merge(viol[["Casa", "Matéria"]], on=["Casa", "Matéria"])
+    reg = reg.merge(pd.concat([viol, extra])[["Casa", "Matéria"]].drop_duplicates(), on=["Casa", "Matéria"])
     reg = reg.assign(**{"Ano": reg.Matéria.str.extract(r"/(\d{4})")[0], "Virou lei": ""})
     mats = pd.concat([c.ler_csv(f"temas_clientes/materias_{g}.csv") for g in GRUPOS])
     mats = pd.concat([mats, reg[[k for k in mats.columns if k in reg.columns]]]).reindex(columns=mats.columns)
