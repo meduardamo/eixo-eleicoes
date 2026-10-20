@@ -1,0 +1,26 @@
+name: 30 - Email de exemplo
+
+# Manual: manda os emails automáticos com dados inventados para um endereço só,
+# para ver a moldura num leitor de email sem disparar para a lista.
+on:
+  workflow_dispatch:
+    inputs:
+      para:
+        description: 'Endereço que recebe os exemplos'
+        required: true
+
+jobs:
+  exemplo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python -m outros.email_exemplo "$PARA"
+        env:
+          PYTHONUNBUFFERED: "1"
+          PARA: ${{ inputs.para }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          EMAIL: ${{ secrets.EMAIL }}
