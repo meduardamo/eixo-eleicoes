@@ -252,7 +252,7 @@ def test_aviso_de_um_resumo_leva_o_titulo_no_assunto():
     assert assunto == FEITO["titulo"]
     assert FEITO["link"] in html
     assert "Tarcísio de Freitas, Fernando Haddad" in html
-    assert "(atualizado)" not in html
+    assert "versão atualizada" not in html
 
 
 def test_rodada_com_varios_resumos_manda_um_email_so():
@@ -261,14 +261,14 @@ def test_rodada_com_varios_resumos_manda_um_email_so():
     assunto, html = email_da_rodada([FEITO, dict(FEITO, titulo="Resumo da sabatina")],
                                     "2026-08-27 17:40")
     assert assunto == "2 resumos de debates prontos"
-    assert html.count("abrir o resumo") == 2
+    assert html.count("Abrir o resumo") == 2
 
 
 def test_resumo_refeito_sai_marcado_como_atualizado():
     """Refazer grava por cima do mesmo Doc e o link não muda; sem o selo, quem
     recebe lê como evento novo."""
     _, html = email_da_rodada([dict(FEITO, atualizado=True)], "2026-08-27 17:40")
-    assert "(atualizado)" in html
+    assert "versão atualizada" in html
 
 
 def test_html_do_aviso_escapa_o_que_veio_da_planilha():

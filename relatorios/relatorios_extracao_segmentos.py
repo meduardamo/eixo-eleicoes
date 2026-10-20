@@ -73,57 +73,33 @@ def _grupo(p):
     return GRUPOS[2]
 
 
-def _tabela(pesquisas):
-    linhas = "".join(
-        "<tr>"
-        f"<td style='padding:6px 10px;border-top:1px solid #e5e7eb'>{p.get('numero_identificacao','')}</td>"
-        f"<td style='padding:6px 10px;border-top:1px solid #e5e7eb'>{p.get('empresa_contratada','')}</td>"
-        f"<td style='padding:6px 10px;border-top:1px solid #e5e7eb'>{p.get('abrangencia','')}</td>"
-        f"<td style='padding:6px 10px;border-top:1px solid #e5e7eb'>{p.get('cargos','')}</td>"
-        "</tr>"
-        for p in pesquisas
-    )
-    return (
-        "<table style='width:100%;border-collapse:collapse;font-size:14px;margin-bottom:6px'>"
-        "<tr style='text-align:left;background:#f3f4f6'>"
-        "<th style='padding:6px 10px'>Registro</th><th style='padding:6px 10px'>Instituto</th>"
-        "<th style='padding:6px 10px'>Abrangência</th><th style='padding:6px 10px'>Cargos</th></tr>"
-        f"{linhas}</table>"
-    )
-
-
 def _html(pesquisas, hoje):
+    from compartilhado import email_layout as L
     por_grupo = {g: [] for g in GRUPOS}
     for p in pesquisas:
         por_grupo[_grupo(p)].append(p)
-    secoes = "".join(
-        f"<h3 style='margin:18px 0 6px 0'>{g} ({len(por_grupo[g])})</h3>{_tabela(por_grupo[g])}"
-        for g in GRUPOS if por_grupo[g]
-    )
     planilha_url = (f"https://docs.google.com/spreadsheets/d/{RELATORIOS_ID}/edit"
-                    if RELATORIOS_ID else "#")
-    return f"""
-    <html><body style="font-family:Arial,sans-serif;color:#111">
-      <h2 style="margin:0 0 6px 0">Pesquisas com divulgação prevista para hoje</h2>
-      <div style="color:#374151;margin:0 0 14px 0">{hoje} · {len(pesquisas)} pesquisa(s)</div>
-      <div style="background:#eef0f6;border-left:3px solid #192D4E;padding:10px 12px;margin:0 0 16px 0;font-size:13px">
-        <strong style="color:#192D4E">Ação do dia</strong>, para cada pesquisa abaixo:
-        <ol style="margin:8px 0 0 0;padding-left:18px">
-          <li>Confira se a notícia ou o relatório confere com o que a linha traz:
-            registro TSE, instituto, data de campo e cargos.</li>
-          <li>Registre a pesquisa no
-            <a href="{POLLING_MANUAL_URL}" style="color:#192D4E">Polling Manual</a>,
-            colando a notícia ou o texto do relatório. Ele grava nas matrizes
-            <b>T1</b> e <b>T2</b> e marca a linha da fila (aba <b>relatorios</b> da
-            <a href="{planilha_url}" style="color:#192D4E">Voto por Segmento</a>)
-            como concluída.</li>
-          <li>Confira na planilha se ficou tudo certo: cenários, candidatos,
-            partidos, percentuais, turno e UF.</li>
-        </ol>
-      </div>
-      {secoes}
-    </body></html>
-    """
+                    if RELATORIOS_ID else "")
+    corpo = ""
+    for g in GRUPOS:
+        if not por_grupo[g]:
+            continue
+        corpo += L.secao(g, len(por_grupo[g]))
+        corpo += "".join(
+            L.item(p.get("empresa_contratada", "") or "Instituto não informado",
+                   rotulo=p.get("abrangencia", ""),
+                   meta=" · ".join(filter(None, [str(p.get("numero_identificacao", "")),
+                                                 str(p.get("cargos", ""))])))
+            for p in por_grupo[g])
+    dia = datetime.strptime(hoje, "%Y-%m-%d").strftime("%d/%m/%Y")
+    n_inst = len({p.get("empresa_contratada") for p in pesquisas})
+    return L.pagina(
+        "Pesquisas do dia", "Pesquisas com divulgação prevista para hoje", dia, corpo,
+        nums=[(len(pesquisas), "pesquisas"), (n_inst, "institutos")],
+        previa=f"{len(pesquisas)} pesquisas previstas para {dia}",
+        botoes=[("Abrir o Polling Manual", POLLING_MANUAL_URL),
+                ("Abrir a Voto por Segmento", planilha_url)],
+    )
 
 
 def _enviar(subject, html_body):

@@ -773,146 +773,54 @@ def mapear_tema_principal(temas_str: str, legenda_str: str,
 
 def html_email(posts: list[dict], num: dict, dia: str, nome_pdf: str,
                planilha_url: str) -> str:
-    """Corpo do e-mail: o clipping com posts agrupados por temas e UFs."""
-    # Agrupa posts por tema
+    """Corpo do e-mail: o clipping com posts agrupados por tema e UF."""
+    # O workflow roda `python outros/instagram.py`, que não põe a raiz do repo
+    # no sys.path; sem isto `compartilhado` não é encontrado.
+    import sys
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if raiz not in sys.path:
+        sys.path.append(raiz)
+    from compartilhado import email_layout as L
+
     posts_por_tema = defaultdict(list)
     for p in posts:
-        res_leg = p.get("resumo") or ""
-        tema = mapear_tema_principal(p.get("temas", ""), res_leg)
+        tema = mapear_tema_principal(p.get("temas", ""), p.get("resumo") or "")
         posts_por_tema[tema].append(p)
+    # Tema com mais posts primeiro, empate em ordem alfabética
+    temas_ordenados = sorted(posts_por_tema, key=lambda t: (-len(posts_por_tema[t]), t))
 
-    # Ordena os temas pela quantidade de posts (descrescente), depois alfabeticamente
-    temas_ordenados = sorted(
-        posts_por_tema.keys(),
-        key=lambda t: (-len(posts_por_tema[t]), t)
-    )
-
-    # Helper para gerar âncora a partir do nome do tema
-    def _slug(tema: str) -> str:
-        s = tema.lower()
-        s = re.sub(r"[ãáâä]", "a", s)
-        s = re.sub(r"[ẽéêë]", "e", s)
-        s = re.sub(r"[ĩíîï]", "i", s)
-        s = re.sub(r"[õóôö]", "o", s)
-        s = re.sub(r"[ũúûü]", "u", s)
-        s = re.sub(r"[ç]", "c", s)
-        s = re.sub(r"[^a-z0-9]", "-", s)
-        return s.strip("-")
-
-    # Gera o sumário clicável
-    itens_sumario = []
-    for tema in temas_ordenados:
-        qtd = len(posts_por_tema[tema])
-        plural_post = "posts" if qtd != 1 else "post"
-        itens_sumario.append(
-            f"<li><a href='#{_slug(tema)}' style='color:#192D4E;text-decoration:none;font-weight:bold;'>"
-            f"{tema} ({qtd} {plural_post})</a></li>"
-        )
-    sumario_html = (
-        "<div style='margin: 0 0 20px 0; background: #f6f7fa; border: 1px solid #da8093; padding: 12px; border-radius: 4px; border-color: #dadad4;'>"
-        "<h4 style='margin: 0 0 8px 0; color: #192D4E; font-size: 14px;'>Sumário</h4>"
-        "<ul style='margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6;'>"
-        f"{''.join(itens_sumario)}"
-        "</ul>"
-        "</div>"
-    )
-
-    # Helper para formatar cada post
     def _bloco_post_html(p: dict) -> str:
-        ident = f"{p['candidato']}"
+        ident = p["candidato"]
         if p["partido"]:
             ident += f" ({p['partido']}/{p['uf']})"
-        if p["cargo"] and p["cargo"] != SEM_CARGO:
-            ident += f" · {p['cargo']}"
+        rotulo = p["cargo"] if p["cargo"] and p["cargo"] != SEM_CARGO else ""
+        meta = " · ".join([_data_curta(p["publicado"]),
+                           "Vídeo" if p["tipo"] == "Vídeo" else "Foto",
+                           f"{_n(p['curtidas'])} curtidas",
+                           f"{_n(p['comentarios'])} comentários"])
+        return L.item(ident, href=p["link"] or "", rotulo=rotulo, meta=meta,
+                      texto=p["resumo"] or "", acao="Abrir o post")
 
-        tipo_str = "Vídeo" if p["tipo"] == "Vídeo" else "Foto"
-        likes_str = f"{_n(p['curtidas'])} curtidas"
-        comments_str = f"{_n(p['comentarios'])} comentários"
-        data_str = _data_curta(p["publicado"])
-        meta_info = f"{data_str} · {tipo_str} · {likes_str} · {comments_str}"
-        resumo = p["resumo"] or ""
-
-        link_html = ""
-        if p["link"] and p["link"].startswith("http"):
-            link_html = f'<a href="{p["link"]}" style="color:#192D4E;font-size:12px;font-weight:bold;text-decoration:none">abrir o post</a>'
-
-        return f"""
-        <div style="border-left:3px solid #192D4E;padding:8px 12px;margin:0 0 14px 0;background:#f6f7fa">
-            <strong style="color:#192D4E">{ident}</strong>
-            <div style="color:#6b7280;font-size:12px;margin:2px 0 6px 0">{meta_info}</div>
-            {f'<div style="font-size:13px;margin:0 0 6px 0">{resumo}</div>' if resumo else ''}
-            {link_html}
-        </div>"""
-
-    # Monta as seções por tema
-    secoes_temas = []
+    corpo = L.nota(f"O clipping diagramado para impressão está em anexo "
+                   f"(<b>{L.esc(nome_pdf)}</b>). Abaixo, os posts por tema e UF.")
     for tema in temas_ordenados:
-        qtd = len(posts_por_tema[tema])
-        plural_post = "posts" if qtd != 1 else "post"
-
-        # Agrupa os posts deste tema por UF
-        posts_por_uf = defaultdict(list)
+        corpo += L.secao(tema, len(posts_por_tema[tema]))
+        por_uf = defaultdict(list)
         for p in posts_por_tema[tema]:
-            posts_por_uf[p["uf"]].append(p)
+            por_uf[p["uf"]].append(p)
+        for uf in sorted(por_uf):
+            if len(por_uf) > 1:
+                corpo += L.subsecao(uf)
+            corpo += "".join(_bloco_post_html(p) for p in por_uf[uf])
 
-        # Gera os blocos do tema, separados por UF
-        blocos_uf = []
-        for uf in sorted(posts_por_uf.keys()):
-            blocos_uf.append(
-                f"<div style='margin: 12px 0 6px 0;'>"
-                f"<strong style='color:#767672; font-size:12px; text-transform:uppercase;'>{uf}</strong>"
-                f"</div>"
-            )
-            for p in posts_por_uf[uf]:
-                blocos_uf.append(_bloco_post_html(p))
-
-        secoes_temas.append(
-            f"<div style='margin-bottom: 24px;'>"
-            f"<a name='{_slug(tema)}'></a>"
-            f"<h3 style='margin:20px 0 8px 0; font-size:16px; color:#192D4E; border-bottom:1px solid #e5e7eb; padding-bottom:4px;'>"
-            f"{tema} ({qtd} {plural_post})</h3>"
-            f"{''.join(blocos_uf)}"
-            f"</div>"
-        )
-
-    kpis = "".join(
-        f"<td style='padding:0 14px 0 0'>"
-        f"<div style='font-size:22px;font-weight:700;color:#192D4E'>{_n(v)}</div>"
-        f"<div style='font-size:11px;color:#767672;text-transform:uppercase'>{r}</div></td>"
-        for v, r in [(num["posts"], "posts"), (num["candidatos"], "candidatos"),
-                     (num["ufs"], "UFs"), (num["curtidas"], "curtidas"),
-                     (num["comentarios"], "comentários")]
+    return L.pagina(
+        "Clipping do Instagram", "Clipping do Instagram", dia, corpo,
+        nums=[(_n(num["posts"]), "posts"), (_n(num["candidatos"]), "candidatos"),
+              (_n(num["ufs"]), "UFs"), (_n(num["curtidas"]), "curtidas")],
+        previa=f"{num['posts']} posts de {num['candidatos']} candidatos · "
+               + ", ".join(temas_ordenados[:3]),
+        botoes=[("Abrir a planilha de mapeamento", planilha_url)],
     )
-
-    return f"""
-    <html><body style="font-family:Arial,sans-serif;color:#111;line-height:1.4;">
-      <h2 style="margin:0 0 4px 0">Clipping do Instagram</h2>
-      <div style="color:#374151;margin:0 0 14px 0">{dia}</div>
-
-      <div style="background:#eef0f6;border-left:3px solid #192D4E;padding:12px;margin:0 0 18px 0">
-        <strong style="color:#192D4E">Clipping do dia em anexo:</strong>
-        <span style="font-family:monospace">{nome_pdf}</span>
-        <div style="font-size:13px;color:#374151;margin-top:6px">
-          O clipping em PDF está anexado com a diagramação para impressão.
-          Os posts estão listados abaixo por tema e UF.
-        </div>
-      </div>
-
-      {sumario_html}
-
-      {"".join(secoes_temas)}
-
-      <hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0;" />
-
-      <h3 style="margin:0 0 12px 0;font-size:14px;color:#192D4E">Grandes Números da Rodada</h3>
-      <table style="border-collapse:collapse;margin:0 0 18px 0"><tr>{kpis}</tr></table>
-
-      <p style="font-size:13px;color:#374151;margin:22px 0 0">
-        Os posts detalhados e o histórico ficam salvos na aba <b>Resultados</b> da
-        <a href="{planilha_url}" style="color:#192D4E">planilha de mapeamento</a>.
-      </p>
-    </body></html>
-    """
 
 
 def _destinatarios() -> list[str]:

@@ -1064,11 +1064,6 @@ def preencher_meta(_args):
     log(f"{feitos} evento(s) medido(s).")
 
 
-def _esc(v):
-    return (str(v or "").replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;"))
-
-
 def email_da_rodada(feitos, agora):
     """Assunto e corpo do aviso de que saiu resumo novo.
 
@@ -1079,7 +1074,7 @@ def email_da_rodada(feitos, agora):
 
     Função pura, para o texto poder ser conferido em teste sem mandar email.
     """
-    from compartilhado.email_utils import EIXO_MARINHO
+    from compartilhado import email_layout as L
 
     # O titulo() já vem como 'Resumo do 1º debate ao governo de São Paulo,
     # Band, 09/08/2026', então não precisa de prefixo na linha de assunto quando for unitário.
@@ -1118,63 +1113,34 @@ def email_da_rodada(feitos, agora):
         key=lambda c: ORDEM_CARGOS.index(c) if c in ORDEM_CARGOS else 99
     )
 
-    secoes_html = []
+    corpo = ""
     for cargo in cargos_ordenados:
-        subsecoes = []
+        n = sum(len(v) for v in cargos_map[cargo].values())
+        corpo += L.secao(cargo, n)
         for tipo_nome in ["Debates", "Sabatinas"]:
             itens = cargos_map[cargo][tipo_nome]
             if not itens:
                 continue
-            cards = []
+            if all(cargos_map[cargo].values()):
+                corpo += L.subsecao(f"{tipo_nome} ({len(itens)})")
             for f in itens:
-                linhas = [f"{f['quando']} · {f['emissora']}" if f.get("emissora") else f.get("quando", "")]
-                if f.get("participantes"):
-                    linhas.append("Participantes: " + ", ".join(f["participantes"]))
-                detalhes = "".join(
-                    f'<div style="color:#374151;font-size:13px;margin:2px 0">{_esc(l)}</div>'
-                    for l in linhas if l.strip())
-                selo = ('<span style="font-size:12px;color:#6b7280"> (atualizado)</span>'
-                        if f.get("atualizado") else "")
-                cards.append(f"""
-          <div style="border-left:3px solid {EIXO_MARINHO};padding:8px 12px;margin:0 0 10px 0;background:#f6f7fa">
-            <div style="font-weight:bold;color:{EIXO_MARINHO}">{_esc(f['titulo'])}{selo}</div>
-            {detalhes}
-            <a href="{_esc(f['link'])}" style="color:{EIXO_MARINHO};font-size:12px">abrir o resumo</a>
-          </div>""")
+                meta = " · ".join(filter(None, [f.get("quando", ""), f.get("emissora", "")]))
+                if f.get("atualizado"):
+                    meta += " · versão atualizada"
+                texto = ("Participantes: " + ", ".join(f["participantes"])
+                         if f.get("participantes") else "")
+                corpo += L.item(f["titulo"], href=f.get("link", ""), meta=meta,
+                                texto=texto, acao="Abrir o resumo")
 
-            subsecoes.append(f"""
-        <div style="margin:12px 0 8px 0">
-          <div style="font-size:12px;font-weight:bold;color:#475569;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">
-            {tipo_nome} ({len(itens)})
-          </div>
-          {"".join(cards)}
-        </div>""")
-
-        secoes_html.append(f"""
-      <div style="margin-top:20px;margin-bottom:14px">
-        <div style="font-size:16px;font-weight:bold;color:{EIXO_MARINHO};border-bottom:2px solid #cbd5e1;padding-bottom:4px;margin-bottom:10px">
-          {_esc(cargo)}
-        </div>
-        {"".join(subsecoes)}
-      </div>""")
-
-    corpo_eventos = "".join(secoes_html)
-
-    html = f"""
-    <html><body style="font-family:Arial,sans-serif;color:#111">
-      <h2 style="margin:0 0 6px 0">Resumo de debates e sabatinas</h2>
-      <div style="color:#374151;margin:0 0 14px 0">
-        {_esc(agora)} · {len(feitos)} resumo(s) novo(s)
-      </div>
-      <div style="background:#eef0f6;border-left:3px solid {EIXO_MARINHO};padding:10px 12px;margin:0 0 16px 0;font-size:13px">
-        Resumo gerado a partir da transcrição do evento. Os números saem da
-        medição das falas; o texto também está na página
-        <a href="{PAINEL_DEBATES_URL}" style="color:{EIXO_MARINHO}">Debates e Sabatinas</a>
-        do painel interno.
-      </div>
-      {corpo_eventos}
-    </body></html>
-    """
+    html = L.pagina(
+        "Debates e sabatinas",
+        "Resumo pronto" if len(feitos) == 1 else f"{len(feitos)} resumos prontos",
+        str(agora), corpo,
+        previa=assunto,
+        botoes=[("Abrir Debates e Sabatinas", PAINEL_DEBATES_URL)],
+        rodape="Resumo feito a partir da transcrição do evento; os tempos de fala "
+               "saem da medição das falas.",
+    )
     return assunto, html
 
 

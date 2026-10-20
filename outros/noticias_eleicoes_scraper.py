@@ -1742,61 +1742,44 @@ PAINEL_URL = os.getenv("PAINEL_NOTICIAS_URL",
                        "https://painel-eixo.streamlit.app/Notícias")
 
 
-def _esc(v):
-    return (str(v or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
-
-
 def _bloco_html(a):
-    ident = " · ".join(filter(None, [
-        _esc(a.get("candidato")),
-        _esc(a.get("partido")),
-        _esc(a.get("uf")),
-        _esc(a.get("instituto")),
+    from compartilhado import email_layout as L
+    rotulo = " · ".join(filter(None, [
+        a.get("candidato"), a.get("partido") and a.get("uf") and f"{a['partido']}/{a['uf']}" or a.get("uf"),
+        a.get("instituto"),
     ]))
     link = a.get("link_real") or a.get("link") or ""
-    resumo = _esc(a.get("resumo")).replace("*", "").strip()
+    resumo = str(a.get("resumo") or "").replace("*", "").strip()
     # O resumo guardado é o alerta inteiro, sempre nesta ordem: cabeçalho, data,
     # título, corpo e link. No email entra só o corpo (linha 3 em diante), porque
     # título, fonte e link já estão na moldura do bloco. Cortar a partir da linha
     # 2 fazia o título aparecer duas vezes, colado no começo do texto.
     linhas = [l for l in resumo.split("\n") if l.strip()]
     corpo = " ".join(l for l in linhas[3:] if not l.startswith("Link:"))
-    return f"""
-      <div style="border-left:3px solid {EIXO_MARINHO};padding:8px 12px;margin:0 0 14px 0;background:#f6f7fa">
-        <div style="font-weight:bold;color:{EIXO_MARINHO}">{_esc(a.get('titulo'))}</div>
-        <div style="color:#6b7280;font-size:12px;margin:2px 0 6px 0">
-          {_esc(a.get('fonte'))} · {_esc(a.get('data'))}{(' · ' + ident) if ident else ''}
-        </div>
-        {f'<div style="font-size:13px;margin:0 0 6px 0">{corpo}</div>' if corpo else ''}
-        {f'<a href="{_esc(link)}" style="color:{EIXO_MARINHO};font-size:12px">abrir a notícia</a>' if link.startswith("http") else ''}
-      </div>"""
+    return L.item(a.get("titulo"), href=link, rotulo=rotulo,
+                  meta=" · ".join(filter(None, [a.get("fonte"), a.get("data")])),
+                  texto=corpo, acao="Abrir a notícia")
 
 
 def _html_alertas(alertas, agora):
+    from compartilhado import email_layout as L
     por_tema = {}
     for a in alertas:
         por_tema.setdefault(a.get("alerta_tema", ""), []).append(a)
-    secoes = "".join(
-        f"<h3 style='margin:20px 0 8px 0;color:{EIXO_MARINHO}'>"
-        f"{ROTULO_TEMA.get(tema, tema)} ({len(por_tema[tema])})</h3>"
-        + "".join(_bloco_html(a) for a in por_tema[tema])
-        for tema in ROTULO_TEMA if por_tema.get(tema)
+    corpo = L.nota("O texto pronto para WhatsApp de cada alerta está no botão de "
+                   "envelope do painel interno. Confira a fonte antes de disparar.")
+    for tema in ROTULO_TEMA:
+        if por_tema.get(tema):
+            corpo += L.secao(ROTULO_TEMA.get(tema, tema), len(por_tema[tema]))
+            corpo += "".join(_bloco_html(a) for a in por_tema[tema])
+    temas = [(len(por_tema[t]), ROTULO_TEMA.get(t, t)) for t in ROTULO_TEMA if por_tema.get(t)]
+    return L.pagina(
+        "Alerta de notícias", "Alertas de notícias",
+        agora.strftime("%d/%m/%Y, %Hh%M"), corpo,
+        nums=[(len(alertas), "alertas novos"), (len(temas), "temas")],
+        previa=" · ".join(f"{n} {r}" for n, r in temas),
+        botoes=[("Abrir o painel interno", PAINEL_URL)],
     )
-    return f"""
-    <html><body style="font-family:Arial,sans-serif;color:#111">
-      <h2 style="margin:0 0 6px 0">Alertas de notícias</h2>
-      <div style="color:#374151;margin:0 0 14px 0">
-        {agora.strftime('%d/%m/%Y %H:%M')} · {len(alertas)} alerta(s) novo(s)
-      </div>
-      <div style="background:#eef0f6;border-left:3px solid {EIXO_MARINHO};padding:10px 12px;margin:0 0 16px 0;font-size:13px">
-        O texto pronto pra WhatsApp de cada alerta está na coluna <b>resumo</b> da aba
-        <b>noticias</b>, e no botão de envelope do
-        <a href="{PAINEL_URL}" style="color:{EIXO_MARINHO}">painel interno</a>.
-        Confira a fonte antes de disparar.
-      </div>
-      {secoes}
-    </body></html>
-    """
 
 
 def reescrever_alertas_sem_texto(aba):
