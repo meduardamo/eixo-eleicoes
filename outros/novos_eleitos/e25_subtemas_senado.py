@@ -11,7 +11,10 @@ recebeu um ou dois subtemas: dados_novos_eleitos/temas_clientes/subtemas_lidos.c
 de 16/10/2026; em 19/10 o antigo FR foi relido e dividido em TA e AS). Violência (VI) vem de outra leitura,
 temas_clientes/violencia_lidos.csv (19/10/2026): as 525 matérias da base completa do levantamento (etapa 18) com
 público mulheres ou crianças em segurança, direitos humanos, direito civil ou assistência, ou com termo de
-violência, lidas uma a uma; 330 entraram. Ensino superior e o que não cabe em subtema de cliente ficam fora das colunas.
+violência, lidas uma a uma; 330 entraram. Em 20/10 as 865 ementas de Educação foram relidas para dois subtemas novos,
+pedidos por ISG e IU: infraestrutura escolar (IN: obras, reforma, condições mínimas, água, mobiliário, normas de
+segurança do prédio; 12 matérias, uma delas lida em Primeira infância) e adaptação e emergência climática nas escolas
+(CL: 2 matérias). Defesa civil no currículo e o programa do RS para o ensino superior ficaram fora. Ensino superior e o que não cabe em subtema de cliente ficam fora das colunas.
 
 Nível por subtema, pelo número de matérias distintas do senador no subtema (autor ou relator):
 0 = Não atua; 1 = Pouco; 2 a 4 = Atua; 5 ou mais = Referência. A nota da célula lista as matérias.
@@ -52,6 +55,8 @@ SUBTEMAS = [
     ("Educação", "TC", "Conectividade e tecnologia nas escolas"),
     ("Educação", "GG", "Gestão e governança da educação (PNE, SNE, CNE)"),
     ("Educação", "IS", "Alimentação, transporte e segurança escolar"),
+    ("Educação", "IN", "Infraestrutura escolar"),
+    ("Educação", "CL", "Adaptação e emergência climática nas escolas"),
     ("Educação", "CU", "Currículo e conteúdos escolares"),
     ("Educação", "ED", "Educação domiciliar, escola sem partido e escolas cívico-militares"),
     ("Esporte", "FN", "Financiamento e incentivo ao esporte"),
@@ -66,7 +71,8 @@ SUBTEMAS = [
     ("Primeira infância", "GV", "Governança e orçamento da primeira infância"),
 ]
 # códigos lidos em outro tema que contam no subtema: (tema da leitura, código) -> (tema da coluna, código)
-JUNTA = {("Educação", "EI"): ("Primeira infância", "EI"), ("Saúde", "BT"): ("Saúde", "SME")}
+JUNTA = {("Educação", "EI"): ("Primeira infância", "EI"), ("Saúde", "BT"): ("Saúde", "SME"),
+         ("Primeira infância", "IN"): ("Educação", "IN")}
 NIVEL = lambda n: "Não atua" if n == 0 else "Pouco" if n == 1 else "Atua" if n <= 4 else "Referência"
 
 
