@@ -2,9 +2,9 @@
 Relatório da rodada do Instagram: e-mail com os grandes números e clipping em PDF.
 
 Roda no fim de `instagram.py --perfis`, com os posts que a rodada acabou de
-gravar. O e-mail abre pelo clipping (o PDF vai anexado) e traz a contagem por
-UF e por cargo; o PDF traz, por UF e por candidato, cada post com data, tipo,
-curtidas, comentários, resumo curto e link.
+gravar. O e-mail traz só a contagem por tema, UF e cargo, com o PDF anexado; o
+PDF traz, por tema, UF e candidato, cada post com data, tipo, curtidas,
+comentários, resumo curto e link.
 
 Pedido da Jessica (04/08/2026): hoje a Michele lê a planilha e manda os links no
 canal de notícias, divididos por UF. Sem ela, ninguém tem o dia pronto.
@@ -246,147 +246,263 @@ def _por_uf_candidato(posts: list[dict]) -> dict:
 
 # ─── PDF ──────────────────────────────────────────────────────────────────────
 
-def gerar_pdf(posts: list[dict], num: dict, dia: str) -> bytes:
-    """Clipping do dia em PDF: agrupado por temas, e dentro de cada tema por UF."""
+_RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FONTES = os.path.join(_RAIZ, "assets", "fontes")
+LOGO = os.path.join(_RAIZ, "assets", "email", "logo_eixogov_branca.png")
+MARGEM = 16
+# Faixa marinho do topo da primeira página, em mm, e a das páginas seguintes.
+ALTURA_CAPA = 24
+ALTURA_TOPO = 12
+
+
+def _post_curto(link: str) -> str:
+    """'https://www.instagram.com/p/XYZ/' vira 'instagram.com/p/XYZ'."""
+    return re.sub(r"^https?://(www\.)?", "", str(link or "")).rstrip("/")
+
+
+def _agrupar_por_tema(posts: list[dict]) -> tuple[dict, list[str]]:
+    """Posts por tema principal, com o tema mais cheio primeiro e empate em ordem alfabética."""
+    por_tema = defaultdict(list)
+    for p in posts:
+        por_tema[mapear_tema_principal(p.get("temas", ""), p.get("resumo") or "")].append(p)
+    return por_tema, sorted(por_tema, key=lambda t: (-len(por_tema[t]), t))
+
+
+def _montar_pdf(posts: list[dict], num: dict, dia: str, paginas: dict) -> tuple:
+    """Uma passada do clipping. Devolve (pdf, página em que cada tema começou).
+
+    O sumário mostra a página de cada tema, que só se sabe depois de diagramar;
+    por isso gerar_pdf chama isto duas vezes, a segunda com as páginas da primeira.
+    """
     from fpdf import FPDF
 
-    pdf = FPDF(format="A4", unit="mm")
-    pdf.set_auto_page_break(auto=True, margin=16)
-    pdf.set_margins(16, 14, 16)
+    usa_montserrat = os.path.exists(os.path.join(FONTES, "Montserrat-Regular.ttf"))
+
+    class Clipping(FPDF):
+        def header(self):
+            if self.page_no() == 1:
+                return
+            self.set_fill_color(*MARINHO)
+            self.rect(0, 0, self.w, ALTURA_TOPO, style="F")
+            if os.path.exists(LOGO):
+                self.image(LOGO, x=MARGEM, y=2.5, h=7)
+            self.set_xy(MARGEM, 0)
+            fonte(6.5, "SB")
+            self.set_text_color(201, 207, 218)
+            self.cell(self.w - 2 * MARGEM, ALTURA_TOPO,
+                      _latin1(f"CLIPPING DO INSTAGRAM  ·  {dia}"), align="R")
+            self.set_y(ALTURA_TOPO + 8)
+
+        def footer(self):
+            self.set_y(-11)
+            fonte(7)
+            self.set_text_color(*SUBTEXTO)
+            self.cell(0, 4, _latin1("Eixo · Envio automático"), align="L")
+            self.set_x(MARGEM)
+            self.cell(0, 4, f"{self.page_no()} de {{nb}}", align="R")
+
+    pdf = Clipping(format="A4", unit="mm")
+    pdf.alias_nb_pages()
+    if usa_montserrat:
+        # O fpdf só aceita estilo B e I; médio e seminegrito entram como família.
+        for familia, estilo, arquivo in (("Montserrat", "", "Regular"),
+                                         ("Montserrat", "B", "Bold"),
+                                         ("MontserratM", "", "Medium"),
+                                         ("MontserratSB", "", "SemiBold")):
+            pdf.add_font(familia, estilo, os.path.join(FONTES, f"Montserrat-{arquivo}.ttf"))
+
+    def fonte(tamanho, peso=""):
+        # Sem os TTF do repo cai na Helvetica do PDF, que só tem normal e negrito.
+        if usa_montserrat:
+            pdf.set_font("Montserrat" + (peso if peso in ("M", "SB") else ""),
+                         "B" if peso == "B" else "", tamanho)
+        else:
+            pdf.set_font("Helvetica", "B" if peso in ("SB", "B") else "", tamanho)
+
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.set_margins(MARGEM, ALTURA_TOPO + 8, MARGEM)
     pdf.add_page()
-    largura = pdf.w - 32
+    largura = pdf.w - 2 * MARGEM
 
-    pdf.set_font("Helvetica", "B", 20)
-    pdf.set_text_color(*MARINHO)
-    pdf.cell(0, 9, _latin1("Clipping do Instagram"), new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 10)
+    # ── Capa: faixa da marca, título e números ────────────────────────────────
+    pdf.set_fill_color(*MARINHO)
+    pdf.rect(0, 0, pdf.w, ALTURA_CAPA, style="F")
+    pdf.set_fill_color(*VINHO)
+    pdf.rect(0, ALTURA_CAPA, pdf.w, 1.2, style="F")
+    if os.path.exists(LOGO):
+        pdf.image(LOGO, x=MARGEM, y=6, h=12)
+    pdf.set_xy(MARGEM, 0)
+    fonte(7, "SB")
+    pdf.set_text_color(201, 207, 218)
+    pdf.cell(largura, ALTURA_CAPA, "CLIPPING DO INSTAGRAM", align="R")
+
+    pdf.set_xy(MARGEM, ALTURA_CAPA + 12)
+    fonte(9, "SB")
     pdf.set_text_color(*SUBTEXTO)
-    pdf.cell(0, 6, _latin1(f"Candidatos monitorados · {dia}"),
-             new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(3)
+    pdf.cell(0, 5, _latin1(f"{dia} · candidatos monitorados"), new_x="LMARGIN", new_y="NEXT")
+    fonte(24, "B")
+    pdf.set_text_color(*MARINHO)
+    pdf.cell(0, 12, "Clipping do Instagram", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)
 
-    # Faixa dos números, do mesmo jeito que eles aparecem no e-mail.
-    pdf.set_fill_color(*GELO)
-    pdf.set_draw_color(*BORDA)
-    y0 = pdf.get_y()
-    pdf.rect(16, y0, largura, ALTURA_FAIXA, style="DF")
     caixas = [(_n(num["posts"]), "posts"), (_n(num["candidatos"]), "candidatos"),
               (_n(num["ufs"]), "UFs"), (_n(num["curtidas"]), "curtidas"),
               (_n(num["comentarios"]), "comentários")]
-    passo = largura / len(caixas)
-    topo = y0 + (ALTURA_FAIXA - ALTURA_NUMERO - ALTURA_ROTULO) / 2
+    vao = 3
+    passo = (largura - vao * (len(caixas) - 1)) / len(caixas)
+    y0 = pdf.get_y()
+    pdf.set_fill_color(*GELO)
     for i, (valor, rotulo) in enumerate(caixas):
-        pdf.set_xy(16 + i * passo, topo)
-        pdf.set_font("Helvetica", "B", 13)
+        x = MARGEM + i * (passo + vao)
+        pdf.rect(x, y0, passo, ALTURA_FAIXA, style="F")
+        pdf.set_xy(x, y0 + 3.5)
+        fonte(14, "B")
         pdf.set_text_color(*MARINHO)
-        pdf.cell(passo, ALTURA_NUMERO, _latin1(valor), align="C", new_x="LEFT", new_y="NEXT")
-        pdf.set_x(16 + i * passo)
-        pdf.set_font("Helvetica", "", 7)
+        pdf.cell(passo, ALTURA_NUMERO, _latin1(valor), align="C")
+        pdf.set_xy(x, y0 + 3.5 + ALTURA_NUMERO + 1)
+        fonte(6.5, "SB")
         pdf.set_text_color(*SUBTEXTO)
         pdf.cell(passo, ALTURA_ROTULO, _latin1(rotulo.upper()), align="C")
-    pdf.set_y(y0 + ALTURA_FAIXA + 4)
+    pdf.set_y(y0 + ALTURA_FAIXA + 10)
 
-    # Agrupa posts por tema principal
-    posts_por_tema = defaultdict(list)
-    for p in posts:
-        res_leg = p.get("resumo") or ""
-        tema = mapear_tema_principal(p.get("temas", ""), res_leg)
-        posts_por_tema[tema].append(p)
-
-    temas_ordenados = sorted(
-        posts_por_tema.keys(),
-        key=lambda t: (-len(posts_por_tema[t]), t)
-    )
+    por_tema, temas_ordenados = _agrupar_por_tema(posts)
 
     # ── Sumário ───────────────────────────────────────────────────────────────
     links = {tema: pdf.add_link() for tema in temas_ordenados}
-    pdf.set_font("Helvetica", "B", 9)
-    pdf.set_text_color(*SUBTEXTO)
-    pdf.cell(0, 5, _latin1("SUMÁRIO"), new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(1)
-    pdf.set_font("Helvetica", "", 9)
+    fonte(12, "B")
     pdf.set_text_color(*MARINHO)
-
+    pdf.cell(0, 7, _latin1("Sumário"), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
+    pdf.set_draw_color(*BORDA)
+    pdf.set_line_width(0.2)
     for tema in temas_ordenados:
-        qtd = len(posts_por_tema[tema])
-        plural_post = "posts" if qtd != 1 else "post"
-        tema_exibido = tema
-        if len(tema_exibido) > 80:
-            tema_exibido = tema_exibido[:77].strip() + "..."
-        pdf.cell(0, 6, _latin1(f"{tema_exibido} · {qtd} {plural_post}"), link=links[tema],
-                 new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
+        qtd = len(por_tema[tema])
+        y = pdf.get_y()
+        pdf.line(MARGEM, y, MARGEM + largura, y)
+        fonte(9.5, "M")
+        pdf.set_text_color(*TINTA)
+        pdf.cell(largura - 40, 7.5, _latin1(tema[:80]), link=links[tema])
+        fonte(9, "SB")
+        pdf.set_text_color(*SUBTEXTO)
+        pdf.cell(22, 7.5, f"{qtd} {'post' if qtd == 1 else 'posts'}", align="R")
+        pdf.set_text_color(*MARINHO)
+        pdf.cell(18, 7.5, _latin1(f"p. {paginas[tema]}") if tema in paginas else "",
+                 align="R", link=links[tema], new_x="LMARGIN", new_y="NEXT")
+    pdf.line(MARGEM, pdf.get_y(), MARGEM + largura, pdf.get_y())
 
-    # ── Seções por Tema ───────────────────────────────────────────────────────
+    # ── Temas, e dentro de cada um UF e candidato ─────────────────────────────
+    recuo = 5
+    texto_w = largura - recuo
+
+    def altura_post(p) -> float:
+        h = 4.5 + 4.5 + 3
+        if p["resumo"]:
+            fonte(9)
+            h += pdf.multi_cell(texto_w, 4.6, _latin1(p["resumo"]).strip(), dry_run=True, align="L",
+                                output="HEIGHT") + 1
+        return h
+
+    def cabe(h) -> bool:
+        return pdf.get_y() + h <= pdf.page_break_trigger
+
+    def desenhar_post(p):
+        y_ini = pdf.get_y()
+        pdf.set_x(MARGEM + recuo)
+        fonte(7.5, "SB")
+        pdf.set_text_color(*SUBTEXTO)
+        pdf.cell(texto_w, 4.5, _latin1(
+            f"{_data_curta(p['publicado'])}  ·  {p['tipo'] or 'Post'}  ·  "
+            f"{_n(p['curtidas'])} curtidas  ·  {_n(p['comentarios'])} comentários"),
+            new_x="LMARGIN", new_y="NEXT")
+        if p["resumo"]:
+            pdf.set_x(MARGEM + recuo)
+            fonte(9)
+            pdf.set_text_color(*TINTA)
+            pdf.multi_cell(texto_w, 4.6, _latin1(p["resumo"]).strip(), align="L",
+                           new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(1)
+        if p["link"]:
+            pdf.set_x(MARGEM + recuo)
+            fonte(7.5, "M")
+            pdf.set_text_color(*MARINHO)
+            pdf.cell(texto_w, 4.5, _latin1(_post_curto(p["link"])), link=p["link"],
+                     new_x="LMARGIN", new_y="NEXT")
+        # Fio vinho à esquerda: marca onde começa e termina cada post.
+        pdf.set_draw_color(*VINHO)
+        pdf.set_line_width(0.6)
+        pdf.line(MARGEM + 1, y_ini + 0.6, MARGEM + 1, pdf.get_y() - 0.6)
+        pdf.ln(3)
+
+    comeco = {}
     for tema in temas_ordenados:
-        posts_do_tema = posts_por_tema[tema]
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_fill_color(*MARINHO)
-        
-        # Garante que o cabeçalho do tema não quebre
-        if pdf.get_y() > pdf.h - 40:
-            pdf.add_page()
-            
+        do_tema = por_tema[tema]
+        # Tema começa sempre em página nova: impresso, cada pauta fica separada.
+        pdf.add_page()
+        comeco[tema] = pdf.page_no()
         pdf.set_link(links[tema], y=pdf.get_y(), page=pdf.page_no())
-        
-        tema_exibido = tema
-        if len(tema_exibido) > 80:
-            tema_exibido = tema_exibido[:77].strip() + "..."
-            
-        pdf.start_section(f"{tema_exibido} ({len(posts_do_tema)} posts)")
-        pdf.cell(0, 7, _latin1(f"  {tema_exibido} · {len(posts_do_tema)} post(s)"), fill=True,
-                 new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(2)
+        pdf.start_section(_latin1(f"{tema[:80]} ({len(do_tema)})"))
+        fonte(17, "B")
+        pdf.set_text_color(*MARINHO)
+        pdf.multi_cell(largura, 8, _latin1(tema[:80]), new_x="LMARGIN", new_y="NEXT")
+        fonte(9, "SB")
+        pdf.set_text_color(*SUBTEXTO)
+        n_cand = len({p["candidato"] for p in do_tema})
+        pdf.cell(0, 5, _latin1(
+            f"{len(do_tema)} {'post' if len(do_tema) == 1 else 'posts'} de "
+            f"{n_cand} {'candidato' if n_cand == 1 else 'candidatos'}"),
+            new_x="LMARGIN", new_y="NEXT")
+        pdf.set_fill_color(*VINHO)
+        pdf.rect(MARGEM, pdf.get_y() + 2, 18, 1, style="F")
+        pdf.ln(7)
 
-        # Agrupa os posts deste tema por UF
         agrupado_uf = defaultdict(lambda: defaultdict(list))
-        for p in posts_do_tema:
+        for p in do_tema:
             agrupado_uf[p["uf"]][p["candidato"]].append(p)
 
-        for uf in sorted(agrupado_uf.keys()):
-            # Subcabeçalho da UF
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.set_text_color(*SUBTEXTO)
-            pdf.cell(0, 5, _latin1(f"UF: {uf}"), new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(1)
-
+        for uf in sorted(agrupado_uf, key=lambda u: (not eh_uf(u), u)):
             por_candidato = agrupado_uf[uf]
+            primeiro = por_candidato[sorted(por_candidato)[0]][0]
+            # UF, nome do primeiro candidato e o primeiro post andam juntos.
+            if not cabe(10 + 11 + altura_post(primeiro)):
+                pdf.add_page()
+            pdf.ln(1)
+            fonte(8, "B")
+            pdf.set_text_color(*VINHO)
+            pdf.cell(0, 5, _latin1(uf.upper()), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_draw_color(*BORDA)
+            pdf.set_line_width(0.2)
+            pdf.line(MARGEM, pdf.get_y(), MARGEM + largura, pdf.get_y())
+            pdf.ln(3)
+
             for candidato in sorted(por_candidato):
                 do_candidato = por_candidato[candidato]
                 meta = do_candidato[0]
-                etiqueta = candidato
+                if not cabe(11 + altura_post(meta)):
+                    pdf.add_page()
+                nome = candidato
                 if meta["partido"]:
-                    etiqueta += f" ({meta['partido']}/{uf})"
-                if meta["cargo"] != SEM_CARGO:
-                    etiqueta += f" · {meta['cargo']}"
-
-                pdf.set_font("Helvetica", "B", 9)
+                    nome += f" ({meta['partido']}/{uf})" if eh_uf(uf) else f" ({meta['partido']})"
+                fonte(10.5, "B")
                 pdf.set_text_color(*TINTA)
-                pdf.multi_cell(0, 4.5, _latin1(etiqueta), new_x="LMARGIN", new_y="NEXT")
-                pdf.ln(1)
+                pdf.multi_cell(largura, 5.2, _latin1(nome), new_x="LMARGIN", new_y="NEXT")
+                if meta["cargo"] != SEM_CARGO:
+                    fonte(7.5, "SB")
+                    pdf.set_text_color(*SUBTEXTO)
+                    pdf.cell(0, 4, _latin1(meta["cargo"]), new_x="LMARGIN", new_y="NEXT")
+                pdf.ln(2)
+                for i, p in enumerate(do_candidato):
+                    if i and not cabe(altura_post(p)):
+                        pdf.add_page()
+                    desenhar_post(p)
+                pdf.ln(2)
 
-                for p in do_candidato:
-                    pdf.set_font("Helvetica", "B", 8)
-                    pdf.set_text_color(*VINHO)
-                    pdf.cell(0, 4, _latin1(
-                        f"{_data_curta(p['publicado'])} · {p['tipo']} · "
-                        f"{_n(p['curtidas'])} curtidas · {_n(p['comentarios'])} comentários"),
-                        new_x="LMARGIN", new_y="NEXT")
-                    if p["resumo"]:
-                        pdf.set_font("Helvetica", "", 8.5)
-                        pdf.set_text_color(*TINTA)
-                        pdf.multi_cell(0, 4, _latin1(p["resumo"]),
-                                       new_x="LMARGIN", new_y="NEXT")
-                    if p["link"]:
-                        pdf.set_font("Helvetica", "", 7.5)
-                        pdf.set_text_color(*MARINHO)
-                        pdf.cell(0, 4, _latin1(p["link"]), link=p["link"],
-                                 new_x="LMARGIN", new_y="NEXT")
-                    pdf.ln(2)
-                pdf.ln(1)
-            pdf.ln(1)
+    return pdf, comeco
 
+
+def gerar_pdf(posts: list[dict], num: dict, dia: str) -> bytes:
+    """Clipping do dia em PDF: agrupado por temas, e dentro de cada tema por UF."""
+    _, paginas = _montar_pdf(posts, num, dia, {})
+    pdf, _ = _montar_pdf(posts, num, dia, paginas)
     return bytes(pdf.output())
 
 
@@ -773,45 +889,53 @@ def mapear_tema_principal(temas_str: str, legenda_str: str,
 
 def html_email(posts: list[dict], num: dict, dia: str, nome_pdf: str,
                planilha_url: str) -> str:
-    """Corpo do e-mail: o clipping com posts agrupados por tema e UF."""
+    """Corpo do e-mail: só os números do dia. O conteúdo dos posts fica no PDF.
+
+    Até 20/10/2026 o corpo repetia o clipping inteiro, post a post, igual ao PDF.
+    """
     # O workflow roda `python outros/instagram.py`, que não põe a raiz do repo
     # no sys.path; sem isto `compartilhado` não é encontrado.
     import sys
-    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if raiz not in sys.path:
-        sys.path.append(raiz)
+    if _RAIZ not in sys.path:
+        sys.path.append(_RAIZ)
     from compartilhado import email_layout as L
 
-    posts_por_tema = defaultdict(list)
-    for p in posts:
-        tema = mapear_tema_principal(p.get("temas", ""), p.get("resumo") or "")
-        posts_por_tema[tema].append(p)
-    # Tema com mais posts primeiro, empate em ordem alfabética
-    temas_ordenados = sorted(posts_por_tema, key=lambda t: (-len(posts_por_tema[t]), t))
+    por_tema, temas_ordenados = _agrupar_por_tema(posts)
 
-    def _bloco_post_html(p: dict) -> str:
-        ident = p["candidato"]
-        if p["partido"]:
-            ident += f" ({p['partido']}/{p['uf']})"
-        rotulo = p["cargo"] if p["cargo"] and p["cargo"] != SEM_CARGO else ""
-        meta = " · ".join([_data_curta(p["publicado"]),
-                           "Vídeo" if p["tipo"] == "Vídeo" else "Foto",
-                           f"{_n(p['curtidas'])} curtidas",
-                           f"{_n(p['comentarios'])} comentários"])
-        return L.item(ident, href=p["link"] or "", rotulo=rotulo, meta=meta,
-                      texto=p["resumo"] or "", acao="Abrir o post")
+    def _tabela(pares, colunas=1) -> str:
+        """Rótulo e contagem em linhas com fio, em uma ou mais colunas."""
+        celula = (f'padding:7px 0;border-top:1px solid {L.FILETE};font:{{}} 13px/1.4 {L.FONTE}')
+        linhas = []
+        # Largura fixa por coluna, senão a última estica e a grade fica torta.
+        w_rot, w_num = (f' width="{round(70 / colunas)}%"', f' width="{round(30 / colunas)}%"')
+        for i in range(0, len(pares), colunas):
+            tds = []
+            for rotulo, qtd in pares[i:i + colunas]:
+                tds.append(f'<td{w_rot} style="{celula.format("500")};color:{L.TINTA}">{L.esc(rotulo)}</td>'
+                           f'<td{w_num} align="right" style="{celula.format("600")};color:{L.CINZA};'
+                           f'padding-right:{18 if colunas > 1 else 0}px">{_n(qtd)}</td>')
+            tds += ['<td></td><td></td>'] * (colunas - len(pares[i:i + colunas]))
+            linhas.append(f'<tr>{"".join(tds)}</tr>')
+        return (f'<tr><td style="padding:8px 40px 0"><table role="presentation" width="100%" '
+                f'cellpadding="0" cellspacing="0" style="border-bottom:1px solid {L.FILETE}">'
+                f'{"".join(linhas)}</table></td></tr>')
 
-    corpo = L.nota(f"O clipping diagramado para impressão está em anexo "
-                   f"(<b>{L.esc(nome_pdf)}</b>). Abaixo, os posts por tema e UF.")
-    for tema in temas_ordenados:
-        corpo += L.secao(tema, len(posts_por_tema[tema]))
-        por_uf = defaultdict(list)
-        for p in posts_por_tema[tema]:
-            por_uf[p["uf"]].append(p)
-        for uf in sorted(por_uf):
-            if len(por_uf) > 1:
-                corpo += L.subsecao(uf)
-            corpo += "".join(_bloco_post_html(p) for p in por_uf[uf])
+    def _mais(contagem):
+        return sorted(contagem.items(), key=lambda kv: (-kv[1], kv[0]))
+
+    corpo = L.nota(f"O conteúdo dos posts, por tema, UF e candidato, está no PDF anexo "
+                   f"(<b>{L.esc(nome_pdf)}</b>).")
+    corpo += L.secao("Por tema")
+    corpo += _tabela([(t, len(por_tema[t])) for t in temas_ordenados])
+    grupos = num.get("por_uf") or Counter(p["uf"] for p in posts)
+    corpo += L.secao("Por UF")
+    corpo += _tabela(_mais(grupos), colunas=3)
+    cargos = num.get("por_cargo") or Counter(p["cargo"] for p in posts)
+    corpo += L.secao("Por cargo")
+    corpo += _tabela(_mais(cargos))
+    # Três seções curtas não pedem sumário: a pagina() monta um sempre que acha
+    # duas ou mais, pelo comentário que secao() deixa.
+    corpo = re.sub(r"<!--secao:.*?-->", "", corpo)
 
     return L.pagina(
         "Clipping do Instagram", "Clipping do Instagram", dia, corpo,

@@ -24,6 +24,10 @@ on:
         type: boolean
         required: false
         default: false
+      para:
+        description: "Manda o clipping só para este endereço (teste); vazio usa a lista de sempre"
+        required: false
+        default: ""
       sem_email:
         description: "Coleta e grava sem mandar o clipping (para completar uma rodada quando o e-mail do dia ja saiu)"
         type: boolean
@@ -110,7 +114,9 @@ jobs:
           # A condicao vem negada de proposito: em `a && b || c` do Actions,
           # string vazia e falsa, entao `sem_email && '' || secret` cairia no
           # secret justamente quando sem_email fosse true.
-          DESTINATARIOS_INSTAGRAM: ${{ !inputs.sem_email && secrets.DESTINATARIOS_INSTAGRAM || '' }}
+          # `para` vem antes de tudo: com ele preenchido o clipping vai só para
+          # esse endereço, sem passar pela lista.
+          DESTINATARIOS_INSTAGRAM: ${{ inputs.para || (!inputs.sem_email && secrets.DESTINATARIOS_INSTAGRAM || '') }}
           DESTINATARIOS: ${{ !inputs.sem_email && secrets.DESTINATARIOS || '' }}
           LINK: ${{ inputs.link }}
           DATA_MINIMA: ${{ inputs.data_minima }}
