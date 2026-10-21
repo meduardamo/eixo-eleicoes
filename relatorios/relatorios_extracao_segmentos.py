@@ -58,8 +58,6 @@ PESQELE_ID = os.getenv("SPREADSHEET_ID", "")
 PESQELE_ABA = os.getenv("PESQELE_ABA", "Consolidado")
 
 
-
-
 GRUPOS = ["Presidente (Nacional)", "Presidente (por UF)", "Governador / Senador"]
 
 
