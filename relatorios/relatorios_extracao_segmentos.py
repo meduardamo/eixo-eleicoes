@@ -58,8 +58,6 @@ PESQELE_ID = os.getenv("SPREADSHEET_ID", "")
 PESQELE_ABA = os.getenv("PESQELE_ABA", "Consolidado")
 
 
-POLLING_MANUAL_URL = os.getenv("POLLING_MANUAL_URL",
-                               "https://eixogov.streamlit.app/Polling")
 
 
 GRUPOS = ["Presidente (Nacional)", "Presidente (por UF)", "Governador / Senador"]
@@ -78,8 +76,6 @@ def _html(pesquisas, hoje):
     por_grupo = {g: [] for g in GRUPOS}
     for p in pesquisas:
         por_grupo[_grupo(p)].append(p)
-    planilha_url = (f"https://docs.google.com/spreadsheets/d/{RELATORIOS_ID}/edit"
-                    if RELATORIOS_ID else "")
     corpo = ""
     for g in GRUPOS:
         if not por_grupo[g]:
@@ -97,8 +93,6 @@ def _html(pesquisas, hoje):
         "Pesquisas do dia", "Pesquisas com divulgação prevista para hoje", dia, corpo,
         nums=[(len(pesquisas), "pesquisas"), (n_inst, "institutos")],
         previa=f"{len(pesquisas)} pesquisas previstas para {dia}",
-        botoes=[("Abrir o Polling Manual", POLLING_MANUAL_URL),
-                ("Abrir a Voto por Segmento", planilha_url)],
     )
 
 
