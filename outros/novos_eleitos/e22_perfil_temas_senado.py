@@ -68,6 +68,26 @@ VOTACOES_CAMARA = [
      "Lei das bets na Câmara, Emenda 3 do Senado (Sim = manter fora da lei os jogos on-line, como cassino; rejeitada, 120 x 261)"),
     ("Primeira infância", "2025-10-14", "PL 1924/2025", "Emenda de Plenário nº 2",
      "EDI 0-5 na Câmara, Emenda de Plenário 2 (Sim = primeira infância começa na gestação; aprovada, 246 x 199)"),
+    # validadas em 21/10/2026, depois da busca nas nominais divididas do plenário desde 2023 (texto das emendas lido);
+    # PL 3179/2012 e PL 5595/2020 são anteriores a 2023 e entram por decisão dela
+    ("Saúde", "2025-11-05", "PDL 3/2025", "Aprovado o Projeto de Decreto Legislativo nº 3",
+     "Resolução 258 do Conanda, PDL 3/2025 na Câmara (Sim = sustar a resolução sobre aborto legal de meninas vítimas de estupro; aprovado, 317 x 111)"),
+    ("Saúde", "2023-09-13", "PL 3626/2023", "Emenda de Plenário nº 26",
+     "Lei das bets na Câmara, Emenda de Plenário 26 (Sim = proibir aposta de inadimplente, de inscrito no CadÚnico e de quem recebe BPC; rejeitada, 82 x 342)"),
+    ("Saúde", "2025-11-12", "PLP 18/2021", "Emenda de Plenário nº 6",
+     "Piso da saúde, PLP 18/2021 na Câmara, Emenda de Plenário 6 (Sim = contar o gasto com unidades de saúde das polícias militares no piso; rejeitada, 148 x 215)"),
+    ("Educação", "2025-09-03", "PLP 235/2019", "Aprovada a Subemenda Substitutiva Global",
+     "Sistema Nacional de Educação, PLP 235/2019 na Câmara (Sim = aprovar o texto; aprovado, 347 x 89)"),
+    ("Educação", "2025-09-03", "PLP 235/2019", "Emenda de Plenário nº 10",
+     "Sistema Nacional de Educação, Emenda de Plenário 10 (Sim = trocar o CAQ por referência de redes com bom desempenho; rejeitada, 165 x 276)"),
+    ("Educação", "2023-12-13", "PLP 243/2023", "Aprovado o Projeto de Lei Complementar nº 243",
+     "Pé-de-Meia, PLP 243/2023 na Câmara (Sim = aprovar o incentivo à permanência no ensino médio; aprovado, 370 x 77)"),
+    ("Educação", "2022-05-18", "PL 3179/2012", "Aprovada a Subemenda Substitutiva Global",
+     "Educação domiciliar, PL 3179/2012 na Câmara em 2022 (Sim = permitir; aprovado, 264 x 144)"),
+    ("Educação", "2021-04-20", "PL 5595/2020", "Aprovado o Substitutivo",
+     "Educação como atividade essencial, PL 5595/2020 na Câmara em 2021 (Sim = aulas presenciais como serviço essencial na pandemia; aprovado, 276 x 164)"),
+    ("Esporte", "2023-09-13", "PL 3626/2023", "Emenda de Plenário nº 34",
+     "Lei das bets na Câmara, Emenda de Plenário 34 (Sim = fixar repasse da arrecadação a clubes, atletas, COB, CPB e confederações; aprovada, 203 x 164)"),
 ]
 VOTO_CAMARA = {"Artigo 17": "presidia a sessão", "Obstrução": "obstrução"}
 AUSENCIA = {"P-NRV": "presente, não votou", "AP": "em atividade parlamentar", "MIS": "em missão", "LS": "licença saúde",

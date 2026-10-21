@@ -7,6 +7,8 @@ chegar ao Senado) e, depois, para os 513 deputados.
 Universo:
   --universo senado   senadores da aba "Senado eleito 2026" que já exerceram na Câmara
                       (legislaturas iniciadas de 2003 em diante)
+  --universo camara   deputados da aba "Câmara eleita 2026" que já exerceram na Câmara (reeleitos, os que
+                      voltam e os novos que exerceram como suplente); discursos só desde 2023
 
 O que é buscado por deputado:
 - ficha: nascimento, escolaridade, profissão, legislaturas (API);
@@ -24,6 +26,7 @@ Saída: dados_novos_eleitos/perfil_camara_<universo>/ com um CSV por tabela e um
 Rodar: python -m outros.novos_eleitos.e14_perfil_camara --universo senado
 """
 import argparse
+import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
@@ -39,6 +42,8 @@ LEGISLATIVAS = {"PL", "PLP", "PEC", "PDL", "PDC", "PRC", "MPV", "PLV"}
 PRIMEIRO_ANO = {52: 2003, 53: 2007, 54: 2011, 55: 2015, 56: 2019, 57: 2023}
 FICHA_PROPOSICAO = "https://www.camara.leg.br/proposicoesWeb/fichadetramitacao?idProposicao="
 ABA_SENADO = "Senado eleito 2026"
+ABA_CAMARA = "Câmara eleita 2026"
+DISCURSOS_DESDE = {"senado": 2003, "camara": 2023}
 
 
 def arquivo(recurso, ano, pasta):
@@ -91,6 +96,28 @@ def universo_senado():
         titulos, cpfs = {t for t in titulos if t}, {k for k in cpfs if k}
         civis = {c.chave_nome(n) for n in [l["Nome civil (TSE)"], *s.nome_civil] if n}
         achado = cam[cam.titulo.isin(titulos) | cam.cpf.isin(cpfs) | cam.nome_civil.map(c.chave_nome).isin(civis)]
+        for d in achado.drop_duplicates("id_casa").to_dict("records"):
+            linhas.append({"Parlamentar": l["Parlamentar"], "Partido": l["Partido"], "UF": l["UF"],
+                           "Situação": l["Situação"], "id": d["id_casa"], "legislaturas": d["legislaturas"],
+                           "Nome na Câmara": d["nome_casa"], "UF na Câmara": d["uf"]})
+    return pd.DataFrame(linhas)
+
+
+def universo_camara():
+    """Deputados da próxima legislatura que já exerceram na Câmara. A ligação é pelo título ou CPF da
+    candidatura de 2026 e, sem eles, pelo nome civil na UF."""
+    aba = pd.DataFrame(c.ler_aba(c.id_planilha("SPREADSHEET_ID_CONGRESSO_ELEITO"), ABA_CAMARA))
+    ex = c.ler_csv("exercicio_casas.csv")
+    cam = ex[ex.casa == "Câmara"].copy()
+    cam["chave"] = cam.nome_civil.map(c.chave_nome)
+    cands = c.ler_csv("candidaturas_2026.csv").drop_duplicates("sq_candidato").set_index("sq_candidato")
+    linhas = []
+    for l in aba.to_dict("records"):
+        t = cands.titulo.get(l["SQ_CANDIDATO"], "") if l["SQ_CANDIDATO"] in cands.index else ""
+        k = cands.cpf.get(l["SQ_CANDIDATO"], "") if l["SQ_CANDIDATO"] in cands.index else ""
+        achado = cam[(cam.titulo == t) & (t != "") | (cam.cpf == k) & (k != "")]
+        if achado.empty:
+            achado = cam[(cam.chave == c.chave_nome(l["Nome civil (TSE)"])) & (cam.uf == l["UF"])]
         for d in achado.drop_duplicates("id_casa").to_dict("records"):
             linhas.append({"Parlamentar": l["Parlamentar"], "Partido": l["Partido"], "UF": l["UF"],
                            "Situação": l["Situação"], "id": d["id_casa"], "legislaturas": d["legislaturas"],
@@ -152,12 +179,12 @@ def do_proprio(transcricao, l):
     return not ufs or bool(ufs & set(f"{l.get('UF na Câmara') or ''} {l.get('UF') or ''}".replace(";", " ").replace(",", " ").split()))
 
 
-def discursos(l):
+def discursos(l, desde=2003):
     """Um ano por chamada e sem ordenação (com ordenarPor a API dá erro 500 da segunda página em
     diante). Ano que ainda assim dá erro é tentado mês a mês; o mês que falhar fica registrado."""
     saida = []
     anos = sorted({PRIMEIRO_ANO[int(x)] + k for x in str(l["legislaturas"]).split(";") if x for k in range(4)})
-    for ano in [a for a in anos if a <= date.today().year]:
+    for ano in [a for a in anos if desde <= a <= date.today().year]:
         sufixo = "" if ano < date.today().year else f"_{date.today()}"
         try:
             lista = discursos_periodo(l["id"], f"{ano}-01-01", f"{ano}-12-31", f"discursos_{l['id']}_{ano}{sufixo}")
@@ -297,15 +324,16 @@ def temas_por_parlamentar(tab):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--universo", choices=["senado"], default="senado")
+    ap.add_argument("--universo", choices=["senado", "camara"], default="senado")
     nome_universo = ap.parse_args().universo
-    uni = universo_senado()
+    uni = universo_senado() if nome_universo == "senado" else universo_camara()
     # quem exerceu por duas UFs ou com dois registros fica com uma linha por registro na Câmara
     print(f"{nome_universo}: {uni.Parlamentar.nunique()} nomes com passagem pela Câmara, {len(uni)} registros")
     linhas = uni.to_dict("records")
 
     tab = {"ficha": pd.DataFrame([ficha(l) for l in linhas])}
-    for nome, f in (("colegiados", colegiados), ("discursos", discursos)):
+    desde = DISCURSOS_DESDE[nome_universo]
+    for nome, f in (("colegiados", colegiados), ("discursos", lambda l: discursos(l, desde))):
         with ThreadPoolExecutor(3) as ex:
             tab[nome] = pd.DataFrame([x for bloco in ex.map(f, linhas) for x in bloco])
         print(f"  {nome}: {len(tab[nome])} linhas")
