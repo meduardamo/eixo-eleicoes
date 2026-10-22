@@ -126,11 +126,12 @@ TERMOS_FALADOS = {
     "Geração de Emprego": ["emprego", "desemprego", "carteira assinada",
                            "vaga de trabalho", "mercado de trabalho"],
     # 'patrimonio' virou ambíguo (veja TERMOS_AMBIGUOS) e o dicionário dos
-    # planos só tinha essa palavra solta em Cultura, então patrimônio tombado
+    # planos só tinha essa palavra solta em Cultura (hoje Patrimônio e Memória,
+    # no eixo Cultura), então patrimônio tombado
     # deixaria de marcar. Estas locuções são o que sobra dizendo cultura, e
     # cobrem a única ocorrência legítima medida ("a Serra do Curral é
     # patrimônio dos mineiros, é tombada", MG 16/08, 1:12:12).
-    "Cultura": ["patrimonio historico", "patrimonio cultural", "tombad*",
+    "Patrimônio e Memória": ["patrimonio historico", "patrimonio cultural", "tombad*",
                 "tombamento"],
 }
 

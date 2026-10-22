@@ -139,7 +139,7 @@ EIXOS = {
         "Alfabetização": "alfabetização de crianças na idade certa (PNAIC, PNA, Compromisso Nacional Criança Alfabetizada ou equivalente) — creche e pré-escola são o tema Educação Infantil, no eixo de Primeira Infância",
         "Educação Profissional": "educação profissional e técnica (EPT, SENAI, SENAC, institutos federais, cursos técnicos)",
         # Entraram em 19/08/2026 a pedido do Itaú:
-        "Educação, Arte e Cultura": "integração de arte, cultura e linguagens artísticas no currículo escolar e na educação integral: arte na escola, oficinas e projetos culturais com estudantes — a política cultural fora da escola (fomento, editais, patrimônio, equipamentos) é o tema Cultura, no eixo de Cultura, esporte e turismo",
+        "Educação, Arte e Cultura": "integração de arte, cultura e linguagens artísticas no currículo escolar e na educação integral: arte na escola, oficinas e projetos culturais com estudantes — a política cultural fora da escola (fomento, gestão, patrimônio, equipamentos, leitura, culturas populares) são os outros temas do eixo de Cultura. Este tema fica nos dois eixos, Educação e Cultura",
         "Recomposição das Aprendizagens": "recomposição, recuperação e aceleração de aprendizagens, reforço escolar, correção de fluxo, defasagem idade-série e superação de lacunas pedagógicas, inclusive as herdadas da pandemia — alfabetizar na idade certa é o tema Alfabetização, e a etapa em si é Fundamental ou Ensino Médio",
         # Entrou em 06/10/2026 a pedido da Fundação Lemann. O termo é transversal:
         # a maior parte dos planos que nomeiam a matemática o faz dentro de uma
@@ -307,8 +307,27 @@ EIXOS = {
         "Planejamento Reprodutivo e Contracepção": "autonomia e planejamento reprodutivo, contracepção e métodos contraceptivos, laqueadura e vasectomia, planejamento familiar e educação sexual — a assistência à gestante e ao bebê é o tema Saúde Materno-Infantil, no eixo de Primeira Infância, e a autonomia econômica e o cuidado são o tema Mulheres, no eixo de Direitos humanos e igualdade",
         "Gravidez Infantil e Violência Sexual": "gravidez na infância e na adolescência, menina mãe, gravidez decorrente de estupro, maternidade forçada e atendimento à vítima de violência sexual no que toca à autonomia reprodutiva — a política de segurança, a Lei Maria da Penha e a rede de proteção são o tema Violência contra a Mulher, no eixo de Segurança pública",
     },
-    "Cultura, esporte e turismo": {
-        "Cultura": "política cultural: patrimônio, economia criativa, fomento e editais, equipamentos e trabalhadores da cultura — arte e cultura dentro da escola é tema próprio, Educação, Arte e Cultura, no eixo de Educação",
+    # Eixo de 22/10/2026, a pedido da Fundação Itaú: tudo o que é cultura num
+    # lugar só. O tema "Cultura" de antes (um tema para a política cultural
+    # inteira) saiu e virou os sete abaixo, pelo que o Itaú Cultural acompanha:
+    # fomento e leis de incentivo, gestão e políticas culturais, economia da
+    # cultura e trabalho, patrimônio e memória, acesso e hábitos culturais,
+    # leitura, e culturas negras e indígenas. "Cultura" não fica junto como
+    # guarda-chuva pelo mesmo motivo de Primeira Infância: o tema amplo disputa
+    # a citação com os filhos. "Educação, Arte e Cultura" mora nos dois eixos,
+    # Educação e Cultura, com a mesma descrição; EIXO_DO_TEMA guarda o primeiro
+    # (Educação) e EIXOS_DO_TEMA guarda os dois.
+    "Cultura": {
+        "Educação, Arte e Cultura": None,
+        "Fomento e Financiamento da Cultura": "financiamento público da cultura: leis de incentivo e renúncia fiscal (Lei Rouanet, lei estadual de incentivo, ICMS cultural), Política Nacional Aldir Blanc (PNAB) e Lei Paulo Gustavo, fundo estadual de cultura, editais, prêmios e chamadas públicas para artistas, grupos e coletivos, orçamento e percentual da receita destinado à cultura, patrocínio e parceria com o setor privado — o conselho, o plano e o sistema estadual de cultura são o tema Gestão e Participação na Cultura, e o edital para um setor específico (patrimônio, livro, cultura popular) conta aqui e também no tema do setor. Cultura citada sem dizer de onde vem o dinheiro ou como ele é distribuído não é este tema: nesse caso o nível é Não menciona",
+        "Gestão e Participação na Cultura": "estrutura e governança da política cultural do estado: secretaria ou órgão próprio de cultura, Sistema Estadual de Cultura e adesão ao Sistema Nacional de Cultura (SNC), plano estadual de cultura, conselho e conferências de cultura, participação social na política cultural, articulação com os municípios, mapeamento, cadastro e indicadores culturais, formação de gestores culturais — o dinheiro (fundo, edital, lei de incentivo) é o tema Fomento e Financiamento da Cultura. Promessa de valorizar ou fortalecer a cultura sem tratar de órgão, plano, conselho, sistema, participação ou dado não é este tema: nesse caso o nível é Não menciona",
+        "Economia Criativa e Trabalho na Cultura": "a cultura como setor econômico e como trabalho: economia criativa e indústrias criativas, cadeias produtivas da música, do audiovisual, do design, da moda, dos games e do artesanato, polos e distritos criativos, film commission, empreendedorismo e crédito para negócios culturais, formalização, renda, previdência e qualificação de artistas, técnicos e trabalhadores da cultura — o recurso público de edital e de lei de incentivo é o tema Fomento e Financiamento da Cultura, o artesanato como saber tradicional conta aqui e também no tema Culturas Populares e Diversidade, e a economia criativa como atrativo de visitante conta aqui e também no tema Turismo, no eixo de Esporte e turismo. Emprego, negócio ou inovação sem a cultura ou o setor criativo não são este tema: nesse caso o nível é Não menciona",
+        "Patrimônio e Memória": "patrimônio cultural material e imaterial: tombamento, registro e salvaguarda, restauro e conservação de bens, centros e sítios históricos, órgão estadual de patrimônio e IPHAN, arqueologia, museus e acervos, arquivos públicos e memória, paisagem cultural — o museu como espaço de programação e visitação conta aqui e também no tema Acesso e Equipamentos Culturais, e o registro de saberes, festas e mestres da cultura popular conta aqui e também no tema Culturas Populares e Diversidade. Patrimônio no sentido de bem público do Estado, e patrimônio natural ou ambiental sem dimensão cultural, não são este tema: nesse caso o nível é Não menciona",
+        "Acesso e Equipamentos Culturais": "acesso da população à cultura e os espaços onde ela acontece: construção, reforma e manutenção de centros culturais, teatros, cinemas, casas de cultura e CEUs, interiorização e descentralização da programação para as periferias e o interior, circulação de espetáculos e de artistas, programação cultural gratuita, vale-cultura e ingresso social, acessibilidade cultural para pessoas com deficiência, difusão por plataformas digitais e formação de público — bibliotecas e programas de leitura são o tema Livro, Leitura e Bibliotecas, museus e arquivos como acervo são o tema Patrimônio e Memória, e arte e cultura com estudantes, na escola, são o tema Educação, Arte e Cultura. Lazer, evento ou equipamento sem conteúdo cultural não são este tema: nesse caso o nível é Não menciona",
+        "Livro, Leitura e Bibliotecas": "política do livro, da leitura e da literatura para a população: bibliotecas públicas e comunitárias, plano estadual do livro e leitura, formação de mediadores de leitura e de leitores, feiras e festas literárias, apoio a escritores e editoras, clubes e programas de leitura — a leitura como etapa da alfabetização é o tema Alfabetização, e a biblioteca escolar é o tema Fundamental ou Ensino Médio, no eixo de Educação; o projeto de leitura com estudantes como arte e cultura na escola conta aqui e também no tema Educação, Arte e Cultura. Leitura citada só como habilidade escolar, sem livro, biblioteca, literatura ou formação de leitores, não é este tema: nesse caso o nível é Não menciona",
+        "Culturas Populares e Diversidade": "culturas populares, tradicionais e da diversidade: festas e manifestações populares (festas juninas, carnaval de rua, folguedos, maracatu, bumba meu boi), mestres e mestras da cultura e tesouros vivos, cultura afro-brasileira e culturas indígenas e quilombolas, capoeira, hip hop e culturas periféricas e juvenis, Cultura Viva e pontos de cultura, artesanato tradicional — terra, território e direitos dos povos indígenas e quilombolas são o tema Povos Indígenas e Quilombolas, no eixo de Direitos humanos e igualdade, o ensino de história e cultura afro-brasileira e indígena na escola é o tema Equidade Educacional, no eixo de Educação, e o calendário de festas como atrativo de visitante conta aqui e também no tema Turismo. Diversidade citada sem manifestação cultural não é este tema: nesse caso o nível é Não menciona",
+    },
+    "Esporte e turismo": {
         "Esporte e Lazer": "esporte, esporte escolar, lazer, equipamentos esportivos e grandes eventos",
         "Turismo": "turismo, atrativos, promoção e infraestrutura turística",
     },
@@ -555,8 +574,46 @@ TERMOS_ANCORA = {
     "Povos Indígenas e Quilombolas": ["indigena*", "quilombola", "povos tradicionais",
                                       "comunidade tradicional"],
     "População LGBTQIA+": ["lgbt*", "lgbtfobia", "nome social", "diversidade sexual"],
-    "Cultura": ["cultura", "patrimonio", "economia criativa", "edital de cultura",
-                "equipamento cultural"],
+    # Eixo Cultura (22/10/2026). Medido nos 207 PDFs locais: "memoria",
+    # "leitura", "circulacao", "artistas", "moda", "patrocinio", "premio" e
+    # "ceu" (que casa céu) aparecem em plano de qualquer assunto, e por isso
+    # só entram na lista de ausência.
+    "Fomento e Financiamento da Cultura": ["aldir blanc", "pnab", "paulo gustavo",
+                                           "lei rouanet", "incentivo a cultura",
+                                           "lei de incentivo a cultura",
+                                           "fundo estadual de cultura", "fundo de cultura",
+                                           "editais de cultura", "editais culturais",
+                                           "fomento a cultura", "fomento cultural",
+                                           "financiamento da cultura", "icms cultural"],
+    "Gestão e Participação na Cultura": ["sistema estadual de cultura",
+                                         "sistema nacional de cultura",
+                                         "plano estadual de cultura",
+                                         "conselho estadual de cultura",
+                                         "conferencia de cultura", "secretaria de cultura",
+                                         "secretaria da cultura", "gestao cultural",
+                                         "gestores culturais", "indicadores culturais"],
+    "Economia Criativa e Trabalho na Cultura": ["economia criativa", "economia da cultura",
+                                                "industria criativa", "setor criativo",
+                                                "trabalhadores da cultura",
+                                                "fazedores de cultura", "agentes culturais",
+                                                "film commission", "polo criativo",
+                                                "cadeia produtiva da cultura"],
+    "Patrimônio e Memória": ["patrimonio historico", "patrimonio cultural",
+                             "patrimonio imaterial", "patrimonio material", "tombamento",
+                             "tombad*", "centro historico", "iphan", "museu*", "arquivo publico"],
+    "Acesso e Equipamentos Culturais": ["equipamento cultural", "centro cultural",
+                                        "casa de cultura", "teatro*", "cinema*",
+                                        "vale cultura", "acesso a cultura",
+                                        "espaco cultural", "programacao cultural"],
+    "Livro, Leitura e Bibliotecas": ["biblioteca*", "livro e leitura", "formacao de leitores",
+                                     "feira literaria", "festa literaria", "literatura",
+                                     "incentivo a leitura"],
+    "Culturas Populares e Diversidade": ["cultura popular", "mestres da cultura",
+                                         "tesouro vivo", "ponto de cultura", "cultura viva",
+                                         "festa junina", "bumba meu boi", "maracatu",
+                                         "capoeira", "hip hop", "cultura afro*",
+                                         "cultura indigena", "cultura negra",
+                                         "manifestacoes culturais", "diversidade cultural"],
     "Esporte e Lazer": ["esporte", "lazer", "atleta", "quadra poliesportiva",
                         "equipamento esportivo"],
     "Turismo": ["turismo", "turistic*", "atrativo turistico"],
@@ -1188,16 +1245,59 @@ TERMOS_AUSENCIA = {
         "estupro*", "estupro de vulneravel", "abuso sexual",
     ],
 
-    # ------------------------------------------- Cultura, esporte e turismo
-    "Cultura": [
-        "cultura", "cultural", "patrimonio", "patrimonio historico",
-        "patrimonio cultural",
-        "patrimonio imaterial",
-        "economia criativa", "edital de cultura", "fomento cultural",
-        "equipamento cultural", "lei aldir blanc", "lei rouanet",
-        "ponto de cultura", "biblioteca*", "museu*", "teatro*", "artista*",
-        "audiovisual", "carnaval", "festival*", "sistema de cultura",
+    # ------------------------------------------------------------- Cultura
+    # "cultura" solta ficou fora: está em 189 dos 207 planos.
+    "Fomento e Financiamento da Cultura": [
+        "aldir blanc", "pnab", "paulo gustavo", "lei rouanet", "rouanet",
+        "incentivo a cultura", "lei de incentivo", "renuncia fiscal",
+        "fundo estadual de cultura", "fundo de cultura", "editais de cultura",
+        "editais culturais", "edital", "chamada publica", "premio*",
+        "fomento a cultura", "fomento cultural", "financiamento da cultura",
+        "orcamento da cultura", "icms cultural", "patrocinio",
     ],
+    "Gestão e Participação na Cultura": [
+        "sistema estadual de cultura", "sistema nacional de cultura",
+        "sistema de cultura", "plano estadual de cultura", "plano de cultura",
+        "conselho estadual de cultura", "conselho de cultura",
+        "conferencia de cultura", "secretaria de cultura", "secretaria da cultura",
+        "gestao cultural", "gestores culturais", "indicadores culturais",
+        "mapeamento cultural", "cadastro cultural", "politica cultural",
+        "politicas culturais", "cpf da cultura",
+    ],
+    "Economia Criativa e Trabalho na Cultura": [
+        "economia criativa", "economia da cultura", "industria criativa",
+        "setor criativo", "trabalhadores da cultura", "fazedores de cultura",
+        "agentes culturais", "audiovisual", "film commission", "polo criativo",
+        "distrito criativo", "cadeia produtiva da cultura", "artistas",
+        "artesanato", "artesao*", "artesa*", "games", "musica", "design",
+    ],
+    "Patrimônio e Memória": [
+        "patrimonio historico", "patrimonio cultural", "patrimonio imaterial",
+        "patrimonio material", "tombamento", "tombad*", "centro historico",
+        "sitio historico", "iphan", "museu*", "arquivo publico", "acervo*",
+        "restauro", "restauracao", "memoria", "arqueolog*", "salvaguarda",
+    ],
+    "Acesso e Equipamentos Culturais": [
+        "equipamento cultural", "centro cultural", "casa de cultura", "teatro*",
+        "cinema*", "vale cultura", "acesso a cultura", "circuito cultural",
+        "circulacao", "programacao cultural", "agenda cultural", "espaco cultural",
+        "acessibilidade cultural", "formacao de publico", "interiorizacao da cultura",
+    ],
+    "Livro, Leitura e Bibliotecas": [
+        "biblioteca*", "livro e leitura", "plano do livro", "formacao de leitores",
+        "mediadores de leitura", "feira literaria", "festa literaria",
+        "literatura", "incentivo a leitura", "leitura", "escritores", "livro*",
+    ],
+    "Culturas Populares e Diversidade": [
+        "cultura popular", "culturas populares", "mestres da cultura",
+        "mestres e mestras", "tesouro vivo", "ponto de cultura", "cultura viva",
+        "festa junina", "festas juninas", "sao joao", "bumba meu boi", "maracatu",
+        "capoeira", "hip hop", "cultura afro*", "cultura indigena", "cultura negra",
+        "cultura periferica", "carnaval", "folclore", "manifestacoes culturais",
+        "diversidade cultural", "quadrilha*",
+    ],
+
+    # ------------------------------------------------------ Esporte e turismo
     "Esporte e Lazer": [
         "esporte", "esportiv*", "lazer", "atleta*", "bolsa atleta",
         "esporte escolar", "jogos escolares", "quadra poliesportiva",
@@ -1216,9 +1316,23 @@ TERMOS_AUSENCIA = {
 # Mapa plano tema -> eixo, para a página agrupar sem repetir a estrutura.
 
 # Reordena os eixos para o painel UI (relevancia + alfabetica)
-EIXOS = {k: EIXOS[k] for k in ["Educação", "Saúde", "Primeira Infância", "Direitos Reprodutivos", "Assistência social e pobreza", "Cultura, esporte e turismo", "Direitos humanos e igualdade", "Economia e emprego", "Gestão pública e transparência", "Lideranças públicas", "Gestão de pessoas no setor público", "Infraestrutura e mobilidade", "Meio ambiente e clima", "Segurança pública"] if k in EIXOS}
+EIXOS = {k: EIXOS[k] for k in ["Educação", "Saúde", "Primeira Infância", "Direitos Reprodutivos", "Assistência social e pobreza", "Cultura", "Esporte e turismo", "Direitos humanos e igualdade", "Economia e emprego", "Gestão pública e transparência", "Lideranças públicas", "Gestão de pessoas no setor público", "Infraestrutura e mobilidade", "Meio ambiente e clima", "Segurança pública"] if k in EIXOS}
 
-EIXO_DO_TEMA = {tema: eixo for eixo, temas in EIXOS.items() for tema in temas}
+# Tema em dois eixos ("Educação, Arte e Cultura") entra no segundo com None e
+# herda a descrição do primeiro: a pergunta ao modelo é uma só.
+for _temas in EIXOS.values():
+    for _t, _d in list(_temas.items()):
+        if _d is None:
+            _temas[_t] = next(v[_t] for v in EIXOS.values() if v.get(_t))
+
+# Eixo principal de cada tema (o primeiro em que ele aparece). É ele que agrupa
+# o tema no prompt; os eixos todos de um tema ficam em EIXOS_DO_TEMA.
+EIXO_DO_TEMA = {}
+EIXOS_DO_TEMA = {}
+for _eixo, _temas in EIXOS.items():
+    for _t in _temas:
+        EIXO_DO_TEMA.setdefault(_t, _eixo)
+        EIXOS_DO_TEMA.setdefault(_t, []).append(_eixo)
 
 # Achatado: é isso que vai no prompt e que indexa a análise salva.
 TEMAS = {tema: desc for temas in EIXOS.values() for tema, desc in temas.items()}
@@ -4428,8 +4542,8 @@ def gerar_resumos_eixos(classif: dict, temas: dict = TEMAS, nome: str = "", gene
     for tema, result in classif.items():
         nivel = result.get("nivel")
         if nivel and nivel not in ["Não menciona", ""]:
-            eixo = EIXO_DO_TEMA.get(tema, "Outros")
-            if eixo != "Outros":
+            # Tema de dois eixos entra no resumo dos dois.
+            for eixo in EIXOS_DO_TEMA.get(tema, []):
                 eixos_validos.setdefault(eixo, {})[tema] = result
                 
     if not eixos_validos:

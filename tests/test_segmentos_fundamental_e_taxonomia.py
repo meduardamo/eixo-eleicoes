@@ -11,16 +11,27 @@ import processar_planos as pp
 
 class TestTaxonomiaETemas(unittest.TestCase):
     def test_eixos_e_temas_totais(self):
-        """Garante 14 eixos e 66 temas únicos."""
-        self.assertEqual(len(ap.EIXOS), 14)
+        """Garante 15 eixos e 72 temas únicos; Educação, Arte e Cultura fica em dois."""
+        self.assertEqual(len(ap.EIXOS), 15)
         todos_temas = [t for temas in ap.EIXOS.values() for t in temas]
-        self.assertEqual(len(todos_temas), 66)
-        self.assertEqual(len(set(todos_temas)), 66)
-        self.assertEqual(len(ap.TEMAS), 66)
-        self.assertEqual(len(ap.EIXO_DO_TEMA), 66)
+        self.assertEqual(len(todos_temas), 73)
+        self.assertEqual(len(set(todos_temas)), 72)
+        self.assertEqual(len(ap.TEMAS), 72)
+        self.assertEqual(len(ap.EIXO_DO_TEMA), 72)
+
+    def test_eixo_cultura(self):
+        """Cultura é eixo próprio; o tema geral antigo saiu e EAC fica nos dois eixos."""
+        self.assertNotIn("Cultura", ap.TEMAS)
+        self.assertNotIn("Cultura, esporte e turismo", ap.EIXOS)
+        self.assertEqual(list(ap.EIXOS["Esporte e turismo"]), ["Esporte e Lazer", "Turismo"])
+        self.assertEqual(len(ap.EIXOS["Cultura"]), 8)
+        self.assertEqual(ap.EIXO_DO_TEMA["Educação, Arte e Cultura"], "Educação")
+        self.assertEqual(ap.EIXOS_DO_TEMA["Educação, Arte e Cultura"], ["Educação", "Cultura"])
+        self.assertEqual(ap.EIXOS["Cultura"]["Educação, Arte e Cultura"],
+                         ap.EIXOS["Educação"]["Educação, Arte e Cultura"])
 
     def test_termos_ancora_e_ausencia_completos(self):
-        """Todos os 66 temas devem ter termos de âncora e de ausência."""
+        """Todos os 72 temas devem ter termos de âncora e de ausência."""
         for tema in ap.TEMAS:
             self.assertIn(tema, ap.TERMOS_ANCORA, f"Faltando âncora para {tema}")
             self.assertIn(tema, ap.TERMOS_AUSENCIA, f"Faltando ausência para {tema}")

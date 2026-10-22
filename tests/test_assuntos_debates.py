@@ -56,7 +56,7 @@ CASOS = [
      ["Economia e emprego"], ["Agropecuária"]),
     # MG 1:12:12, a única ocorrência de patrimônio que era cultura de verdade.
     ("a Serra do Curral é patrimônio dos mineiros, é tombada e deve ser preservada",
-     ["Cultura, esporte e turismo"], ["Cultura"]),
+     ["Cultura"], ["Patrimônio e Memória"]),
     ("vamos ampliar o efetivo policial e o enfrentamento ao crime organizado",
      ["Segurança pública"],
      ["Enfrentamento ao Crime Organizado", "Policiamento e Efetivo"]),
