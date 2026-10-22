@@ -336,6 +336,47 @@ DESCRICAO_VOTOS = [
 ]
 
 
+
+# Projetos de Assembleia e de câmara municipal dos senadores novos (Inteligov e SAPL), lidos um a um pela ementa.
+# Contam como autoria na Casa (primeiro autor forte, coautor médio). Ficaram fora os de lado ambíguo para os clientes
+# (escola cívico-militar, Escola sem Partido, passaporte vacinal, campanhas de doença específica, datas comemorativas).
+LOCAIS = "inteligov_senado/autoria.csv"
+DESCRICAO_LOCAL = {
+    ("André do Prado", "PL 1012/2015"): ({"Desiderata": 1, "Vital Strategies": 1, "Umane": 1}, "proíbe a venda de alimentos com gordura trans nas escolas"),
+    ("Capitão Contar", "PL 4348/2021"): ({"UNFPA": 1}, "programa de proteção aos órfãos do feminicídio"),
+    ("Capitão Contar", "PL 540/2020"): ({"UNFPA": 1}, "amplia o programa de enfrentamento à violência doméstica contra a mulher"),
+    ("Capitão Contar", "PL 424/2021"): ({"UNFPA": 1}, "sigilo dos dados de servidoras com medida protetiva"),
+    ("Capitão Contar", "PL 423/2021"): ({"Cactus": 1}, "política de diagnóstico e tratamento da depressão"),
+    ("Capitão Contar", "PL 2866/2019"): ({"UNFPA": 1}, "proteção da gestante e da parturiente contra a violência obstétrica"),
+    ("Carlos Bolsonaro", "PL 3/2021"): ({"ISG": -1, "FMCSV": -1}, "permite a educação domiciliar"),
+    ("Carlos Bolsonaro", "PL 1296/2025"): ({"UNFPA": -1}, "campanha permanente contra o aborto"),
+    ("Carlos Bolsonaro", "PL 1888/2023"): ({"UNFPA": -1}, "impõe exigência às equipes médicas antes do aborto legal"),
+    ("Carlos Bolsonaro", "PL 1451/2025"): ({"Vital Strategies": 1}, "campanha de prevenção ao alcoolismo juvenil"),
+    ("Carlos Bolsonaro", "PL 1556/2025"): ({"Umane": 1}, "prevenção de doenças crônicas não transmissíveis nas redes de saúde e de educação"),
+    ("Chicão", "PL 125/2016"): ({"FMCSV": 1}, "políticas públicas para a primeira infância"),
+    ("Chicão", "PL 121/2016"): ({"Desiderata": 1, "Vital Strategies": 1, "Umane": 1}, "proíbe embutidos na merenda de escolas e creches"),
+    ("Chicão", "PL 344/2015"): ({"Vital Strategies": 1}, "aviso \"Se beber, não dirija\" onde se vende bebida alcoólica"),
+    ("Chicão", "PL 225/2015"): ({"UNFPA": 1}, "casas de acolhimento para mulheres vítimas de violência"),
+    ("Chicão", "PL 152/2020"): ({"UNFPA": 1}, "condomínios comunicam agressões domésticas contra mulheres e crianças"),
+    ("Samanda de Lula", "PL 115/2026"): ({"UNFPA": 1}, "formação dos servidores em prevenção à violência de gênero"),
+    ("Samanda de Lula", "PL 116/2026"): ({"UNFPA": 1}, "prioridade nos processos de mulheres em situação de violência doméstica"),
+    ("Samanda de Lula", "PL 117/2026"): ({"UNFPA": 1}, "selo para condomínios que previnem a violência contra a mulher"),
+    ("Samanda de Lula", "PL 118/2026"): ({"UNFPA": 1}, "prioridade habitacional para mulheres em situação de violência doméstica"),
+    ("Samanda de Lula", "PL 257/2025"): ({"UNFPA": 1}, "punição administrativa da violência contra a mulher"),
+    ("Samanda de Lula", "PL 107/2025"): ({"UNFPA": 1}, "transporte público seguro para mulheres"),
+    ("Samanda de Lula", "PL 108/2025"): ({"UNFPA": 1}, "divulgação de canais de denúncia de violência contra a mulher em eventos"),
+    ("Samanda de Lula", "PL 46/2025"): ({"UNFPA": 1}, "gratuidade no transporte para mulheres vítimas de violência doméstica"),
+    ("Samanda de Lula", "PL 820/2025"): ({"UNFPA": 1}, "reconstrução dentária para mulheres vítimas de violência doméstica"),
+    ("Samanda de Lula", "PL 558/2026"): ({"UNFPA": 1}, "prevenção à violência contra a mulher nas escolas"),
+    ("Samanda de Lula", "PL 986/2025"): ({"FMCSV": 1, "UNFPA": 1}, "proteção de gestantes e mães em situação de rua"),
+    ("Samanda de Lula", "PL 822/2025"): ({"UNFPA": 1}, "transporte humanizado para puérperas após a alta"),
+    ("Samanda de Lula", "PL 302/2025"): ({"Infinis": 1}, "selo para escolas que enfrentam a violência sexual contra crianças"),
+    ("Samanda de Lula", "PL 303/2025"): ({"Infinis": 1}, "prevenção à violência sexual contra crianças nas redes sociais, nas escolas"),
+    ("Samanda de Lula", "PL 304/2025"): ({"Infinis": 1}, "protocolo de escuta protegida para violência sexual contra crianças"),
+    ("Samanda de Lula", "PL 620/2025"): ({"REMS": 1}, "política municipal de fomento ao esporte feminino"),
+    ("Samanda de Lula", "PL 819/2025"): ({"REMS": 1}, "isonomia de premiação entre atletas homens e mulheres"),
+}
+
 def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
     out = {n: [] for n in senadores}
     vistos = set()
@@ -370,6 +411,17 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
                 out[r.Parlamentar].append((peso, s if peso != "evidência" else 0,
                     f"{'autor' if forte else 'coautor'} do {k} ({rot}; {'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar)"
                     + (" (assinatura de PEC, não conta)" if peso == "evidência" else "")))
+    locais = c.ler_csv(LOCAIS)
+    for r in locais[locais.Papel.isin(["Primeiro autor", "Coautor"])].itertuples():
+        chave = (r.Parlamentar, str(r.Matéria).strip())
+        if chave not in DESCRICAO_LOCAL or r.Parlamentar not in out:
+            continue
+        sentidos, rot = DESCRICAO_LOCAL[chave]
+        if cliente not in sentidos:
+            continue
+        s, forte = sentidos[cliente], r.Papel == "Primeiro autor"
+        out[r.Parlamentar].append(("forte" if forte else "médio", s,
+            f"{'autor' if forte else 'coautor'} do {chave[1]} na {r.Casa} ({rot}; {'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar)"))
     return out
 
 
