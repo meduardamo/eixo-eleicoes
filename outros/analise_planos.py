@@ -1316,7 +1316,7 @@ TERMOS_AUSENCIA = {
 # Mapa plano tema -> eixo, para a página agrupar sem repetir a estrutura.
 
 # Reordena os eixos para o painel UI (relevancia + alfabetica)
-EIXOS = {k: EIXOS[k] for k in ["Educação", "Saúde", "Primeira Infância", "Direitos Reprodutivos", "Assistência social e pobreza", "Cultura", "Esporte e turismo", "Direitos humanos e igualdade", "Economia e emprego", "Gestão pública e transparência", "Lideranças públicas", "Gestão de pessoas no setor público", "Infraestrutura e mobilidade", "Meio ambiente e clima", "Segurança pública"] if k in EIXOS}
+EIXOS = {k: EIXOS[k] for k in ["Educação", "Saúde", "Primeira Infância", "Direitos Reprodutivos", "Cultura", "Assistência social e pobreza", "Esporte e turismo", "Direitos humanos e igualdade", "Economia e emprego", "Gestão pública e transparência", "Lideranças públicas", "Gestão de pessoas no setor público", "Infraestrutura e mobilidade", "Meio ambiente e clima", "Segurança pública"] if k in EIXOS}
 
 # Tema em dois eixos ("Educação, Arte e Cultura") entra no segundo com None e
 # herda a descrição do primeiro: a pergunta ao modelo é uma só.
