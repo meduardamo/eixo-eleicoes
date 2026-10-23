@@ -2026,6 +2026,14 @@ _LIGADURAS = {"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl",
 # PDF deixa escapar e não têm desenho: 63 ocorrências na aba.
 _INVISIVEL_CITACAO = re.compile(
     "[​‌‍﻿­\u200e\u200f\u202a-\u202e\x00-\x08\x0b-\x1f\x7f-\x9f]")
+# Espaço de largura zero fazendo papel de espaço, que tem de virar espaço e não
+# sumir com o resto do invisível. Kiko Caputo (DF) e Priscila Voigt (RS) separam
+# toda palavra com dois seguidos ("para​​a"), e apagar colava 79
+# células dele e 26 dela ("educaçãoprofissionaleascompetências"). Sete planos
+# põem um só depois do número de lista ("10.​Ampliar"). Um só entre duas
+# letras fica de fora: no Kiko ele está dentro da palavra ("pesso​as").
+_SEPARADOR_LARGURA_ZERO = re.compile(
+    r"[ \t]*​{2,}[ \t]*|(?<=\d[.)])​(?=\w)")
 # Bullets de Wingdings e Symbol, que a extração entrega na área de uso privado
 # do Unicode. Fora da fonte original não têm desenho nenhum.
 _BULLETS_AREA_PRIVADA = "\uf0b7\uf06c\uf0a7\uf076\uf0d8"
@@ -2078,6 +2086,7 @@ def _normalizar_glifos(t: str) -> str:
     for glifo in _BULLETS_AREA_PRIVADA + _MARCADORES_ESTRANHOS:
         t = t.replace(glifo, "•")
     t = _ESCAPE_GLIFO.sub("•", t)
+    t = _SEPARADOR_LARGURA_ZERO.sub(" ", t)
     return _INVISIVEL_CITACAO.sub("", t)
 
 def _norm_busca(t: str) -> str:
