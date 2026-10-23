@@ -140,6 +140,19 @@ def test_ordinal_conta_os_debates_anteriores_do_mesmo_cargo_uf_e_turno():
     assert meta_da_linha(TODAS[3], COL, TODAS)["ordinal"] == 1
 
 
+def test_ordinal_nao_conta_sabatina_como_debate():
+    # 2º turno do ES em 2026: duas sabatinas da Globo antes do debate da
+    # Gazeta, que saía como '3º debate'.
+    col = dict(COL, tipo=10)
+    cab = TODAS[0] + ["tipo"]
+    sab1 = ["es-s1", "2026-10-15", "governador", "ES", "2", "Globo", "", "A", "pronto", "l", "Sabatina"]
+    sab2 = ["es-s2", "2026-10-16", "governador", "ES", "2", "Globo", "", "B", "pronto", "l", "Sabatina"]
+    deb = ["es-d1", "2026-10-22", "governador", "ES", "2", "Gazeta", "", "A e B", "pronto", "l", "Debate"]
+    todas = [cab, sab1, sab2, deb]
+    assert meta_da_linha(deb, col, todas)["ordinal"] == 1
+    assert meta_da_linha(sab2, col, todas)["ordinal"] == 2
+
+
 def test_participantes_saem_separados_do_campo_da_planilha():
     assert meta_da_linha(TODAS[1], COL, TODAS)["participantes"] == [
         "Fernando Haddad", "Tarcísio de Freitas"]

@@ -623,11 +623,16 @@ def meta_da_linha(linha, COL, todas):
 
     O ordinal é contado aqui e não digitado: é a posição deste debate entre os
     do mesmo cargo, UF e turno, por data. Assim o segundo debate de SP sai como
-    '2º debate' sem ninguém lembrar de atualizar a planilha.
+    '2º debate' sem ninguém lembrar de atualizar a planilha. Sabatina só conta
+    entre sabatinas: no 2º turno de 2026 as duas da Globo faziam o debate da
+    afiliada sair como '3º debate'.
     """
     def campo(nome, l=linha):
-        j = COL[nome]
-        return (l[j] if j < len(l) else "").strip()
+        j = COL.get(nome)
+        return (l[j] if j is not None and j < len(l) else "").strip()
+
+    def eh_sabatina(l):
+        return campo("tipo", l).lower() == "sabatina"
 
     data = campo("data")
     mesmos = []
@@ -637,7 +642,8 @@ def meta_da_linha(linha, COL, todas):
         def c(nome, ll=l):
             j = COL[nome]
             return (ll[j] if j < len(ll) else "").strip()
-        if (c("cargo"), c("uf"), c("turno")) == (campo("cargo"), campo("uf"), campo("turno")) and c("data"):
+        if (c("cargo"), c("uf"), c("turno")) == (campo("cargo"), campo("uf"), campo("turno")) and c("data") \
+                and eh_sabatina(l) == eh_sabatina(linha):
             mesmos.append(c("data"))
     ordem = sorted(set(mesmos)).index(data) + 1 if data and data in mesmos else None
 
