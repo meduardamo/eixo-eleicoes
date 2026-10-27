@@ -3,14 +3,16 @@
 Entrada: temas_clientes/base_pautas.csv (cópia da planilha "Eixo | Base de pautas por cliente", abas Clientes
 Educação, Saúde e Esporte) e temas_clientes/posicoes_clientes_complemento.csv (posição informada fora da planilha,
 a confirmar com a coordenação). Entram os projetos marcados Promotor ou Detrator e, quando a marcação está em Dúvida
-ou em branco, os de pauta com posição A favor ou Contra, no sentido dessa posição (a confirmar); Depende do texto fica fora.
+ou em branco, os de pauta com posição A favor ou Contra, no sentido dessa posição (a confirmar); Depende do texto fica fora,
+e projeto marcado Neutro também.
 
 Sinais do senador em cada projeto (Senado e, para quem foi deputado, Câmara):
 - forte: primeiro autor; voto nominal no próprio projeto ou no parecer dele (Sim conta no sentido do projeto,
   Não no sentido contrário), desde que a votação tenha dividido os parlamentares da base (consenso não conta). Votação de emenda, destaque ou requerimento não conta, porque o sentido para o
-  cliente depende do texto da emenda;
+  cliente depende do texto da emenda, salvo emenda com o texto lido (DESCRICAO_VOTOS); autor de emenda lida (SINAIS_DIRETOS);
+  relator com parecer lido pela aprovação (PARECER_LIDO);
 - médio: coautor (de PEC não conta: assinatura de PEC é apoiamento, aparece só como evidência);
-- só evidência, sem contar: relatoria (o sentido depende do parecer, que não foi lido).
+- só evidência, sem contar: relatoria com parecer não lido.
 Projeto Promotor dá sinal a favor do cliente; Detrator, contra.
 
 Régua (a mesma da Metodologia): Promotor ou Detrator com dois sinais fortes na mesma direção ou um forte e um médio;
@@ -80,6 +82,14 @@ ROTULO_BASE = {
     "PL 7419/2006": "lei dos planos de saúde",
     "PL 6622/2025": "prevenção ao casamento infantil",
     "PL 3080/2020": "marco legal do autismo",
+}
+
+# Relatorias da base de pautas com o parecer lido: (matéria, relator) -> o que o parecer faz. Parecer pela aprovação
+# conta como Sim no projeto (forte); as outras relatorias seguem como evidência.
+PARECER_LIDO = {
+    # os dois mantêm o art. 2º da Câmara ("primeira infância ... desde a gestação"), só com emendas de redação (lidos em 27/10/2026)
+    ("PL 1924/2025", "Damares Alves"): "parecer pela aprovação, mantida a gestação na definição de primeira infância",
+    ("PL 1924/2025", "Humberto Costa"): "parecer pela aprovação, mantida a gestação na definição de primeira infância",
 }
 
 # Sinais na pauta, além dos projetos listados: votações nominais do Senado que separam os senadores na pauta e
@@ -184,12 +194,12 @@ DESCRICAO = {
     ("PEC 4/2019", "Senado"): ({"UNFPA": -1, "Infinis": -1}, "reduz a maioridade penal"),
     ("PEC 15/2019", "Senado"): ({"UNFPA": -1, "Infinis": -1}, "reduz a maioridade penal"),
     ("PEC 32/2019", "Senado"): ({"UNFPA": -1, "Infinis": -1}, "reduz a maioridade penal para 16 anos"),
-    ("PLS 46/2017", "Senado"): ({"UNFPA": -1}, "criminaliza o aborto em qualquer fase"),
-    ("PEC 49/2023", "Senado"): ({"UNFPA": -1}, "direito à vida desde o nascituro"),
-    ("PLP 61/2025", "Senado"): ({"UNFPA": -1}, "proteção do nascituro pelo Ministério Público"),
-    ("PL 2873/2022", "Senado"): ({"UNFPA": 1}, "crime violar o sigilo do aborto legal"),
-    ("PL 3415/2019", "Câmara"): ({"UNFPA": -1}, "agrava a pena de venda de remédio abortivo"),
-    ("PDL 612/2021", "Câmara"): ({"UNFPA": -1}, "susta recomendação de aborto legal por telessaúde"),
+    ("PLS 46/2017", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "criminaliza o aborto em qualquer fase"),
+    ("PEC 49/2023", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "direito à vida desde o nascituro"),
+    ("PLP 61/2025", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "proteção do nascituro pelo Ministério Público"),
+    ("PL 2873/2022", "Senado"): ({"UNFPA": 1, "Coletivo Feminista": 1}, "crime violar o sigilo do aborto legal"),
+    ("PL 3415/2019", "Câmara"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "agrava a pena de venda de remédio abortivo"),
+    ("PDL 612/2021", "Câmara"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "susta recomendação de aborto legal por telessaúde"),
     ("PL 5011/2023", "Câmara"): ({"UNFPA": -1}, "casamento na idade núbil com assinatura de um dos pais"),
     ("PL 4968/2019", "Câmara"): ({"UNFPA": 1}, "saúde menstrual nas escolas"),
     ("PL 5474/2019", "Câmara"): ({"UNFPA": 1}, "absorventes na atenção primária"),
@@ -287,6 +297,13 @@ DESCRICAO = {
     ("PL 494/2022", "Senado"): ({"IDEC": 1}, "reavaliação periódica de agrotóxicos"),
     ("PL 1838/2022", "Câmara"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "exige autorização judicial para o aborto legal em caso de estupro"),
     ("PL 1648/2023", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "comunicação à polícia de aborto autoprovocado"),
+    # 27/10/2026: aborto e nascituro fora de qualquer lista até aqui
+    ("PL 1904/2024", "Câmara"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "equipara ao homicídio o aborto após 22 semanas, inclusive em caso de estupro"),
+    ("PEC 29/2015", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "inviolabilidade do direito à vida desde a concepção"),
+    # protocolos de acolhimento à vítima de violência sexual em lugares de lazer (inteiro teor lido): agenda do UNFPA;
+    # o Coletivo fica de fora, a agenda declarada dele é aborto, contracepção e autodeterminação reprodutiva
+    ("PL 999/2023", "Câmara"): ({"UNFPA": 1}, "protocolo de acolhimento às vítimas de violência sexual em lugares de lazer"),
+    ("PL 544/2023", "Senado"): ({"UNFPA": 1}, "Protocolo Não Nos Calaremos contra a violência sexual e de gênero em lugares de lazer"),
     ("PDL 1154/2025", "Câmara"): ({"Infinis": -1, "UNFPA": -1}, "susta a resolução Conanda/CNDM que reconhece a violência vicária"),
     ("PL 3000/2025", "Senado"): ({"Vital Strategies": 1}, "destruição de máquinas de cigarro ilegal (protocolo da OMS)"),
     ("PL 5050/2013", "Câmara"): ({"Vital Strategies": 1}, "fotos de acidente nas embalagens de bebida alcoólica"),
@@ -326,13 +343,35 @@ SINAIS_DIRETOS = [
     ("Tereza Cristina", {"Vital Strategies": -1}, "forte", "autora da Emenda 1873 ao PLP 68/2024, que escalona o Imposto Seletivo das bebidas alcoólicas para não passar a carga de 2023"),
     ("Beto Faro", {"Vital Strategies": 1, "Desiderata": 1}, "forte", "autor da Emenda 2197 ao PLP 68/2024, que estende o Imposto Seletivo às bebidas ultraprocessadas"),
     ("Omar Aziz", {"Infinis": 1, "Vital Strategies": 1}, "evidência", "contrário à regulamentação dos cigarros eletrônicos na CAE (declaração, sinal fraco)"),
+    # Emendas ao PL 4/2025 (Código Civil) lidas em 27/10/2026, a partir da planilha de emendas feita para o Coletivo
+    # (1IaTT3RI…): contam as que põem a vida desde a concepção ou o nascituro no texto; as de efeito indireto ficam como registro.
+    ("Damares Alves", {"Coletivo Feminista": -1}, "forte", "autora da Emenda 15 ao PL 4/2025 (Código Civil), que manda interpretar o Código pelo princípio da vida desde a concepção"),
+    ("Damares Alves", {"Coletivo Feminista": -1}, "forte", "autora da Emenda 26 ao PL 4/2025 (Código Civil), que estende os direitos da personalidade ao nascituro e veda interpretação que legitime o aborto"),
+    ("Damares Alves", {"Coletivo Feminista": -1}, "forte", "autora da Emenda 27 ao PL 4/2025 (Código Civil), que veda o descarte de embriões na reprodução assistida"),
+    ("Damares Alves", {"Coletivo Feminista": -1}, "forte", "autora da Emenda 38 ao PL 4/2025 (Código Civil), que põe o direito à vida desde a concepção e veda interpretação que legitime o aborto"),
+    ("Damares Alves", {"Coletivo Feminista": -1}, "forte", "autora da Emenda 40 ao PL 4/2025 (Código Civil), que dá personalidade civil desde a concepção"),
+    ("Jorge Seif", {"Coletivo Feminista": -1}, "forte", "autor da Emenda 56 ao PL 4/2025 (Código Civil), que tira a vida pré-uterina e uterina como potencialidade, porque a vida começaria na concepção"),
+    ("Jorge Seif", {"Coletivo Feminista": -1}, "forte", "autor da Emenda 61 ao PL 4/2025 (Código Civil), que faz do nascituro titular de direitos da personalidade, inclusive o direito à vida"),
+    ("Jorge Seif", {"Coletivo Feminista": -1}, "forte", "autor da Emenda 67 ao PL 4/2025 (Código Civil), que tira o limite aos direitos da personalidade do nascituro"),
+    ("Hamilton Mourão", {"Coletivo Feminista": -1}, "evidência", "autor da Emenda 139 ao PL 4/2025 (Código Civil), que repete a regra vigente do art. 2º sobre os direitos do nascituro desde a concepção"),
+    ("Magno Malta", {"Coletivo Feminista": -1}, "evidência", "autor da Emenda 769 ao PL 4/2025 (Código Civil), que limita a recusa de tratamento a não violar direito de terceiros, com o nascituro na justificação"),
+    ("Magno Malta", {"Coletivo Feminista": -1}, "evidência", "autor da Emenda 781 ao PL 4/2025 (Código Civil), que suprime os arts. 1.511-A a 1.511-G, inclusive a vida pré-uterina como potencialidade"),
+    ("Teresa Leitão", {"Coletivo Feminista": 1}, "evidência", "autora da Emenda 697 ao PL 4/2025 (Código Civil), que reconhece a autonomia progressiva de crianças e adolescentes nas decisões sobre eles"),
 ]
 
-# Votações no próprio projeto, pela descrição do cliente: (matéria, Casa, trecho do texto da votação, sentido do Sim
-# para cada cliente, rótulo).
+# Votações pela descrição do cliente: (matéria, Casa, trecho do texto da votação, sentido do Sim para cada cliente,
+# rótulo[, de onde vem o lado]). Sem o sexto campo, o lado vem da descrição do cliente e fica a confirmar. Votação de
+# emenda só entra aqui com o texto da emenda lido; essas contam mesmo com o projeto na base de pautas, que não conta emenda.
 DESCRICAO_VOTOS = [
     ("PDL 3/2025", "Câmara", "Aprovado o Projeto de Decreto Legislativo", {"Coletivo Feminista": -1},
-     "PDL 3/2025, que susta a resolução 258 do Conanda sobre o atendimento, inclusive o aborto legal, de meninas vítimas de violência sexual (Sim = sustar a resolução)"),
+     "no PDL 3/2025, que susta a resolução 258 do Conanda sobre o atendimento, inclusive o aborto legal, de meninas vítimas de violência sexual (Sim = sustar a resolução)"),
+    ("PEC 164/2012", "Câmara", "Aprovado o Parecer", {"Coletivo Feminista": -1, "UNFPA": -1},
+     "no parecer da PEC 164/2012, que põe na Constituição a inviolabilidade da vida desde a concepção (Sim = aprovar o parecer)"),
+    # Emenda de Plenário 2 (Chris Tonietto): "primeira infância o período desde a gestação"; a coordenação marcou o PL 1924
+    # como detrator para o Coletivo enquanto a gestação estiver no texto
+    ("PL 1924/2025", "Câmara", "Aprovada a Emenda de Plenário nº 2", {"Coletivo Feminista": -1},
+     "na Emenda de Plenário 2 ao PL 1924/2025, que põe a gestação na definição de primeira infância (Sim = pôr a gestação no texto)",
+     "lado pelo comentário da coordenação na base de pautas"),
 ]
 
 
@@ -349,8 +388,8 @@ DESCRICAO_LOCAL = {
     ("Capitão Contar", "PL 423/2021"): ({"Cactus": 1}, "política de diagnóstico e tratamento da depressão"),
     ("Capitão Contar", "PL 2866/2019"): ({"UNFPA": 1}, "proteção da gestante e da parturiente contra a violência obstétrica"),
     ("Carlos Bolsonaro", "PL 3/2021"): ({"ISG": -1, "FMCSV": -1}, "permite a educação domiciliar"),
-    ("Carlos Bolsonaro", "PL 1296/2025"): ({"UNFPA": -1}, "campanha permanente contra o aborto"),
-    ("Carlos Bolsonaro", "PL 1888/2023"): ({"UNFPA": -1}, "impõe exigência às equipes médicas antes do aborto legal"),
+    ("Carlos Bolsonaro", "PL 1296/2025"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "campanha permanente contra o aborto"),
+    ("Carlos Bolsonaro", "PL 1888/2023"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "impõe exigência às equipes médicas antes do aborto legal"),
     ("Carlos Bolsonaro", "PL 1451/2025"): ({"Vital Strategies": 1}, "campanha de prevenção ao alcoolismo juvenil"),
     ("Carlos Bolsonaro", "PL 1556/2025"): ({"Umane": 1}, "prevenção de doenças crônicas não transmissíveis nas redes de saúde e de educação"),
     ("Chicão", "PL 125/2016"): ({"FMCSV": 1}, "políticas públicas para a primeira infância"),
@@ -380,16 +419,17 @@ DESCRICAO_LOCAL = {
 def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
     out = {n: [] for n in senadores}
     vistos = set()
-    for k, casa, trecho, sentidos, rot in DESCRICAO_VOTOS:
-        if cliente not in sentidos or k in ja_na_base:
+    for k, casa, trecho, sentidos, rot, *fonte in DESCRICAO_VOTOS:
+        if cliente not in sentidos or (k in ja_na_base and "Emenda" not in trecho):
             continue
         v = votos[(votos.k == k) & (votos.Casa == casa) & votos["Votação"].astype(str).str.contains(trecho, regex=False)
                   & votos.Voto.isin(["Sim", "Não"])]
         for r in v.itertuples():
             if r.Parlamentar in out:
                 s = sentidos[cliente] * (1 if r.Voto == "Sim" else -1)
-                out[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {rot} (plenário da {casa}, {str(r.Data)[:4]}; "
-                                                       f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar)"))
+                onde = f"plenário da {casa}" if str(r.Colegiado) in ("PLEN", "", "plenário do Senado") else str(r.Colegiado)
+                lado = fonte[0] if fonte else f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar"
+                out[r.Parlamentar].append(("forte", s, f"votou {r.Voto} {rot} ({onde}, {str(r.Data)[:4]}; {lado})"))
     for n, sentidos, forca, texto in SINAIS_DIRETOS:
         if cliente in sentidos and n in out:
             s = sentidos[cliente] if forca != "evidência" else 0
@@ -577,7 +617,7 @@ def main():
     for (area, cliente), g in base.groupby(["Área", "Cliente"], sort=False):
         marcados = g[g["Para o cliente"].isin(["Promotor", "Detrator"])]
         # sem marcação (Dúvida ou em branco): vale o sentido da posição do cliente na pauta, a confirmar
-        pela_pauta = g[~g["Para o cliente"].isin(["Promotor", "Detrator"]) & g["Cliente é"].isin(["A favor", "Contra"])].copy()
+        pela_pauta = g[g["Para o cliente"].isin(["", "Dúvida"]) & g["Cliente é"].isin(["A favor", "Contra"])].copy()
         pela_pauta["Para o cliente"] = pela_pauta["Cliente é"].map({"A favor": "Promotor", "Contra": "Detrator"})
         pela_pauta["Fonte da posição"] = "pauta"
         sinais = {n: [] for n in senadores.Parlamentar}
@@ -600,7 +640,11 @@ def main():
                         sinais[r.Parlamentar].append(("forte", s, f"votou {r.Voto} no {k} ({desc}; {onde}, {str(r.Data)[:4]}; Sim = aprovar o projeto, {quem})"))
                 for r in rel[ok(rel)].drop_duplicates(["Parlamentar", "Colegiado"]).itertuples():
                     if r.Parlamentar in sinais:
-                        sinais[r.Parlamentar].append(("evidência", 0, f"relator do {k} ({desc}) na {r.Colegiado} (sentido do parecer não lido)"))
+                        lido = PARECER_LIDO.get((k, r.Parlamentar))
+                        if lido:
+                            sinais[r.Parlamentar].append(("forte", sentido, f"relator do {k} ({desc}) na {r.Colegiado}, com {lido} ({quem})"))
+                        else:
+                            sinais[r.Parlamentar].append(("evidência", 0, f"relator do {k} ({desc}) na {r.Colegiado} (sentido do parecer não lido)"))
         com_votos = c.ler_csv("perfil_senado_comissoes/votos.csv")
         for pt in g.drop_duplicates("Pauta").itertuples():
             if pt.Pauta in PAUTAS and pt._4 in ("A favor", "Contra"):
@@ -630,7 +674,7 @@ def main():
                        "Pautas": "; ".join(f"{r.Pauta} ({r._4.lower() or 'posição não informada'})" if r.Projeto else f"{r.Pauta} (fora da base de pautas; só pela descrição do cliente)" for r in pautas.itertuples()),
                        "Promotores": int((marcados["Para o cliente"] == "Promotor").sum()),
                        "Detratores": int((marcados["Para o cliente"] == "Detrator").sum()),
-                       "Aguardando": int((~g["Para o cliente"].isin(["Promotor", "Detrator"]) & (g.Projeto != "")).sum()),
+                       "Aguardando": int((g["Para o cliente"].isin(["", "Dúvida"]) & (g.Projeto != "")).sum()),
                        "Senadores com registro": com_registro,
                        "Posição fora da planilha": "; ".join(f"{r.Projeto}: {r._8}" for r in g.itertuples() if r._8 != "Coordenação")})
     c.salvar_csv(pd.DataFrame(linhas), "temas_clientes/clientes_classificacao.csv")
