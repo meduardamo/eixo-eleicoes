@@ -439,6 +439,16 @@ DESCRICAO_LOCAL = {
     ("Samanda de Lula", "PL 819/2025"): ({"REMS": 1}, "isonomia de premiação entre atletas homens e mulheres"),
 }
 
+# Posição pública do próprio cliente sobre o projeto (nota, carta, fala de dirigente): o lado vem dela e sai da checagem.
+_DOMICILIAR = "contra pela posição pública da FMCSV, contrária a regulamentar a educação domiciliar (Mariana Luz, Brasil de Fato, 15/12/2025)"
+_RES_258 = "contra pela posição pública das Católicas pelo Direito de Decidir, que pediram à ONU a volta da resolução 258 do Conanda (02/07/2026)"
+POSICAO_PUBLICA = {
+    **{("FMCSV", k): _DOMICILIAR for k in ("PL 3179/2012", "PL 10185/2018", "PL 5168/2026", "PL 2577/2026", "PL 3/2021")},
+    **{("Coletivo Feminista", k): _RES_258 for k in ("PDL 3/2025", "PDL 25/2025", "PDL 35/2025", "PDL 53/2025", "PDL 74/2025")},
+    ("IDEC", "PL 12/2021"): "a favor pela posição pública do Idec, que chamou a aprovação no Senado de vitória histórica (30/04/2021)",
+}
+
+
 def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
     out = {n: [] for n in senadores}
     vistos = set()
@@ -451,7 +461,7 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
             if r.Parlamentar in out:
                 s = sentidos[cliente] * (1 if r.Voto == "Sim" else -1)
                 onde = ("plenário da Câmara" if casa == "Câmara" else "plenário do Senado") if str(r.Colegiado) in ("PLEN", "", "plenário do Senado") else str(r.Colegiado)
-                lado = fonte[0] if fonte else f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar"
+                lado = fonte[0] if fonte else POSICAO_PUBLICA.get((cliente, k), f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar")
                 out[r.Parlamentar].append(("forte", s, f"votou {r.Voto} {rot} ({onde}, {str(r.Data)[:4]}; {lado})"))
     for n, sentidos, forca, texto in SINAIS_DIRETOS:
         if cliente in sentidos and n in out:
@@ -471,8 +481,9 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
                     out[r.Parlamentar].append(("evidência", 0, f"{'autor' if forte else 'coautor'} do {k} ({rot}; mesma proposta reapresentada, conta uma vez)"))
                     continue
                 vistos.add((r.Parlamentar, chave_texto, s))
+                lado = POSICAO_PUBLICA.get((cliente, k), f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar")
                 out[r.Parlamentar].append((peso, s if peso != "evidência" else 0,
-                    f"{'autor' if forte else 'coautor'} do {k} ({rot}; {'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar)"
+                    f"{'autor' if forte else 'coautor'} do {k} ({rot}; {lado})"
                     + (" (assinatura de PEC, não conta)" if peso == "evidência" else "")))
     locais = c.ler_csv(LOCAIS)
     for r in locais[locais.Papel.isin(["Primeiro autor", "Coautor"])].itertuples():
@@ -484,7 +495,7 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
             continue
         s, forte = sentidos[cliente], r.Papel == "Primeiro autor"
         out[r.Parlamentar].append(("forte" if forte else "médio", s,
-            f"{'autor' if forte else 'coautor'} do {chave[1]} na {r.Casa} ({rot}; {'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar)"))
+            f"{'autor' if forte else 'coautor'} do {chave[1]} na {r.Casa} ({rot}; {POSICAO_PUBLICA.get((cliente, chave[1]), ('a favor' if s > 0 else 'contra') + ' pela descrição do cliente, a confirmar')})"))
     return out
 
 
