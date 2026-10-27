@@ -23,7 +23,12 @@ entra, quem sai e quem cuida da área na equipe de transição. Tem termo de bus
 próprio (TERMOS_TRANSICAO) e tema de alerta ("transição"). Em 15/10/2026 a lista
 de pastas passou de duas para doze (PASTAS_TRANSICAO). No mesmo dia o tipo "transição"
 passou a valer para todas as secretarias estaduais (fica na planilha e no
-painel), e o alerta por email continua só nas doze.
+painel), e o alerta por email continua só nas doze. Em 27/10/2026, com Lula
+reeleito, entrou o governo federal (BUSCAS_TRANSICAO_FEDERAL): ministro que sai,
+fica ou é cotado e reforma ministerial. O tipo vale para todo ministério; o
+alerta vale para os ministérios das doze pastas somados à lista do monitor do
+DOU (MINISTERIOS_TRANSICAO e UNIDADES_TRANSICAO_FEDERAL) e ao desenho
+ministerial.
 
 Secrets do email: BREVO_API_KEY, EMAIL, DESTINATARIOS_NOTICIAS (ou DESTINATARIOS).
 Sem eles a rodada segue normal, só não envia.
@@ -287,6 +292,15 @@ TERMOS_TRANSICAO = ('("equipe de transição" OR secretariado '
                     'OR "governador eleito" OR "governadora eleita" '
                     'OR "novo secretário" OR "nova secretária")')
 
+# Transição federal (27/10/2026): Lula reeleito, sem troca de governo, mas com
+# reforma ministerial. Duas buscas nacionais; testadas em 27/10, trazem ministro
+# cotado para a Fazenda, nova Esplanada e ministro que fica. A UF fica vazia.
+BUSCAS_TRANSICAO_FEDERAL = [
+    'Lula ("reforma ministerial" OR "novo ministro" OR "nova ministra" '
+    'OR "deixa o ministério" OR "cotado para o ministério" OR "segundo mandato")',
+    '("Lula 4" OR "quarto mandato") (ministério OR Esplanada OR ministro OR ministra)',
+]
+
 # Pauta local que já virou ativo da disputa em um estado e não sai por termo
 # genérico. Uma busca a mais por UF listada; para acrescentar outra, é só somar
 # a chave da UF com os termos entre parênteses.
@@ -316,6 +330,7 @@ def gerar_buscas(cargos=('presidente', 'governador', 'senador')):
                 buscas += [f"eleições 2026 {cargo} {uf} {termos}" for uf in UFS]
     buscas += [f"{UF_NOME[uf]} {TERMOS_VISITA}" for uf in UFS]
     buscas += [f"{UF_NOME[uf]} {TERMOS_TRANSICAO}" for uf in UFS]
+    buscas += BUSCAS_TRANSICAO_FEDERAL
     buscas += [f"eleições 2026 {UF_NOME[uf]} {pauta}"
                for uf, pauta in PAUTAS_UF.items()]
     return buscas
@@ -642,6 +657,55 @@ _RE_PASTA_TRANSICAO = re.compile(
     rf"|(?:pasta|area|comando|titular)\s+(?:\w+\s+){{0,2}}?d[aeo]s?\s+(?:{_AREAS_TRANSICAO})\b"
     r"|\b(?:seduc|sefaz|seplag)\b")
 
+# Transição federal (27/10/2026): os ministérios que correspondem às doze
+# pastas, somados à lista do monitor do DOU (raspadores/DOU/transicao_dou.py),
+# que acrescenta Trabalho, Casa Civil, as unidades e autarquias acompanhadas e o
+# desenho ministerial (reforma, criação, fusão ou extinção de ministério, Lei
+# 14.600). A trava pede órgão ou unidade da lista dito na notícia, como a
+# estadual pede a pasta.
+MINISTERIOS_TRANSICAO = {
+    "Saúde": r"saude",
+    "Educação": r"educacao",
+    "Planejamento e Orçamento": r"planejamento",
+    "Gestão e Inovação": r"gestao",
+    "Direitos Humanos e Cidadania": r"direitos humanos",
+    "Mulheres": r"mulheres",
+    "Igualdade Racial": r"igualdade racial",
+    "Fazenda": r"fazenda",
+    "Cultura": r"cultura",
+    "Ciência, Tecnologia e Inovação": r"ciencia",
+    "Esporte": r"esportes?",
+    "Desenvolvimento e Assistência Social": r"desenvolvimento e assistencia social|desenvolvimento social",
+    "Trabalho e Emprego": r"trabalho",
+}
+UNIDADES_TRANSICAO_FEDERAL = (
+    "Secretaria de Educação Básica; Secretaria de Educação Profissional e Tecnológica; "
+    "Política Nacional Integrada da Primeira Infância; FNDE; INEP; Secretaria Nacional "
+    "de Esporte Amador; Secretaria Nacional da Política de Cuidados e Família; "
+    "Secretaria Nacional de Assistência Social; Cadastro Único; Secretaria Nacional de "
+    "Renda de Cidadania; Secretaria de Atenção Primária à Saúde; Secretaria Nacional "
+    "de Autonomia Econômica")
+MINISTERIOS_TRANSICAO_TEXTO = "; ".join(MINISTERIOS_TRANSICAO) + "; Casa Civil"
+_AREAS_FEDERAL = "|".join(MINISTERIOS_TRANSICAO.values())
+_RE_PASTA_FEDERAL = re.compile(
+    rf"(?:ministr[oa]s?|ministerios?|pasta)\s+(?:\w+\s+){{0,2}}?(?:de|da|do|das|dos)\s+"
+    rf"(?:{_AREAS_FEDERAL})\b"
+    r"|\bcasa civil\b|\b(?:mec|mds|fnde|inep|senarc|snas|saps)\b"
+    r"|educacao basica|educacao profissional e tecnologica|primeira infancia"
+    r"|esporte amador|politica de cuidados|cadastro unico|renda de cidadania"
+    r"|atencao primaria|autonomia economica")
+_RE_DESENHO_MINISTERIAL = re.compile(
+    r"reforma\s+ministerial|\b14\.?600\b"
+    r"|\b(?:cria|criar|criacao|recria|recriar|recriacao|funde|fundir|fusao|extingue|"
+    r"extinguir|extincao|desmembra|desmembrar|divide|dividir|divisao)\b[^.]{0,40}\bministerios?\b"
+    r"|\bministerios?\b[^.]{0,40}\b(?:criad[oa]s?|recriad[oa]s?|fundid[oa]s?|extint[oa]s?|"
+    r"desmembrad[oa]s?|dividid[oa]s?)\b")
+
+
+def cita_orgao_da_transicao_federal(texto) -> bool:
+    t = _sem_acento(texto or "").lower()
+    return bool(_RE_PASTA_FEDERAL.search(t) or _RE_DESENHO_MINISTERIAL.search(t))
+
 # Termos que indicam prestação de contas rotineira de gestão atual (não é transição de governo)
 _RE_ROTINA_FISCAL = re.compile(
     r"\b(?:secretari[oa]\s+(?:\w+\s+){0,3}?em\s+exercicio|"
@@ -652,6 +716,7 @@ _RE_ROTINA_FISCAL = re.compile(
 _RE_TRANSICAO_EFETIVA = re.compile(
     r"\b(?:novo[sa]?\s+secretari[oa]s?|futur[oa]\s+secretari[oa]s?|"
     r"equipe\s+de\s+transicao|coordenador[a]?\s+da\s+transicao|"
+    r"novo[sa]?\s+ministr[oa]s?|reforma\s+ministerial|"
     r"cotad[oa]\s+(?:para|a|como)\b|"
     r"anuncia(?:do|da|r)?\s+(?:o\s+)?secretariado|"
     r"reforma\s+administrativa|"
@@ -664,14 +729,17 @@ def cita_pasta_da_transicao(texto) -> bool:
     return bool(_RE_PASTA_TRANSICAO.search(_sem_acento(texto or "").lower()))
 
 
-def eh_alerta_transicao_valido(texto) -> bool:
+def eh_alerta_transicao_valido(texto, federal=False) -> bool:
     """Garante que a transição cita uma das 12 pastas E tem movimento real de troca/montagem de governo.
 
     Derruba citações de passagem em prestação de contas fiscal de rotina (ex:
     secretário da Fazenda em exercício apresentando contas quadrimestrais na
-    ALEP).
+    ALEP). Notícia sem UF (federal) passa pela lista federal (ministérios das
+    12 pastas mais a lista do DOU): com UF, "Casa Civil" é pasta fora da lista;
+    sem UF, está dentro.
     """
-    if not cita_pasta_da_transicao(texto):
+    cita = cita_orgao_da_transicao_federal if federal else cita_pasta_da_transicao
+    if not cita(texto):
         return False
     t_sem = _sem_acento(texto or "").lower()
     if _RE_ROTINA_FISCAL.search(t_sem) and not _RE_TRANSICAO_EFETIVA.search(t_sem):
@@ -726,7 +794,7 @@ def aplicar_regra_alerta(dados, texto: str = "", titulo: str = "") -> dict:
     candidato = str(dados.get("candidato") or "").strip()
     cand_norm = _sem_acento(candidato).lower()
 
-    if tema == "transição" and not eh_alerta_transicao_valido(texto):
+    if tema == "transição" and not eh_alerta_transicao_valido(texto, federal=not _uf_relevante(dados)):
         tema = ""
 
     # Trava de Fato Eleitoral e Impugnação:
@@ -899,7 +967,10 @@ def classificar_com_gemini(titulo, trecho=""):
         "QUALQUER secretaria ou na equipe de transição como um todo: nome anunciado, "
         "confirmado, convidado ou cotado para uma secretaria, secretário que sai ou que "
         "fica, equipe de transição e quem a integra, cronograma da transição, fusão, "
-        "divisão ou criação de secretaria. O tipo vale para todas as pastas; o "
+        "divisão ou criação de secretaria. Vale também para o governo federal no "
+        "novo mandato de Lula, reeleito: ministro que sai ou fica, nome anunciado, "
+        "convidado ou cotado para ministério, reforma ministerial, criação, fusão ou "
+        "extinção de ministério; nesse caso uf é null. O tipo vale para todas as pastas; o "
         "alerta_tema 'transição' é mais estrito (ver abaixo)\n"
         "  - tipo='outro': não se encaixa em nenhum dos anteriores\n"
         "- confianca='alto': candidato, cargo e UF estão todos explícitos no texto\n"
@@ -960,19 +1031,23 @@ def classificar_com_gemini(titulo, trecho=""):
         f"{PASTAS_TRANSICAO_TEXTO}. Vale também o nome que o estado dá à mesma pasta "
         "(Secretaria da Mulher para Igualdade de Gênero, Desenvolvimento Social para "
         "Assistência Social, Finanças para Fazenda, Justiça e Direitos Humanos). "
+        "Vale também o governo federal no novo mandato de Lula (uf null), com outra "
+        f"lista: ministro ou secretário-executivo de {MINISTERIOS_TRANSICAO_TEXTO}; "
+        f"titular de {UNIDADES_TRANSICAO_FEDERAL}; e o desenho ministerial (reforma "
+        "ministerial, criação, fusão, divisão ou extinção de ministério, de qualquer área). "
         "Precisa das DUAS coisas ao mesmo tempo:\n"
         "  (1) é sobre a troca ou a montagem do governo: governador eleito ou reeleito "
         "anuncia, confirma, convida ou sonda alguém para a secretaria; nome cotado para "
         "a pasta; secretário que deixa o cargo ou é mantido; equipe de transição com "
         "responsável ou grupo de trabalho da área; fusão, divisão, criação ou extinção "
-        "de secretaria;\n"
-        "  (2) a pasta é uma das acompanhadas, dita na notícia. Secretariado anunciado em "
-        "bloco conta se a notícia traz o nome para uma delas.\n"
-        "  Não conta: rotina de gestão da secretaria atual (obra, programa, greve, "
-        "licitação) sem ligação com a troca de governo; pastas fora da lista (Casa Civil, "
-        "Segurança, Infraestrutura, Agricultura etc.); secretaria "
-        "municipal; ministério do governo federal; promessa de campanha de candidato "
-        "que ainda disputa o 2º turno; e transição em geral (equipe de transição "
+        "de secretaria; no federal, o mesmo para ministro, cargo e ministério;\n"
+        "  (2) a pasta é uma das acompanhadas, dita na notícia (no federal, órgão ou "
+        "unidade da lista federal, ou mudança no desenho dos ministérios). Secretariado "
+        "ou ministério anunciado em bloco conta se a notícia traz o nome para uma delas.\n"
+        "  Não conta: rotina de gestão da secretaria ou do ministério atual (obra, "
+        "programa, greve, licitação) sem ligação com a troca de governo; pastas fora da "
+        "lista estadual (Casa Civil, Segurança, Infraestrutura, Agricultura etc.) e "
+        "ministério fora da lista federal; secretaria municipal; vaga no STF ou em tribunal; e transição em geral (equipe de transição "
         "anunciada, cronograma, reunião do secretariado, governador que diz que vai "
         "trocar secretários) quando a notícia não nomeia nenhuma das pastas "
         "acompanhadas. Para este tema NÃO vale a regra da dúvida abaixo: sem a pasta dita "
@@ -1095,6 +1170,10 @@ def _header_alerta(n) -> str:
     if uf:
         return f"Alerta | EixoGov | {assunto} | Subnacional | {uf}"
     if str(n.get("cargo") or "").strip().lower() == "presidente":
+        return f"Alerta | EixoGov | {assunto} | Gov. Federal"
+    # Transição sem UF só vira alerta passando pela trava federal
+    # (eh_alerta_transicao_valido), então o escopo é o governo federal.
+    if tema == "transição":
         return f"Alerta | EixoGov | {assunto} | Gov. Federal"
     return f"Alerta | EixoGov | {assunto}"
 
@@ -1241,7 +1320,10 @@ def gerar_texto_alerta(n) -> str:
     if n.get("alerta_tema") == "transição":
         angulo = (
             "ÂNGULO OBRIGATÓRIO: este alerta é sobre a transição de governo no estado, "
-            f"nas pastas acompanhadas ({PASTAS_TRANSICAO_TEXTO}). Título e primeiro parágrafo dizem quem "
+            f"nas pastas acompanhadas ({PASTAS_TRANSICAO_TEXTO}), ou no governo federal, "
+            f"nos órgãos acompanhados ({MINISTERIOS_TRANSICAO_TEXTO}; "
+            f"{UNIDADES_TRANSICAO_FEDERAL}) e no desenho dos ministérios. "
+            "Título e primeiro parágrafo dizem quem "
             "entra, quem sai ou quem cuida da área, com o cargo e a pasta escritos como "
             "estão na notícia, e se o nome está confirmado, convidado ou só cotado. "
             "Não trate como confirmado o que a notícia dá como cotado. Pastas fora "
@@ -1735,7 +1817,7 @@ ROTULO_TEMA = {
     "visita-presidencial": "Visita de presidenciável no estado",
     "impugnação": "Impugnação de candidatura",
     "fato-eleitoral": "Fato com impacto eleitoral",
-    "transição": "Transição de governo nos estados",
+    "transição": "Transição de governo (estados e governo federal)",
 }
 
 PAINEL_URL = os.getenv("PAINEL_NOTICIAS_URL",
