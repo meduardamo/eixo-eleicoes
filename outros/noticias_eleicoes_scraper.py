@@ -256,13 +256,14 @@ TERMOS = ('("pesquisa eleitoral" OR "intenção de voto" '
           'OR Datafolha OR Quaest OR Ipec OR AtlasIntel OR "Paraná Pesquisas" '
           'OR "Real Time Big Data" OR "segundo turno")')
 
-# Bloco 2: o que acontece na campanha: apoio e neutralidade no 2º turno, debate,
-# agenda e educação (para pegar crítica sobre política pública de educação).
+# Bloco 2: o que acontece na campanha: apoio e neutralidade no 2º turno,
+# agenda e educação (para pegar crítica sobre política pública de educação). Debate
+# e sabatina saíram em 27/10/2026: não há mais eleição pela frente.
 # Fica numa busca separada em vez de entrar no bloco 1: o RSS do Google devolve
 # no máximo ~20 itens por busca, então um OR gigante faria os termos disputarem
 # espaço e ninguém apareceria direito. O Gemini separa depois pelo campo tipo.
 TERMOS_CAMPANHA = ('("declara apoio" OR "anuncia apoio" OR neutralidade '
-                   'OR debate OR sabatina OR comício OR caravana OR palanque '
+                   'OR comício OR caravana OR palanque '
                    'OR educação)')
 
 # Bloco 3: o que sai do calendário de campanha e ainda assim mexe com a disputa:
@@ -450,7 +451,7 @@ def normalize_partido(raw) -> str:
 # texto livre, então acento, caixa e variação de escrita são canonicalizados aqui
 # para o filtro do painel não virar uma lista de quase-duplicatas (foi o que
 # aconteceu com o campo partido).
-TIPOS = ("agenda", "pesquisa", "debate", "aliança", "apoio", "crítica-educação",
+TIPOS = ("agenda", "pesquisa", "aliança", "apoio", "crítica-educação",
          "proposta-educação", "visita-presidencial", "impugnação", "fato-eleitoral",
          "transição", "outro")
 _TIPO_ALIAS = {
@@ -541,7 +542,7 @@ def normalize_status(raw) -> str:
 # fechou com o Fe (01/09) para o que a busca diária tem que cobrir. "Executivo" aqui é só governador ou presidente: pesquisa
 # ou apoio para Senado e Câmara não vira alerta, mesmo sendo notícia relevante.
 ALERTA_TEMAS = ("pesquisa-executivo", "apoio", "rompimento", "educação",
-                "debate", "visita-presidencial", "impugnação", "fato-eleitoral",
+                "visita-presidencial", "impugnação", "fato-eleitoral",
                 "transição")
 _TEMA_ALIAS = {
     "pesquisa": "pesquisa-executivo", "pesquisa executivo": "pesquisa-executivo",
@@ -958,13 +959,13 @@ def classificar_com_gemini(titulo, trecho="", uf_dica=""):
         '  "status": "confirmado | pré-candidato | em disputa | renúncia | desistência | pesquisa | cobertura geral | não relacionado | indefinido",\n'
         '  "convencao": true ou false — true SOMENTE se a notícia trata diretamente de uma convenção partidária '
         "(data, realização, resultado ou decisão tomada em convenção). Independente do status da candidatura.\n"
-        '  "tipo": "agenda | pesquisa | debate | aliança | apoio | crítica-educação | proposta-educação | visita-presidencial | impugnação | fato-eleitoral | transição | outro",\n'
+        '  "tipo": "agenda | pesquisa | aliança | apoio | crítica-educação | proposta-educação | visita-presidencial | impugnação | fato-eleitoral | transição | outro",\n'
         '  "instituto": "Nome do instituto de pesquisa, se a notícia trata de pesquisa de intenção de voto '
         "(ex: Datafolha, Quaest, Ipec, AtlasIntel). null se não for pesquisa ou se o instituto não for citado\",\n"
         '  "abrangencia": "Só quando a notícia trata de pesquisa eleitoral: \'nacional\' se a pesquisa ouviu o '
         "Brasil inteiro, 'estadual' se ouviu só um estado. Repare que site regional publica pesquisa nacional "
         "o tempo todo: o que vale é quem foi ouvido, não quem publicou. null se não for pesquisa\",\n"
-        '  "alerta_tema": "pesquisa-executivo | apoio | rompimento | proposta-educação | debate | visita-presidencial | impugnação | fato-eleitoral | transição | nenhum",\n'
+        '  "alerta_tema": "pesquisa-executivo | apoio | rompimento | proposta-educação | visita-presidencial | impugnação | fato-eleitoral | transição | nenhum",\n'
         '  "confianca": "alto | médio | baixo"\n'
         "}\n\n"
         "Regras de preenchimento:\n"
@@ -992,8 +993,6 @@ def classificar_com_gemini(titulo, trecho="", uf_dica=""):
         "  - tipo='agenda': compromisso de campanha do candidato (comício, caravana, visita, viagem, evento, "
         "encontro com eleitor ou categoria), incluindo o anúncio da agenda e a cobertura do que aconteceu nela\n"
         "  - tipo='pesquisa': resultado ou divulgação de pesquisa eleitoral de intenção de voto\n"
-        "  - tipo='debate': debate ou sabatina entre candidatos, tanto o anúncio (data, emissora, confirmação de "
-        "participação ou ausência) quanto a repercussão depois de realizado\n"
         "  - tipo='aliança': composição partidária mudando (coligação, federação, palanque, partido trocando de "
         "lado, racha, rompimento, negociação de chapa, definição de vice)\n"
         "  - tipo='apoio': uma pessoa, partido, entidade ou grupo declara apoio ou endossa publicamente uma "
@@ -1064,9 +1063,6 @@ def classificar_com_gemini(titulo, trecho="", uf_dica=""):
         "diga que educação será um dos temas. O alerta é sobre o que foi dito, não sobre o que será "
         "discutido;\n"
         "    · matéria de jornalista, sindicato ou especialista sobre educação sem candidato na história\n"
-        "- 'debate': debate ou sabatina entre candidatos, tanto o anúncio (data, emissora, "
-        "quem confirmou e quem recusou o convite) quanto a cobertura do que foi dito. "
-        "Vale para qualquer cargo em disputa, não só executivo\n"
         "- 'visita-presidencial': Lula, Flávio Bolsonaro ou outro presidenciável com agenda "
         "em um estado, anunciada ou já realizada. O que interessa é o presidenciável "
         "pisando no estado e com quem ele aparece; agenda institucional em Brasília, "
@@ -1879,7 +1875,6 @@ ROTULO_TEMA = {
     "apoio": "Apoio e aliança ao executivo",
     "rompimento": "Rompimento de aliança",
     "educação": "Educação na campanha",
-    "debate": "Debate e sabatina",
     "visita-presidencial": "Visita de presidenciável no estado",
     "impugnação": "Impugnação de candidatura",
     "fato-eleitoral": "Fato com impacto eleitoral",
