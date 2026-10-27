@@ -4,7 +4,8 @@ Relatório da rodada do Instagram: e-mail com os grandes números e clipping em 
 Roda no fim de `instagram.py --perfis`, com os posts que a rodada acabou de
 gravar. O e-mail traz só a contagem por tema, UF e cargo, com o PDF anexado; o
 PDF traz, por tema, UF e candidato, cada post com data, tipo, curtidas,
-comentários, resumo curto e link.
+comentários, resumo curto e link. Educação vem dividida nas categorias de
+SUBTEMAS_EDUCACAO, no e-mail e no PDF.
 
 Pedido da Jessica (04/08/2026): hoje a Michele lê a planilha e manda os links no
 canal de notícias, divididos por UF. Sem ela, ninguém tem o dia pronto.
@@ -213,6 +214,10 @@ def montar_posts(salvos: list[dict], perfis: dict[str, dict]) -> list[dict]:
             "resumo": _corte((s.get("legenda") or s.get("resumo_conteudo") or
                               s.get("resumo_legenda") or "").replace("**", "")),
             "temas": _corte(s.get("temas", ""), LIMITE_TEMAS_PALAVRAS),
+            # Sem corte: a categoria de Educação procura o termo na legenda
+            # inteira, e "tempo integral" costuma vir depois da palavra 60.
+            "texto_completo": " ".join([s.get("temas", ""), s.get("legenda") or
+                                        s.get("resumo_conteudo") or s.get("resumo_legenda") or ""]),
             "link": s.get("link", ""),
         })
     return posts
@@ -264,8 +269,29 @@ def _agrupar_por_tema(posts: list[dict]) -> tuple[dict, list[str]]:
     """Posts por tema principal, com o tema mais cheio primeiro e empate em ordem alfabética."""
     por_tema = defaultdict(list)
     for p in posts:
-        por_tema[mapear_tema_principal(p.get("temas", ""), p.get("resumo") or "")].append(p)
+        tema = mapear_tema_principal(p.get("temas", ""), p.get("resumo") or "")
+        if tema == "Educação":
+            p["subtemas_educacao"] = subtemas_educacao(p.get("texto_completo") or p.get("resumo") or "")
+        por_tema[tema].append(p)
     return por_tema, sorted(por_tema, key=lambda t: (-len(por_tema[t]), t))
+
+
+def _blocos_educacao(do_tema: list[dict], com_vazias: bool = False) -> list[tuple[str, list[dict]]]:
+    """Posts de Educação por categoria, na ordem de SUBTEMAS_EDUCACAO.
+
+    O post que cai em duas categorias aparece nas duas; o que não cai em
+    nenhuma vai para o bloco do resto, que vem por último. `com_vazias` mantém
+    as categorias sem post, para o e-mail mostrar o zero.
+    """
+    blocos = []
+    for sub, _, _ in SUBTEMAS_EDUCACAO_COMPILADOS:
+        dele = [p for p in do_tema if sub in p.get("subtemas_educacao", [])]
+        if dele or com_vazias:
+            blocos.append((sub, dele))
+    resto = [p for p in do_tema if not p.get("subtemas_educacao")]
+    if resto:
+        blocos.append((SUBTEMA_EDUCACAO_RESTO, resto))
+    return blocos
 
 
 def _montar_pdf(posts: list[dict], num: dict, dia: str, paginas: dict) -> tuple:
@@ -369,6 +395,8 @@ def _montar_pdf(posts: list[dict], num: dict, dia: str, paginas: dict) -> tuple:
 
     # ── Sumário ───────────────────────────────────────────────────────────────
     links = {tema: pdf.add_link() for tema in temas_ordenados}
+    blocos_edu = _blocos_educacao(por_tema["Educação"]) if "Educação" in por_tema else []
+    links.update({f"Educação::{sub}": pdf.add_link() for sub, _ in blocos_edu})
     fonte(12, "B")
     pdf.set_text_color(*MARINHO)
     pdf.cell(0, 7, _latin1("Sumário"), new_x="LMARGIN", new_y="NEXT")
@@ -388,6 +416,21 @@ def _montar_pdf(posts: list[dict], num: dict, dia: str, paginas: dict) -> tuple:
         pdf.set_text_color(*MARINHO)
         pdf.cell(18, 7.5, _latin1(f"p. {paginas[tema]}") if tema in paginas else "",
                  align="R", link=links[tema], new_x="LMARGIN", new_y="NEXT")
+        if tema != "Educação":
+            continue
+        # Categorias de Educação logo abaixo dela, recuadas e sem fio.
+        for sub, dele in blocos_edu:
+            chave = f"Educação::{sub}"
+            pdf.set_x(MARGEM + 6)
+            fonte(8.5)
+            pdf.set_text_color(*TINTA)
+            pdf.cell(largura - 46, 6, _latin1(sub), link=links[chave])
+            pdf.set_text_color(*SUBTEXTO)
+            pdf.cell(22, 6, f"{len(dele)} {'post' if len(dele) == 1 else 'posts'}", align="R")
+            pdf.set_text_color(*MARINHO)
+            pdf.cell(18, 6, _latin1(f"p. {paginas[chave]}") if chave in paginas else "",
+                     align="R", link=links[chave], new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
     pdf.line(MARGEM, pdf.get_y(), MARGEM + largura, pdf.get_y())
 
     # ── Temas, e dentro de cada um UF e candidato ─────────────────────────────
@@ -433,30 +476,14 @@ def _montar_pdf(posts: list[dict], num: dict, dia: str, paginas: dict) -> tuple:
         pdf.line(MARGEM + 1, y_ini + 0.6, MARGEM + 1, pdf.get_y() - 0.6)
         pdf.ln(3)
 
-    comeco = {}
-    for tema in temas_ordenados:
-        do_tema = por_tema[tema]
-        # Tema começa sempre em página nova: impresso, cada pauta fica separada.
-        pdf.add_page()
-        comeco[tema] = pdf.page_no()
-        pdf.set_link(links[tema], y=pdf.get_y(), page=pdf.page_no())
-        pdf.start_section(_latin1(f"{tema[:80]} ({len(do_tema)})"))
-        fonte(17, "B")
-        pdf.set_text_color(*MARINHO)
-        pdf.multi_cell(largura, 8, _latin1(tema[:80]), new_x="LMARGIN", new_y="NEXT")
-        fonte(9, "SB")
-        pdf.set_text_color(*SUBTEXTO)
-        n_cand = len({p["candidato"] for p in do_tema})
-        pdf.cell(0, 5, _latin1(
-            f"{len(do_tema)} {'post' if len(do_tema) == 1 else 'posts'} de "
-            f"{n_cand} {'candidato' if n_cand == 1 else 'candidatos'}"),
-            new_x="LMARGIN", new_y="NEXT")
-        pdf.set_fill_color(*VINHO)
-        pdf.rect(MARGEM, pdf.get_y() + 2, 18, 1, style="F")
-        pdf.ln(7)
+    def _de_candidatos(lista) -> str:
+        n_cand = len({p["candidato"] for p in lista})
+        return (f"{len(lista)} {'post' if len(lista) == 1 else 'posts'} de "
+                f"{n_cand} {'candidato' if n_cand == 1 else 'candidatos'}")
 
+    def desenhar_por_uf(lista):
         agrupado_uf = defaultdict(lambda: defaultdict(list))
-        for p in do_tema:
+        for p in lista:
             agrupado_uf[p["uf"]][p["candidato"]].append(p)
 
         for uf in sorted(agrupado_uf, key=lambda u: (not eh_uf(u), u)):
@@ -495,6 +522,46 @@ def _montar_pdf(posts: list[dict], num: dict, dia: str, paginas: dict) -> tuple:
                         pdf.add_page()
                     desenhar_post(p)
                 pdf.ln(2)
+
+    comeco = {}
+    for tema in temas_ordenados:
+        do_tema = por_tema[tema]
+        # Tema começa sempre em página nova: impresso, cada pauta fica separada.
+        pdf.add_page()
+        comeco[tema] = pdf.page_no()
+        pdf.set_link(links[tema], y=pdf.get_y(), page=pdf.page_no())
+        pdf.start_section(_latin1(f"{tema[:80]} ({len(do_tema)})"))
+        fonte(17, "B")
+        pdf.set_text_color(*MARINHO)
+        pdf.multi_cell(largura, 8, _latin1(tema[:80]), new_x="LMARGIN", new_y="NEXT")
+        fonte(9, "SB")
+        pdf.set_text_color(*SUBTEXTO)
+        pdf.cell(0, 5, _latin1(_de_candidatos(do_tema)), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_fill_color(*VINHO)
+        pdf.rect(MARGEM, pdf.get_y() + 2, 18, 1, style="F")
+        pdf.ln(7)
+
+        if tema != "Educação":
+            desenhar_por_uf(do_tema)
+            continue
+        for n_bloco, (sub, dele) in enumerate(blocos_edu):
+            # Título da categoria, UF, candidato e primeiro post andam juntos.
+            if n_bloco and not cabe(14 + 10 + 11 + altura_post(dele[0])):
+                pdf.add_page()
+            elif n_bloco:
+                pdf.ln(4)
+            chave = f"Educação::{sub}"
+            comeco[chave] = pdf.page_no()
+            pdf.set_link(links[chave], y=pdf.get_y(), page=pdf.page_no())
+            pdf.start_section(_latin1(f"{sub} ({len(dele)})"), level=1)
+            fonte(13, "B")
+            pdf.set_text_color(*MARINHO)
+            pdf.multi_cell(largura, 6.5, _latin1(sub), new_x="LMARGIN", new_y="NEXT")
+            fonte(8.5, "SB")
+            pdf.set_text_color(*SUBTEXTO)
+            pdf.cell(0, 4.5, _latin1(_de_candidatos(dele)), new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(3)
+            desenhar_por_uf(dele)
 
     return pdf, comeco
 
@@ -885,6 +952,65 @@ def mapear_tema_principal(temas_str: str, legenda_str: str,
     return tema
 
 
+# Categorias dentro de Educação, pedidas pela Jessica e pela Marcela em
+# 27/10/2026. Valem só para post que já é de Educação: fora dele, quem cita
+# "escola em tempo integral" é lista de bandeiras ("saúde, segurança, escola em
+# tempo integral, emprego"), não post sobre o assunto. Mesmo formato de
+# TEMAS_MAPEAMENTO; aqui não há pontuação, basta um termo forte para entrar.
+# Termo FRACO só conta junto de outro termo da mesma categoria.
+SUBTEMAS_EDUCACAO = [
+    ("Tempo integral",
+     [],
+     # "integral" solto pega saúde integral e proteção integral.
+     ["tempo integral", "periodo integral", "educacao integral",
+      "ensino integral", "ensino medio integral", "escola integral",
+      "escolas integrais", "jornada ampliada"],
+     [],
+     []),
+
+    ("Educação profissional e tecnológica (EPT)",
+     [],
+     ["ensino tecnico", "ensino medio tecnico", "educacao tecnica",
+      "educacao profissional", "educacao profissional e tecnologica", "ept",
+      "curso tecnico", "cursos tecnicos", "escola tecnica", "escolas tecnicas",
+      "formacao tecnica", "ensino profissionalizante",
+      "ensino medio profissionalizante", "escola profissionalizante",
+      "escolas profissionalizantes", "instituto federal", "institutos federais",
+      "cefet", "etec", "etecs", "pronatec"],
+     # Curso profissionalizante e Sistema S aparecem muito em post de emprego.
+     ["profissionalizante", "profissionalizantes", "senai", "senac",
+      "qualificacao profissional"],
+     []),
+
+    ("Escolas cívico-militares",
+     ["militarizac", "militarizad"],
+     ["civico-militar", "civico-militares", "escola militar",
+      "escolas militares", "colegio militar", "colegios militares",
+      "colegio da policia militar", "colegios da policia militar",
+      "colegio tiradentes", "pecim"],
+     [],
+     # Desfile de 7 de setembro e de aniversário de cidade.
+     ["desfile civico", "desfiles civicos"]),
+]
+
+SUBTEMA_EDUCACAO_RESTO = "Outros assuntos de educação"
+SUBTEMAS_EDUCACAO_COMPILADOS = _compilar(SUBTEMAS_EDUCACAO)
+_FRACOS_SUBTEMA = {sub: set(fracos) for sub, _, _, fracos, _ in SUBTEMAS_EDUCACAO}
+
+
+def subtemas_educacao(texto: str) -> list[str]:
+    """Categorias de Educação que o post cita, na ordem de SUBTEMAS_EDUCACAO."""
+    texto = _normalizar(texto)
+    achadas = []
+    for sub, termos, antipalavras in SUBTEMAS_EDUCACAO_COMPILADOS:
+        _, achados = _pontuar(texto, termos, antipalavras)
+        fortes = [t for t in achados if t not in _FRACOS_SUBTEMA[sub]]
+        if fortes or len(achados) >= 2:
+            achadas.append(sub)
+    return achadas
+
+
+
 # ─── E-mail ───────────────────────────────────────────────────────────────────
 
 def html_email(posts: list[dict], num: dict, dia: str, nome_pdf: str,
@@ -927,13 +1053,16 @@ def html_email(posts: list[dict], num: dict, dia: str, nome_pdf: str,
                    f"(<b>{L.esc(nome_pdf)}</b>).")
     corpo += L.secao("Por tema")
     corpo += _tabela([(t, len(por_tema[t])) for t in temas_ordenados])
+    if "Educação" in por_tema:
+        corpo += L.secao("Educação por categoria")
+        corpo += _tabela([(sub, len(dele)) for sub, dele in _blocos_educacao(por_tema["Educação"], com_vazias=True)])
     grupos = num.get("por_uf") or Counter(p["uf"] for p in posts)
     corpo += L.secao("Por UF")
     corpo += _tabela(_mais(grupos), colunas=3)
     cargos = num.get("por_cargo") or Counter(p["cargo"] for p in posts)
     corpo += L.secao("Por cargo")
     corpo += _tabela(_mais(cargos))
-    # Três seções curtas não pedem sumário: a pagina() monta um sempre que acha
+    # Quatro seções curtas não pedem sumário: a pagina() monta um sempre que acha
     # duas ou mais, pelo comentário que secao() deixa.
     corpo = re.sub(r"<!--secao:.*?-->", "", corpo)
 

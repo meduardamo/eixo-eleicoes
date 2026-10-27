@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "outros"))
 
-from instagram_relatorio import mapear_tema_principal  # noqa: E402
+from instagram_relatorio import mapear_tema_principal, subtemas_educacao  # noqa: E402
 
 
 def tema(tags="", legenda=""):
@@ -130,3 +130,30 @@ def test_detalhar_devolve_a_evidencia():
     assert tema_achado == "Saúde"
     assert pontos > 0
     assert "hospital" in termos
+
+
+# ── Categorias dentro de Educação (27/10/2026) ───────────────────────────────
+
+TI, EPT, CM = ("Tempo integral", "Educação profissional e tecnológica (EPT)",
+               "Escolas cívico-militares")
+
+
+def test_categorias_de_educacao_saem_de_tags_reais():
+    assert subtemas_educacao("* educacao * escola em tempo integral * creche") == [TI]
+    assert subtemas_educacao("educacao tecnica; ensino profissionalizante; trilhas de futuro") == [EPT]
+    assert subtemas_educacao("* educacao * escolas civico-militares * juventude") == [CM]
+    assert subtemas_educacao("ampliacao do ensino em tempo integral, do ensino tecnico "
+                             "e das escolas civico-militares") == [TI, EPT, CM]
+
+
+def test_desfile_civico_militar_nao_e_escola():
+    assert subtemas_educacao("* 7 de setembro * desfile cívico-militar * campanha") == []
+
+
+def test_integral_solto_nao_e_tempo_integral():
+    assert subtemas_educacao("saúde integral da mulher e proteção integral da criança") == []
+
+
+def test_curso_profissionalizante_sozinho_nao_e_ept():
+    assert subtemas_educacao("cursos profissionalizantes para quem busca emprego") == []
+    assert subtemas_educacao("parceria com Senai e Senac nos cursos profissionalizantes") == [EPT]

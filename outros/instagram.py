@@ -139,6 +139,11 @@ def obter_nome_aba_mensal() -> str:
 SPREADSHEET_ID_PERFIS = os.getenv("SPREADSHEET_ID_PERFIS", "1piO-m19orW1i-Z-6rNeWdXnEAWqw5wneiDpdHZqOa6Y")
 ABA_PERFIS = os.getenv("ABA_PERFIS", "Instagram")
 COLUNA_PERFIS = os.getenv("COLUNA_PERFIS", "B")
+# Depois do 2º turno (27/10/2026) a coleta segue só para quem foi eleito, pela
+# coluna Situação da aba de perfis. Linha sem situação de eleito fica de fora e
+# o log diz quem; aba sem a coluna coleta todo mundo, como antes.
+COLUNA_SITUACAO = "Situação"
+SITUACOES_COLETADAS = {"eleito", "eleita", "reeleito", "reeleita"}
 ABA_RESULTADOS_PERFIS = os.getenv("ABA_RESULTADOS_PERFIS") or obter_nome_aba_mensal()
 # "Candidato" desde 05/08/2026: com o registro no TSE feito, pré-candidato
 # deixou de ser o termo certo. A leitura aceita os dois nomes (COLUNA_CANDIDATO)
@@ -646,28 +651,53 @@ def obter_perfis_instagram(
     Usa a API do Sheets diretamente (em vez do gspread) porque os links estão
     como hyperlink da célula (Inserir > Link), não como texto simples nem
     fórmula HYPERLINK() — o gspread só devolve o texto exibido.
+
+    Com a coluna COLUNA_SITUACAO na aba, só volta quem está em
+    SITUACOES_COLETADAS.
     """
     service = build_google_service("sheets", "v4", credentials=carregar_credenciais_google())
     resp = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
-        ranges=[f"'{aba}'!{coluna}2:{coluna}"],
+        ranges=[f"'{aba}'!A1:ZZ"],
         fields="sheets.data.rowData.values(formattedValue,hyperlink)",
     ).execute(num_retries=3)
 
     linhas = resp["sheets"][0]["data"][0].get("rowData", [])
+    if not linhas:
+        return []
+    cabecalho = [(c.get("formattedValue") or "").strip() for c in linhas[0].get("values", [])]
+    i_link = _indice_coluna(coluna)
+    i_situacao = cabecalho.index(COLUNA_SITUACAO) if COLUNA_SITUACAO in cabecalho else -1
+
     perfis = []
-    for i, linha in enumerate(linhas, start=2):
+    fora = []
+    for i, linha in enumerate(linhas[1:], start=2):
         valores = linha.get("values", [])
-        if not valores:
+        if len(valores) <= i_link:
             continue
-        celula = valores[0]
+        celula = valores[i_link]
         nome = (celula.get("formattedValue") or "").strip()
         link = celula.get("hyperlink")
         if not nome or not link or "instagram.com" not in link:
             continue
+        if i_situacao >= 0:
+            situacao = (valores[i_situacao].get("formattedValue") or "").strip() if len(valores) > i_situacao else ""
+            if situacao.lower() not in SITUACOES_COLETADAS:
+                fora.append(f"{nome} ({situacao or 'sem situação'})")
+                continue
         perfis.append({"linha": i, "nome": nome, "url": limpar_url_instagram(link)})
 
+    if fora:
+        print(f"{len(fora)} perfil(is) fora da coleta pela coluna {COLUNA_SITUACAO}: {', '.join(fora)}.")
     return perfis
+
+
+def _indice_coluna(letra: str) -> int:
+    """'A' vira 0, 'B' vira 1, 'AA' vira 26."""
+    indice = 0
+    for c in letra.strip().upper():
+        indice = indice * 26 + ord(c) - ord("A") + 1
+    return indice - 1
 
 
 def obter_ids_processados(aba: gspread.Worksheet) -> set[str]:
