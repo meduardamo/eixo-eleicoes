@@ -169,3 +169,44 @@ def test_professora_no_nome_de_urna_nao_e_educacao():
 def test_professores_continuam_sendo_educacao():
     assert tema("Valorização dos professores; Piso salarial", "") == "Educação"
     assert tema("", "Reajuste para a professora da rede estadual") == "Educação"
+
+
+def test_desfile_civico_militar_nao_vai_para_educacao():
+    assert tema("7 de Setembro; Independência do Brasil; Desfile Cívico-Militar; "
+                "Eleições / Campanha Eleitoral; Mato Grosso") != "Educação"
+
+
+def test_vocabulario_que_nao_e_educacao():
+    # Casos lidos um a um na revisão de 27/10/2026.
+    assert tema("Família; Dia dos Pais", "meu pai me ensinou a viver com ética") != "Educação"
+    assert tema("Religião; Fé", "o direito de cada um professar sua fé") != "Educação"
+    assert tema("Trajetória política; movimento estudantil; democracia") != "Educação"
+    assert tema("Caminhada de rua; bairro Universitário; Alan Rick") != "Educação"
+    assert tema("Agenda de campanha; quadra da escola de samba Vitória Régia") != "Educação"
+
+
+def test_educacao_com_tags_precisa_de_termo_nas_tags():
+    assert tema("Propaganda eleitoral; Mato Grosso; Renovação política",
+                "mudar a saúde, a educação e a segurança") != "Educação"
+    # Sem tags (antes da análise do Gemini), a legenda decide.
+    assert tema("", "boa notícia para a educação do DF! nomeados 2.681 novos professores") == "Educação"
+
+
+def test_lista_de_bandeiras_vai_para_campanha():
+    assert tema("Eleições; Saúde pública; Educação; Segurança pública; Infraestrutura (BR-319); "
+                "Agradecimento de votos") == "Atos de Campanha e Propaganda"
+
+
+def test_categoria_de_educacao_nas_tags_puxa_para_educacao():
+    assert tema("Eleições estaduais (Ceará); Educação pública e tempo integral; Saúde e hospitais "
+                "regionais; Geração de emprego e atração de indústrias") == "Educação"
+
+
+def test_homenagem_de_dia_dos_pais_nao_e_educacao():
+    assert tema("Paternidade; Dia dos Pais; Família; Gratidão; Educação; Trabalho") != "Educação"
+    assert tema("Dia dos Pais; Família; Valores Familiares; Educação dos Filhos") != "Educação"
+    assert tema("Dia dos Pais; Escola em tempo integral; Governo do Ceará") == "Educação"
+
+
+def test_educacao_financeira_nao_e_educacao():
+    assert tema("Valores familiares; Educação financeira; Poupança; Resiliência") != "Educação"

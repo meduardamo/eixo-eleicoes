@@ -724,15 +724,34 @@ TEMAS_MAPEAMENTO = [
       "saudamos", "saudoso", "saudosa", "hospitalidade", "hospitaleiro",
       "hospitaleira"]),
 
+    # Revisão de 27/10/2026, lendo um a um os posts que entravam aqui com pouca
+    # evidência: "ensin" pegava "me ensinou" e "ensinamentos" (vira "ensino");
+    # "educacao" saiu dos exatos porque o radical "educac" já a pega e a
+    # palavra contava duas vezes, o que punha em Educação qualquer lista de
+    # bandeiras; os termos das categorias (cívico-militar, instituto federal)
+    # entraram; as antipalavras são o que se viu nos posts errados.
     ("Educação",
-     ["educac", "profess", "alun", "ensin", "universi", "estudant", "matricul",
+     ["educac", "profess", "alun", "ensino", "universi", "estudant", "matricul",
       "creche", "analfabet"],
      ["escola", "escolas", "escolar", "escolares", "fundeb", "enem", "aula",
-      "aulas", "merenda", "merenda escolar", "tempo integral", "educacao",
+      "aulas", "merenda", "merenda escolar", "tempo integral",
       "faculdade", "bolsa de estudo", "bolsas de estudo", "vestibular",
-      "alfabetizacao"],
+      "alfabetizacao", "civico-militar", "civico-militares",
+      "colegio militar", "colegios militares", "instituto federal",
+      "institutos federais", "cefet", "etec", "etecs", "pronatec"],
      [],
-     []),
+     ["professar", "professa", "professam", "professamos", "professando",
+      "professem", "professo", "movimento estudantil", "manifestacao estudantil",
+      "lideranca estudantil", "e estudantil", "bairro universitario",
+      "cidade universitaria", "setor universitario", "conjunto universitario",
+      "ensino biblico", "escola de samba", "escolas de samba", "clinica-escola",
+      "clinica escola", "escola de fe", "escola judiciaria", "sala de aula da vida",
+      "aula de zumba", "aula de danca", "desfile civico", "desfiles civicos",
+      # "educação" como valor pessoal, não como política.
+      "educacao financeira", "educacao politica", "educacao dos filhos",
+      "educacao pelo exemplo", "educacao de homens", "educacao masculina",
+      "educacao informal", "educacao/ensinamentos", "educacao e ensinamentos",
+      "educacao/aprendizado", "educacao (metafora)"]),
 
     ("Segurança Pública",
      ["seguranc", "polic", "violen", "crimin", "delegac", "penitenciar",
@@ -911,9 +930,32 @@ def _pontuar(texto: str, termos: list, antipalavras: tuple) -> tuple[float, list
     return total, achados
 
 
-def _melhor_tema(tabela: list[tuple], tags: str, legenda: str) -> tuple:
-    """(pontos, tema, termos) do tema mais pontuado da tabela."""
-    melhor = (0.0, None, [])
+# Temas que, com a coluna Temas preenchida, só ganham o post se tiverem termo
+# nela. Na revisão de 27/10/2026, dos 162 posts de Educação achados só pela
+# legenda, os 14 que eram educação de verdade tinham a coluna Temas vazia (o
+# Gemini ainda não tinha passado); os outros eram "me ensinou", "professar a
+# fé", "escola de samba" e lista de bandeiras ("mais saúde, educação e
+# segurança"). Sem tags, a legenda continua decidindo.
+TEMAS_SO_COM_TAG = {"Educação"}
+
+# Homenagem de Dia dos Pais em que o Gemini pôs "Educação" entre os valores
+# ("Paternidade; Família; Gratidão; Educação; Trabalho"). Só derruba quando o
+# único termo de Educação nas tags é o genérico "educac": "Dia dos Pais;
+# Escola em tempo integral" continua em Educação.
+MARCAS_DE_HOMENAGEM = ("dia dos pais", "dia das maes", "paternidade")
+
+# Quatro ou mais temas de pauta empatados no topo é lista de bandeiras ("Saúde
+# pública; Educação; Segurança pública; Infraestrutura"), não post sobre um
+# deles. Vai para o residual, se houver; sem residual fica o primeiro da ordem.
+# Com três, o corte pegava post focado cujo vocabulário cai em três temas
+# ("Abastecimento de água; Saneamento; Tarifas"): 712 posts mudavam de
+# agosto a outubro, contra 214 com quatro, todos lista na leitura.
+EMPATE_LISTA_DE_BANDEIRAS = 4
+
+
+def _pontos_por_tema(tabela: list[tuple], tags: str, legenda: str) -> list[tuple]:
+    """(pontos, tema, termos) de cada tema da tabela, na ordem dela."""
+    pontuados = []
     for tema, termos, antipalavras in tabela:
         p_tag, t_tag = _pontuar(tags, termos, antipalavras)
         _, t_leg = _pontuar(legenda, termos, antipalavras)
@@ -921,9 +963,22 @@ def _melhor_tema(tabela: list[tuple], tags: str, legenda: str) -> tuple:
         pontos = p_tag * PESO_TAG + PESO_LEGENDA * sum(
             peso for _, termo, peso in termos
             if termo in t_leg and termo not in t_tag)
+        if tema in TEMAS_SO_COM_TAG and tags.strip() and not t_tag:
+            pontos = 0.0
+        if (tema == "Educação" and t_tag == ["educac"]
+                and any(m in tags for m in MARCAS_DE_HOMENAGEM)):
+            pontos = 0.0
         pontos *= PESO_TEMA.get(tema, 1.0)
-        if pontos > melhor[0]:
-            melhor = (pontos, tema, sorted(set(t_tag + t_leg)))
+        pontuados.append((pontos, tema, sorted(set(t_tag + t_leg))))
+    return pontuados
+
+
+def _melhor_tema(tabela: list[tuple], tags: str, legenda: str) -> tuple:
+    """(pontos, tema, termos) do tema mais pontuado da tabela."""
+    melhor = (0.0, None, [])
+    for pontuado in _pontos_por_tema(tabela, tags, legenda):
+        if pontuado[0] > melhor[0]:
+            melhor = pontuado
     return melhor
 
 
@@ -958,13 +1013,26 @@ def mapear_tema_principal(temas_str: str, legenda_str: str,
         tags = tags.replace(frase, " ")
         legenda = legenda.replace(frase, " ")
 
-    melhor = _melhor_tema(PAUTAS_COMPILADAS, tags, legenda)
-    if melhor[0] < LIMIAR_PAUTA:
+    pontuados = _pontos_por_tema(PAUTAS_COMPILADAS, tags, legenda)
+    melhor = (0.0, None, [])
+    for pontuado in pontuados:
+        if pontuado[0] > melhor[0]:
+            melhor = pontuado
+    empatados = [p for p in pontuados if melhor[0] > 0 and abs(p[0] - melhor[0]) < 1e-9]
+    lista_de_bandeiras = len(empatados) >= EMPATE_LISTA_DE_BANDEIRAS
+    if melhor[0] < LIMIAR_PAUTA or lista_de_bandeiras:
         residual = _melhor_tema(RESIDUAIS_COMPILADOS, tags, legenda)
         if residual[0] > 0:
             melhor = residual
 
     tema = melhor[1] or FALLBACK_TEMA
+    # Categoria de Educação nas tags leva o post para Educação, como tema
+    # estreito que é (ver PESO_TEMA): "Educação pública e tempo integral" num
+    # post que também fala de emprego e hospital é post de tempo integral para
+    # quem acompanha a pauta. Só nas tags, que é o Gemini dizendo do que o post
+    # trata; na legenda o termo aparece de passagem em lista de bandeiras.
+    if tema != "Educação" and subtemas_educacao(temas_str):
+        tema, melhor = "Educação", (melhor[0], "Educação", melhor[2])
     if detalhar:
         return tema, round(melhor[0], 2), melhor[2]
     return tema
