@@ -161,3 +161,11 @@ class TestColunasProcessarPlanos(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestChaveComDescricao(unittest.TestCase):
+    def test_chave_com_comeco_da_descricao(self):
+        """27/10/2026: o modelo devolveu 'EJA: educação de jovens e adultos'."""
+        data = {"EJA: educação de jovens e adultos": {"nivel": "Propõe ação", "trecho": "x"}}
+        out = ap._achatar_por_tema(data, {"EJA": "educação de jovens e adultos"})
+        self.assertEqual(out["eja"]["nivel"], "Propõe ação")

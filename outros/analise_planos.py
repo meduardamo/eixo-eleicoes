@@ -2972,6 +2972,13 @@ def _achatar_por_tema(data: dict, temas: dict) -> dict:
             if not isinstance(v, dict):
                 continue
             ck = _chave(k)
+            # Chave que traz o começo da descrição colado no nome. Em 27/10/2026,
+            # na rodada só de EJA, 14 dos 213 planos voltaram com
+            # 'EJA: educação de jovens e adultos': o prompt lista "- tema:
+            # descrição" e, com nome curto, o modelo leu o começo da descrição
+            # como parte do nome.
+            if ck not in esperados and ":" in ck:
+                ck = ck.split(":", 1)[0].strip()
             if ck in esperados and tem_nivel(v):
                 achatado.setdefault(ck, normaliza(v))
             else:
