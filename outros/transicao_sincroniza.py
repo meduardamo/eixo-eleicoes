@@ -188,13 +188,14 @@ def secretariado(planilha) -> list:
         if not (novo or exon or outubro):
             continue
         nome, situacao = _situacao_do_nome(novo) if novo else ("", "")
-        fonte, link_fonte = _campo(d, "fonte oficial")
         nomeacao, link_nom = _campo(d, "decreto/ato de nomeacao")
         if nome and nomeacao:
             situacao = "Nomeado"
         saida.append([uf, _campo(d, "secretaria de estado")[0], _campo(d, "cargo oficial")[0],
                       _campo(d, "ocupante do cargo set")[0], outubro, exon, nome, situacao,
-                      nomeacao, _link(nomeacao, link_nom) or _link(fonte, link_fonte)])
+                      # só o link do ato: a fonte oficial da linha é a página do
+                      # titular de hoje, não a origem do nome para 2027
+                      nomeacao, _link(nomeacao, link_nom)])
     for d in _por_nome(ler_com_links(planilha, "Ministros")):
         novo = _campo(d, "ocupante do cargo 2027")[0]
         ato, link = _campo(d, "decreto/ato")
