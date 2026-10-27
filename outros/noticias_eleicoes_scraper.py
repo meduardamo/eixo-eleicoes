@@ -25,7 +25,8 @@ de pastas passou de duas para doze (PASTAS_TRANSICAO). No mesmo dia o tipo "tran
 passou a valer para todas as secretarias estaduais (fica na planilha e no
 painel), e o alerta por email continua só nas doze. Em 27/10/2026, com Lula
 reeleito, entrou o governo federal (BUSCAS_TRANSICAO_FEDERAL): ministro que sai,
-fica ou é cotado e reforma ministerial. O tipo vale para todo ministério; o
+fica ou é cotado, reforma ministerial e, na terceira busca, secretário-executivo,
+secretário nacional, FNDE e Inep. O tipo vale para todo ministério; o
 alerta vale para os ministérios das doze pastas somados à lista do monitor do
 DOU (MINISTERIOS_TRANSICAO e UNIDADES_TRANSICAO_FEDERAL) e ao desenho
 ministerial.
@@ -295,10 +296,20 @@ TERMOS_TRANSICAO = ('("equipe de transição" OR secretariado '
 # Transição federal (27/10/2026): Lula reeleito, sem troca de governo, mas com
 # reforma ministerial. Duas buscas nacionais; testadas em 27/10, trazem ministro
 # cotado para a Fazenda, nova Esplanada e ministro que fica. A UF fica vazia.
+# A terceira pega o escalão de baixo do ministro (secretário-executivo,
+# secretário nacional, FNDE e Inep) nos ministérios da lista do DOU; sem ela,
+# troca de secretário nacional só entrava se a notícia falasse em ministro. O
+# gov.br sai porque é agenda de rotina, e o ato oficial já vem pelo monitor do DOU.
 BUSCAS_TRANSICAO_FEDERAL = [
     'Lula ("reforma ministerial" OR "novo ministro" OR "nova ministra" '
     'OR "deixa o ministério" OR "cotado para o ministério" OR "segundo mandato")',
     '("Lula 4" OR "quarto mandato") (ministério OR Esplanada OR ministro OR ministra)',
+    '("Ministério da Educação" OR MEC OR "Ministério da Saúde" '
+    'OR "Ministério do Desenvolvimento Social" OR "Ministério das Mulheres" '
+    'OR "Ministério do Esporte" OR "Ministério do Trabalho") '
+    '("secretário nacional" OR "secretária nacional" OR "secretário-executivo" '
+    'OR "secretária-executiva" OR "presidente do FNDE" OR "presidente do Inep") '
+    '(nomeado OR nomeada OR deixa OR exonerado OR exonerada OR assume) -site:gov.br',
 ]
 
 # Pauta local que já virou ativo da disputa em um estado e não sai por termo
@@ -692,7 +703,7 @@ _RE_PASTA_FEDERAL = re.compile(
     rf"(?:{_AREAS_FEDERAL})\b"
     r"|\bcasa civil\b|\b(?:mec|mds|fnde|inep|senarc|snas|saps)\b"
     r"|educacao basica|educacao profissional e tecnologica|primeira infancia"
-    r"|esporte amador|politica de cuidados|cadastro unico|renda de cidadania"
+    r"|esporte amador|politica de cuidados|cadastro unico|renda de cidadania|nacional de assistencia social"
     r"|atencao primaria|autonomia economica")
 _RE_DESENHO_MINISTERIAL = re.compile(
     r"reforma\s+ministerial|\b14\.?600\b"
@@ -968,7 +979,8 @@ def classificar_com_gemini(titulo, trecho=""):
         "confirmado, convidado ou cotado para uma secretaria, secretário que sai ou que "
         "fica, equipe de transição e quem a integra, cronograma da transição, fusão, "
         "divisão ou criação de secretaria. Vale também para o governo federal no "
-        "novo mandato de Lula, reeleito: ministro que sai ou fica, nome anunciado, "
+        "novo mandato de Lula, reeleito: ministro, secretário-executivo, secretário "
+        "nacional ou presidente de autarquia que sai, fica ou é nomeado, nome anunciado, "
         "convidado ou cotado para ministério, reforma ministerial, criação, fusão ou "
         "extinção de ministério; nesse caso uf é null. O tipo vale para todas as pastas; o "
         "alerta_tema 'transição' é mais estrito (ver abaixo)\n"
