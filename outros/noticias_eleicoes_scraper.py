@@ -1829,8 +1829,22 @@ ROTULO_TEMA = {
     "visita-presidencial": "Visita de presidenciável no estado",
     "impugnação": "Impugnação de candidatura",
     "fato-eleitoral": "Fato com impacto eleitoral",
-    "transição": "Transição de governo (estados e governo federal)",
+    "transição-federal": "Transição de governo · Gov. Federal",
+    "transição-subnacional": "Transição de governo · Subnacional",
 }
+
+
+def _secao_email(a) -> str:
+    """Seção do email: o tema, e na transição também o escopo.
+
+    Transição federal e estadual chegam para pessoas diferentes do time, então
+    saem em seções separadas, com o mesmo escopo do cabeçalho (_header_alerta):
+    com UF é subnacional, sem UF é o governo federal.
+    """
+    tema = a.get("alerta_tema", "")
+    if tema == "transição":
+        return "transição-subnacional" if _uf_relevante(a) else "transição-federal"
+    return tema
 
 PAINEL_URL = os.getenv("PAINEL_NOTICIAS_URL",
                        "https://painel-eixo.streamlit.app/Notícias")
@@ -1859,7 +1873,7 @@ def _html_alertas(alertas, agora):
     from compartilhado import email_layout as L
     por_tema = {}
     for a in alertas:
-        por_tema.setdefault(a.get("alerta_tema", ""), []).append(a)
+        por_tema.setdefault(_secao_email(a), []).append(a)
     corpo = L.nota("O texto pronto para WhatsApp de cada alerta está no botão de "
                    "envelope do painel interno. Confira a fonte antes de disparar.")
     for tema in ROTULO_TEMA:
