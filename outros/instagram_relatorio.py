@@ -944,6 +944,15 @@ TEMAS_SO_COM_TAG = {"Educação"}
 # Escola em tempo integral" continua em Educação.
 MARCAS_DE_HOMENAGEM = ("dia dos pais", "dia das maes", "paternidade")
 
+# Obra de escola ou creche é Educação quando a disputa do post é só entre
+# Educação e Infraestrutura e a diferença é de no máximo um termo nas tags
+# ("Educação infantil; obras públicas; infraestrutura; creche"): "obra" e
+# "infraestrutura" são palavras genéricas e somavam mais. Lista de obras fica em
+# Infraestrutura, seja por ter um terceiro tema (hospital), seja pela distância
+# ("pavimentação, estradas, pontes e reforma de escolas"). De agosto a outubro
+# de 2026, 3 posts.
+TERMOS_DE_ESCOLA = {"escola", "escolas", "escolar", "escolares", "creche"}
+
 # Quatro ou mais temas de pauta empatados no topo é lista de bandeiras ("Saúde
 # pública; Educação; Segurança pública; Infraestrutura"), não post sobre um
 # deles. Vai para o residual, se houver; sem residual fica o primeiro da ordem.
@@ -1026,6 +1035,14 @@ def mapear_tema_principal(temas_str: str, legenda_str: str,
             melhor = residual
 
     tema = melhor[1] or FALLBACK_TEMA
+    if tema == "Infraestrutura e Obras":
+        com_pauta = {t for p, t, _ in pontuados if p >= LIMIAR_PAUTA}
+        educacao = next(x for x in PAUTAS_COMPILADAS if x[0] == "Educação")
+        _, na_tag = _pontuar(tags, educacao[1], educacao[2])
+        edu = next(p for p in pontuados if p[1] == "Educação")
+        if (com_pauta == {"Educação", "Infraestrutura e Obras"} and TERMOS_DE_ESCOLA & set(na_tag)
+                and melhor[0] - edu[0] <= PESO_TAG):
+            tema, melhor = "Educação", edu
     # Categoria de Educação nas tags leva o post para Educação, como tema
     # estreito que é (ver PESO_TEMA): "Educação pública e tempo integral" num
     # post que também fala de emprego e hospital é post de tempo integral para

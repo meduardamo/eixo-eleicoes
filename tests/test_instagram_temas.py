@@ -210,3 +210,15 @@ def test_homenagem_de_dia_dos_pais_nao_e_educacao():
 
 def test_educacao_financeira_nao_e_educacao():
     assert tema("Valores familiares; Educação financeira; Poupança; Resiliência") != "Educação"
+
+
+def test_obra_de_creche_e_educacao_lista_de_obras_e_infraestrutura():
+    assert tema("Educação infantil; obras públicas; infraestrutura; Riacho das Almas; creche; "
+                "Governo de Pernambuco.") == "Educação"
+    assert tema("Infraestrutura e Obras Públicas (rodovias e pontes); Saúde pública (hospitais "
+                "regionais); Educação (escolas)") == "Infraestrutura e Obras"
+
+
+def test_reforma_de_escola_em_lista_de_obras_fica_em_infraestrutura():
+    assert tema("Infraestrutura; Obras paradas; Pavimentação de rodovias; Pontes de concreto; "
+                "Educação; Reforma de escolas") == "Infraestrutura e Obras"
