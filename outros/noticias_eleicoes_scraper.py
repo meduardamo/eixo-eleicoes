@@ -770,6 +770,7 @@ def aplicar_regra_alerta(dados, texto: str = "", titulo: str = "") -> dict:
     permissivos e só caem quando o cargo é claramente de legislativo. É a regra do
     time: na dúvida entre alertar e não alertar, alerta.
     """
+    dados.setdefault("titulo", titulo)   # _uf_relevante olha o título na transição
     tema = normalize_tema(dados.get("alerta_tema"))
     cargo = str(dados.get("cargo") or "").strip().lower()
     instituto = instituto_prioritario(dados.get("instituto"))
@@ -848,10 +849,42 @@ def _cargo_do_fato(n) -> str:
     como alerta separado em MS, AP, BA, MA, SP, AC, AL, RJ e DF, todos marcados
     "Subnacional". O fato é nacional, então a régua é a de presidente.
     """
-    cand = _sem_acento(n.get("candidato") or "").lower()
-    if "flavio bolsonaro" in cand or "lula" in re.findall(r"[a-z]+", cand):
+    if _e_presidenciavel(n.get("candidato")):
         return "presidente"
     return str(n.get("cargo") or "").strip().lower()
+
+
+def _e_presidenciavel(candidato) -> bool:
+    """Lula ou Flávio Bolsonaro pelo nome inteiro: "Cadu de Lula", governador
+    eleito do RN, não é o presidente (em 27/10 virou "Gov. Federal")."""
+    cand = " ".join(re.findall(r"[a-z]+", _sem_acento(candidato or "").lower()))
+    return (cand in ("lula", "presidente lula", "luiz inacio lula da silva", "lula da silva")
+            or cand.startswith("luiz inacio") or "flavio bolsonaro" in cand)
+
+
+# Título que fala do governo federal: ministro, ministério (não o Ministério
+# Público), Esplanada, reforma ministerial, "Lula 4". Transição com esse título é
+# federal mesmo que o modelo dê a UF de quem é cotado: "Rafael Fonteles é cotado
+# para a Fazenda" saiu como PI em 26/10.
+_RE_TITULO_FEDERAL = re.compile(
+    r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
+    r"|reforma ministerial|\blula 4\b|\bquarto mandato\b|governo lula")
+
+
+def _e_transicao_federal(n) -> bool:
+    if "transição" not in (n.get("alerta_tema"), n.get("tipo")):
+        return False
+    return bool(_RE_TITULO_FEDERAL.search(_sem_acento(n.get("titulo") or "").lower()))
+
+
+def _uf_da_busca(busca) -> str:
+    """UF da busca de transição por estado ("espírito santo (\"equipe de
+    transição\" OR ...)"), que já diz de que estado é a notícia."""
+    busca = str(busca or "")
+    for uf, nome in UF_NOME.items():
+        if busca == f"{nome} {TERMOS_TRANSICAO}":
+            return uf
+    return ""
 
 
 def _uf_relevante(n) -> str:
@@ -867,7 +900,7 @@ def _uf_relevante(n) -> str:
     ali a UF fica.
     """
     uf = str(n.get("uf") or "").strip().upper()
-    if uf in ("", "NAN", "NONE", "NULL"):
+    if uf in ("", "NAN", "NONE", "NULL") or _e_transicao_federal(n):
         return ""
     cargo = _cargo_do_fato(n)
     if cargo != "presidente":
@@ -908,7 +941,7 @@ def chave_alerta(n) -> str:
     return "|".join(partes)
 
 
-def classificar_com_gemini(titulo, trecho=""):
+def classificar_com_gemini(titulo, trecho="", uf_dica=""):
     """Lê a manchete (e trecho do artigo) e extrai os campos estruturados (JSON) via Gemini."""
     contexto = f"Manchete: {titulo}"
     if trecho:
@@ -1114,6 +1147,12 @@ def classificar_com_gemini(titulo, trecho=""):
     dados["convencao"] = "sim" if dados.get("convencao") is True else "não"
     abrang = str(dados.get("abrangencia") or "").strip().lower()
     dados["abrangencia"] = abrang if abrang in ("nacional", "estadual") else ""
+    # UF que a coleta já sabe (site regional, busca de transição do estado) entra
+    # antes da regra de alerta, que usa a UF para escolher a trava estadual ou a
+    # federal. Transição com título federal fica sem UF.
+    dados["titulo"] = titulo
+    if not dados.get("uf") and uf_dica and not _e_transicao_federal(dados):
+        dados["uf"] = uf_dica
     return aplicar_regra_alerta(dados, contexto, titulo=titulo)
 
 
@@ -1122,10 +1161,10 @@ def _classificar_uma(n):
     trecho, url_real = _ler_pagina(n.get("link", ""))
     n["texto_completo"] = trecho
     n["link_real"] = url_real
-    n.update(classificar_com_gemini(n["titulo"], trecho))
-    # site regional: a UF é conhecida, preenche se o Gemini não achou
-    if not n.get("uf") and n.get("uf_regional"):
-        n["uf"] = n["uf_regional"]
+    # site regional ou busca de transição do estado: a UF é conhecida e preenche
+    # se o Gemini não achou
+    dica = n.get("uf_regional") or _uf_da_busca(n.get("busca"))
+    n.update(classificar_com_gemini(n["titulo"], trecho, uf_dica=dica))
     return n
 
 
