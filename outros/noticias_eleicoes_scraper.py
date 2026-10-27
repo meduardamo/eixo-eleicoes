@@ -388,7 +388,30 @@ def _decodificou(decoded: dict) -> bool:
     return decoded.get("status") is True or str(decoded.get("success")).lower() == "true"
 
 
-def _ler_pagina(url: str, limite: int = 6000) -> tuple[str, str]:
+# Palavras que não dizem de que trata a manchete, fora da conta de _texto_bate().
+_PALAVRAS_VAZIAS = set("""para pelo pela pelos pelas como mais entre sobre apos ate diz
+afirma sera esta estao seus suas dele dela isso essa esse este quem qual quando onde
+porque ainda depois antes contra veja saiba novo nova anos""".split())
+
+
+def _palavras_chave(texto) -> set:
+    return {p for p in re.findall(r"[a-z0-9]{4,}", _sem_acento(str(texto or "")).lower())
+            if p not in _PALAVRAS_VAZIAS}
+
+
+def _texto_bate(titulo, texto) -> bool:
+    """O texto extraído é da matéria da manchete? Em blogs (Blog do Magno, Blog do
+    BG, Acorda Cidade) a extração pega outro post da página: em 25/10 "Cadu de Lula
+    vence o segundo turno" saiu com o texto do plano de Lula e virou alerta de
+    educação. Na aba, 145 de 4.795 textos tinham menos de 20% das palavras da
+    manchete no começo, e quase todos eram outra matéria, newsletter ou horóscopo."""
+    chave = _palavras_chave(re.sub(r"\s+-\s+[^-]+$", "", str(titulo or "")))
+    if len(chave) < 3 or not texto:
+        return True
+    return len(chave & _palavras_chave(texto[:2500])) / len(chave) >= 0.2
+
+
+def _ler_pagina(url: str, limite: int = 6000, titulo: str = "") -> tuple[str, str]:
     """Devolve (texto do artigo, URL real) por trás do link do Google Notícias.
 
     O <link> do RSS (news.google.com/rss/articles/...) não é o artigo: é uma
@@ -418,7 +441,9 @@ def _ler_pagina(url: str, limite: int = 6000) -> tuple[str, str]:
         art = Article(url_real, language="pt")
         art.download()
         art.parse()
-        return (art.text or "").strip()[:limite], url_real
+        texto = (art.text or "").strip()[:limite]
+        # texto de outra matéria classifica pior que só a manchete
+        return (texto if _texto_bate(titulo, texto) else ""), url_real
     except Exception:
         return "", url_real
 
@@ -1156,7 +1181,7 @@ def classificar_com_gemini(titulo, trecho="", uf_dica=""):
 
 def _classificar_uma(n):
     """Baixa o artigo e classifica uma notícia, no lugar (dict mutado)."""
-    trecho, url_real = _ler_pagina(n.get("link", ""))
+    trecho, url_real = _ler_pagina(n.get("link", ""), titulo=n.get("titulo", ""))
     n["texto_completo"] = trecho
     n["link_real"] = url_real
     # site regional ou busca de transição do estado: a UF é conhecida e preenche
@@ -1809,7 +1834,7 @@ def reclassificar_pendentes(aba):
     print(f"{len(pendentes)} linhas pendentes de reclassificação.")
 
     def _reclassificar(p):
-        trecho, url_real = _ler_pagina(p["link"])
+        trecho, url_real = _ler_pagina(p["link"], titulo=p["titulo"])
         dados = dict(classificar_com_gemini(p["titulo"], trecho),
                      texto_completo=trecho, link_real=url_real, titulo=p["titulo"])
         # a chave de fato depende de campos que só existem depois de classificar
