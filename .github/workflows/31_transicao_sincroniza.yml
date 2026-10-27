@@ -1,0 +1,40 @@
+name: 31 - Transição (sincroniza planilha)
+
+# Junta na planilha de transição os nomes que o monitoramento levanta e as
+# notícias de transição. Roda depois de cada raspagem de notícias (06), que
+# já tem disparo externo nos horários do time, e pode ser rodado à mão.
+on:
+  workflow_run:
+    workflows: ["06 - Notícias eleições"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: transicao-sincroniza
+  cancel-in-progress: false
+
+jobs:
+  sincroniza:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências
+        run: pip install gspread google-auth
+
+      - name: Sincronizar
+        env:
+          PYTHONUNBUFFERED: "1"
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          SPREADSHEET_ID_TSE: ${{ secrets.SPREADSHEET_ID_TSE }}
+          SPREADSHEET_ID_TRANSICAO: ${{ secrets.SPREADSHEET_ID_TRANSICAO }}
+          SPREADSHEET_ID_MON_SECRETARIOS: ${{ secrets.SPREADSHEET_ID_MON_SECRETARIOS }}
+          SPREADSHEET_ID_MON_EQUIPES: ${{ secrets.SPREADSHEET_ID_MON_EQUIPES }}
+        run: python -u -m outros.transicao_sincroniza
