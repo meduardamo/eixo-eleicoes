@@ -157,3 +157,15 @@ def test_integral_solto_nao_e_tempo_integral():
 def test_curso_profissionalizante_sozinho_nao_e_ept():
     assert subtemas_educacao("cursos profissionalizantes para quem busca emprego") == []
     assert subtemas_educacao("parceria com Senai e Senac nos cursos profissionalizantes") == [EPT]
+
+
+def test_professora_no_nome_de_urna_nao_e_educacao():
+    # 27/10/2026: 13 dos 21 posts de Educação eram agradecimento eleitoral.
+    assert tema("Eleições; Tocantins; Professora Dorinha; Aliança política; Agradecimento.") != "Educação"
+    assert tema("Apoio político; Professora Maria do Carmo; Direita.") != "Educação"
+    assert tema("", "Obrigada, Tocantins! #ProfessoraDorinha") != "Educação"
+
+
+def test_professores_continuam_sendo_educacao():
+    assert tema("Valorização dos professores; Piso salarial", "") == "Educação"
+    assert tema("", "Reajuste para a professora da rede estadual") == "Educação"

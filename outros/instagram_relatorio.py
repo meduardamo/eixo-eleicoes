@@ -396,6 +396,9 @@ def _montar_pdf(posts: list[dict], num: dict, dia: str, paginas: dict) -> tuple:
     # ── Sumário ───────────────────────────────────────────────────────────────
     links = {tema: pdf.add_link() for tema in temas_ordenados}
     blocos_edu = _blocos_educacao(por_tema["Educação"]) if "Educação" in por_tema else []
+    # Só o bloco do resto: o capítulo sai sem subtítulo, que só repetiria o tema.
+    if [sub for sub, _ in blocos_edu] == [SUBTEMA_EDUCACAO_RESTO]:
+        blocos_edu = []
     links.update({f"Educação::{sub}": pdf.add_link() for sub, _ in blocos_edu})
     fonte(12, "B")
     pdf.set_text_color(*MARINHO)
@@ -418,18 +421,21 @@ def _montar_pdf(posts: list[dict], num: dict, dia: str, paginas: dict) -> tuple:
                  align="R", link=links[tema], new_x="LMARGIN", new_y="NEXT")
         if tema != "Educação":
             continue
-        # Categorias de Educação logo abaixo dela, recuadas e sem fio.
-        for sub, dele in blocos_edu:
+        # Categorias de Educação logo abaixo dela, recuadas e sem fio. As vazias
+        # entram com zero e sem página: o leitor vê que não houve post.
+        for sub, dele in _blocos_educacao(por_tema["Educação"], com_vazias=True):
+            if sub == SUBTEMA_EDUCACAO_RESTO and not blocos_edu:
+                continue
             chave = f"Educação::{sub}"
             pdf.set_x(MARGEM + 6)
             fonte(8.5)
             pdf.set_text_color(*TINTA)
-            pdf.cell(largura - 46, 6, _latin1(sub), link=links[chave])
+            pdf.cell(largura - 46, 6, _latin1(sub), link=links.get(chave, ""))
             pdf.set_text_color(*SUBTEXTO)
             pdf.cell(22, 6, f"{len(dele)} {'post' if len(dele) == 1 else 'posts'}", align="R")
             pdf.set_text_color(*MARINHO)
             pdf.cell(18, 6, _latin1(f"p. {paginas[chave]}") if chave in paginas else "",
-                     align="R", link=links[chave], new_x="LMARGIN", new_y="NEXT")
+                     align="R", link=links.get(chave, ""), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(1)
     pdf.line(MARGEM, pdf.get_y(), MARGEM + largura, pdf.get_y())
 
@@ -541,7 +547,7 @@ def _montar_pdf(posts: list[dict], num: dict, dia: str, paginas: dict) -> tuple:
         pdf.rect(MARGEM, pdf.get_y() + 2, 18, 1, style="F")
         pdf.ln(7)
 
-        if tema != "Educação":
+        if tema != "Educação" or not blocos_edu:
             desenhar_por_uf(do_tema)
             continue
         for n_bloco, (sub, dele) in enumerate(blocos_edu):
@@ -921,6 +927,18 @@ def _melhor_tema(tabela: list[tuple], tags: str, legenda: str) -> tuple:
     return melhor
 
 
+# "Professora Dorinha", "Professora Maria", "Prof. Luiz": título que faz parte
+# do nome de urna. Sem tirar, o radical "profess" de Educação pegava o nome: em
+# 27/10/2026, 13 dos 21 posts de Educação eram agradecimento eleitoral da
+# Dorinha e da Maria do Carmo. Só sai quando vem colado a nome com maiúscula,
+# então "os professores" e "professora da rede" continuam valendo.
+_TITULO_DE_NOME = re.compile(r"(#?)\bProf(?:essora?|\.)?\s*(?=[A-ZÀ-Þ][a-zà-ÿ])")
+
+
+def _sem_titulo_de_nome(texto: str) -> str:
+    return _TITULO_DE_NOME.sub(r"\1", str(texto or ""))
+
+
 def mapear_tema_principal(temas_str: str, legenda_str: str,
                           detalhar: bool = False):
     """Classifica o post em uma das grandes pautas.
@@ -934,8 +952,8 @@ def mapear_tema_principal(temas_str: str, legenda_str: str,
     Com `detalhar=True` devolve (tema, pontos, termos que casaram), que é como
     se audita uma classificação estranha sem reler o clipping inteiro.
     """
-    tags = _normalizar(temas_str)
-    legenda = _normalizar(legenda_str)
+    tags = _normalizar(_sem_titulo_de_nome(temas_str))
+    legenda = _normalizar(_sem_titulo_de_nome(legenda_str))
     for frase in ANTIFRASES:
         tags = tags.replace(frase, " ")
         legenda = legenda.replace(frase, " ")
