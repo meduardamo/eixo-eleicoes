@@ -33,7 +33,7 @@ import pandas as pd
 from outros.novos_eleitos import comum as c
 
 GRUPOS = ("curso", "reeleitos", "novos")
-VOTO_PROJETO = r"Votação nominal d[oa] (?:Projeto|Proposta)|Aprovad[oa] o (?:Parecer|Substitutivo)|Rejeitad[oa] o (?:Parecer|Substitutivo)|nos termos do parecer"
+VOTO_PROJETO = r"Votação nominal d[oa] (?:Projeto|Proposta|PEC|Substitutivo)|Votação do Projeto|Aprovad[oa] o (?:Parecer|Substitutivo|Projeto)|Rejeitad[oa] o (?:Parecer|Substitutivo|Projeto)|Subemenda Substitutiva Global|nos termos do parecer"
 
 
 def chaves(projeto):
@@ -122,8 +122,8 @@ DESCRICAO = {
     ("PEC 36/2025", "Senado"): ({"ISG": 1}, "ensino em tempo integral"),
     ("PL 1311/2023", "Senado"): ({"IU": 1}, "gestão democrática na distribuição do Fundeb"),
     ("PL 4414/2024", "Senado"): ({"IU": 1}, "magistério indígena e do campo"),
-    ("PL 3756/2023", "Senado"): ({"IU": 1}, "bolsa permanência na educação básica"),
-    ("PL 3166/2023", "Senado"): ({"ISG": 1}, "bolsa para estudantes do ensino médio"),
+    ("PL 3756/2023", "Senado"): ({"IU": 1, "ISG": 1}, "bolsa permanência na educação básica"),
+    ("PL 3166/2023", "Senado"): ({"ISG": 1, "IU": 1}, "bolsa para estudantes do ensino médio"),
     ("PL 1070/2021", "Senado"): ({"IU": 1}, "educação ambiental"),
     ("PL 3097/2021", "Senado"): ({"IU": 1}, "educação ambiental"),
     ("PL 4270/2020", "Câmara"): ({"IU": 1}, "educação ambiental"),
@@ -137,7 +137,7 @@ DESCRICAO = {
     ("PL 810/2022", "Câmara"): ({"IU": 1, "MegaEdu": 1, "Fundação Lemann": 1}, "internet nas escolas"),
     ("PLP 59/2021", "Senado"): ({"IU": 1, "MegaEdu": 1, "Fundação Lemann": 1}, "internet nas escolas"),
     ("PL 3853/2020", "Senado"): ({"IU": 1, "MegaEdu": 1, "Fundação Lemann": 1}, "tablets e dados para estudantes"),
-    ("PL 4978/2026", "Senado"): ({"IU": 1}, "educação étnico-racial e quilombola"),
+    ("PL 4978/2026", "Senado"): ({"IU": 1, "ISG": 1}, "educação étnico-racial e quilombola"),
     ("PL 3467/2025", "Senado"): ({"IU": 1, "Fundação Lemann": 1}, "apoio às redes com baixo desempenho e alta vulnerabilidade"),
     ("PL 597/2022", "Câmara"): ({"IU": 1, "ISG": 1, "Fundação Lemann": 1}, "recomposição da alfabetização"),
     ("PDL 237/2025", "Câmara"): ({"ISG": -1, "IU": -1}, "susta a resolução do CNE sobre os itinerários do ensino médio"),
@@ -172,17 +172,17 @@ DESCRICAO = {
     ("PL 2502/2023", "Senado"): ({"Vital Strategies": 1}, "restringe propaganda de bebidas alcoólicas"),
     ("PL 4605/2023", "Senado"): ({"Vital Strategies": 1}, "proíbe venda de tabaco em certos locais"),
     ("PL 2183/2019", "Senado"): ({"Vital Strategies": 1, "Desiderata": 1}, "Cide sobre refrigerantes e bebidas açucaradas"),
-    ("PLS 8/2015", "Senado"): ({"Vital Strategies": 1, "Desiderata": 1}, "advertência nas embalagens de bebidas açucaradas"),
-    ("PL 1066/2019", "Câmara"): ({"Vital Strategies": 1, "Desiderata": 1}, "advertência nas embalagens de bebidas açucaradas"),
+    ("PLS 8/2015", "Senado"): ({"Vital Strategies": 1, "Desiderata": 1, "IDEC": 1}, "advertência nas embalagens de bebidas açucaradas"),
+    ("PL 1066/2019", "Câmara"): ({"Vital Strategies": 1, "Desiderata": 1, "IDEC": 1}, "advertência nas embalagens de bebidas açucaradas"),
     ("PL 2906/2019", "Câmara"): ({"Vital Strategies": 1}, "proíbe fumar em locais públicos"),
     ("PL 7466/2017", "Câmara"): ({"Vital Strategies": 1}, "imagens de advertência nas embalagens de bebidas alcoólicas"),
     ("PL 1492/2022", "Câmara"): ({"Vital Strategies": 1, "Infinis": 1}, "proíbe os dispositivos eletrônicos para fumar"),
     ("PL 2900/2023", "Câmara"): ({"Vital Strategies": 1, "Infinis": 1}, "proíbe dispositivos eletrônicos para fumar em ambientes fechados"),
-    ("PL 3966/2023", "Câmara"): ({"Vital Strategies": 1, "Umane": 1, "Desiderata": 1}, "reduz o consumo de ultraprocessados por crianças"),
+    ("PL 3966/2023", "Câmara"): ({"Vital Strategies": 1, "Umane": 1, "Desiderata": 1, "IDEC": 1}, "reduz o consumo de ultraprocessados por crianças"),
     ("PL 4501/2020", "Senado"): ({"Vital Strategies": 1, "Umane": 1, "Desiderata": 1}, "ultraprocessados nas escolas"),
     ("PL 4622/2023", "Senado"): ({"Vital Strategies": -1}, "inclui bebidas alcoólicas no regime fiscal das áreas de livre comércio"),
-    ("PDL 383/2024", "Senado"): ({"IEPS": -1}, "susta a proibição de acolher crianças em comunidades terapêuticas"),
-    ("PDL 326/2024", "Câmara"): ({"IEPS": -1}, "susta a proibição de acolher adolescentes em comunidades terapêuticas"),
+    ("PDL 383/2024", "Senado"): ({"IEPS": -1, "Cactus": -1, "Infinis": -1}, "susta a proibição de acolher crianças em comunidades terapêuticas"),
+    ("PDL 326/2024", "Câmara"): ({"IEPS": -1, "Cactus": -1, "Infinis": -1}, "susta a proibição de acolher adolescentes em comunidades terapêuticas"),
     ("PLS 271/2007", "Senado"): ({"IEPS": -1}, "funcionamento de comunidades terapêuticas"),
     ("PL 1287/2019", "Câmara"): ({"IEPS": -1}, "metade do Funad para comunidades terapêuticas"),
     ("PL 3272/2021", "Câmara"): ({"IEPS": -1}, "isenta comunidades terapêuticas de taxas"),
@@ -257,21 +257,21 @@ DESCRICAO = {
     ("PL 6345/2016", "Câmara"): ({"REMS": 1}, "fundos patrimoniais para entidades esportivas sem fins lucrativos"),
     ("PL 3217/2026", "Câmara"): ({"REMS": 1}, "esporte inclusivo para crianças com TEA"),
     ("PEC 17/2023", "Senado"): ({"Infinis": 1}, "segurança alimentar como direito fundamental"),
-    ("PL 1018/2024", "Senado"): ({"Infinis": 1}, "prevenção à insegurança alimentar nas escolas"),
-    ("PL 2754/2023", "Senado"): ({"Infinis": 1, "Desiderata": 1}, "reajuste do per capita da alimentação escolar pelo IPCA de alimentos"),
+    ("PL 1018/2024", "Senado"): ({"Infinis": 1, "Umane": 1}, "prevenção à insegurança alimentar nas escolas"),
+    ("PL 2754/2023", "Senado"): ({"Infinis": 1, "Desiderata": 1, "IDEC": 1}, "reajuste do per capita da alimentação escolar pelo IPCA de alimentos"),
     ("PL 996/2023", "Senado"): ({"Infinis": 1}, "cestas básicas para a rede de acolhimento a mulheres"),
-    ("PL 1751/2023", "Senado"): ({"Infinis": 1, "Desiderata": 1}, "per capita da merenda por indicadores socioeconômicos"),
+    ("PL 1751/2023", "Senado"): ({"Infinis": 1, "Desiderata": 1, "IDEC": 1}, "per capita da merenda por indicadores socioeconômicos"),
     ("PL 3098/2020", "Senado"): ({"Infinis": 1}, "direito à cesta básica no SISAN"),
-    ("PL 1/2024", "Senado"): ({"Infinis": 1}, "compra mínima da agricultura familiar no PNAE"),
-    ("PL 3547/2019", "Câmara"): ({"Infinis": 1}, "cooperativas da agricultura familiar no PNAE"),
-    ("PL 1234/2007", "Câmara"): ({"Infinis": 1}, "educação nutricional e segurança alimentar"),
+    ("PL 1/2024", "Senado"): ({"Infinis": 1, "IDEC": 1, "Desiderata": 1}, "compra mínima da agricultura familiar no PNAE"),
+    ("PL 3547/2019", "Câmara"): ({"Infinis": 1, "IDEC": 1, "Desiderata": 1}, "cooperativas da agricultura familiar no PNAE"),
+    ("PL 1234/2007", "Câmara"): ({"Infinis": 1, "IDEC": 1}, "educação nutricional e segurança alimentar"),
     ("PL 3580/2023", "Senado"): ({"Infinis": 1}, "prioridade no julgamento de violência sexual contra criança"),
     ("PLS 507/2011", "Senado"): ({"Infinis": 1}, "prioridade no julgamento de violência sexual contra criança"),
     ("PL 2892/2019", "Senado"): ({"Infinis": 1}, "política de enfrentamento à violência sexual contra crianças"),
     ("PL 3225/2023", "Senado"): ({"Infinis": 1}, "Rondas Henry Borel"),
-    ("PL 4772/2023", "Senado"): ({"Infinis": 1, "Cactus": 1}, "prevenção da automutilação e do suicídio no ECA"),
+    ("PL 4772/2023", "Senado"): ({"Infinis": 1, "Cactus": 1, "IEPS": 1}, "prevenção da automutilação e do suicídio no ECA"),
     ("PL 2628/2022", "Senado"): ({"Infinis": 1}, "ECA Digital"),
-    ("PL 4670/2025", "Câmara"): ({"Infinis": 1, "Cactus": 1}, "núcleo psicossocial nas escolas públicas"),
+    ("PL 4670/2025", "Câmara"): ({"Infinis": 1, "Cactus": 1, "IEPS": 1}, "núcleo psicossocial nas escolas públicas"),
     ("PDL 74/2025", "Senado"): ({"Infinis": -1, "Coletivo Feminista": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
     ("PDL 53/2025", "Câmara"): ({"Infinis": -1, "Coletivo Feminista": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
     ("PL 1773/2022", "Senado"): ({"Cactus": 1}, "prevenção do suicídio de crianças e adolescentes"),
@@ -315,10 +315,10 @@ DESCRICAO = {
     ("PL 2759/2015", "Câmara"): ({"IU": 1, "Fundação Lemann": 1}, "participação da comunidade escolar na escolha do diretor"),
     ("PL 3760/2026", "Senado"): ({"IU": 1}, "Fator Amazônico no financiamento da educação básica"),
     ("PL 3762/2026", "Senado"): ({"IU": 1, "Fundação Lemann": 1}, "Política Nacional Escola das Adolescências"),
-    ("PLS 649/2015", "Senado"): ({"Cactus": -1}, "obriga informar ao empregador o CID de transtorno mental do paciente"),
-    ("PL 2935/2011", "Câmara"): ({"MegaEdu": 1}, "recursos do FUST para internet de alunos e professores da rede pública"),
+    ("PLS 649/2015", "Senado"): ({"Cactus": -1, "IEPS": -1}, "obriga informar ao empregador o CID de transtorno mental do paciente"),
+    ("PL 2935/2011", "Câmara"): ({"MegaEdu": 1, "IDEC": 1}, "recursos do FUST para internet de alunos e professores da rede pública"),
     ("PL 4394/2020", "Câmara"): ({"MegaEdu": 1}, "Programa Banda Larga Estudantil"),
-    ("PL 263/2024", "Senado"): ({"MegaEdu": 1}, "Programa Nacional de Conectividade com recursos do FUST"),
+    ("PL 263/2024", "Senado"): ({"MegaEdu": 1, "IDEC": 1}, "Programa Nacional de Conectividade com recursos do FUST"),
     ("PL 4942/2025", "Câmara"): ({"MegaEdu": 1}, "Plano Nacional de Inclusão Digital"),
     ("PL 3781/2023", "Senado"): ({"MegaEdu": -1}, "revoga a contribuição dos consumidores ao FUST"),
     ("PL 3349/2025", "Senado"): ({"Fundação Itaú": 1, "ISG": 1}, "poupança para estudantes de baixa renda da educação profissional de nível médio"),
@@ -372,6 +372,29 @@ DESCRICAO_VOTOS = [
     ("PL 1924/2025", "Câmara", "Aprovada a Emenda de Plenário nº 2", {"Coletivo Feminista": -1},
      "na Emenda de Plenário 2 ao PL 1924/2025, que põe a gestação na definição de primeira infância (Sim = pôr a gestação no texto)",
      "lado pelo comentário da coordenação na base de pautas"),
+    # auditoria dos outros clientes em 27/10/2026: votações divididas do projeto inteiro e votações-chave da Câmara
+    ("PL 104/2015", "Câmara", "Aprovado o Parecer", {"ISG": 1},
+     "no parecer do PL 104/2015, que proíbe o celular na sala de aula (Sim = aprovar o parecer)"),
+    ("PL 12/2021", "Câmara", "Aprovado o Substitutivo ao Projeto de Lei nº 12", {"IDEC": 1},
+     "no PL 12/2021, licença compulsória de patentes na emergência de saúde (Sim = aprovar o texto)"),
+    ("PL 12/2021", "Senado", "Votação nominal do Substitutivo da Câmara dos Deputados ao PL nº 12/2021", {"IDEC": 1},
+     "no PL 12/2021, licença compulsória de patentes na emergência de saúde (Sim = aprovar o texto da Câmara)"),
+    ("PLP 230/2025", "Câmara", "Aprovado o Substitutivo ao Projeto de Lei Complementar nº 230", {"MegaEdu": 1, "IDEC": 1},
+     "no PLP 230/2025, que proíbe contingenciar o FUST (Sim = aprovar o texto)"),
+    ("PL 4372/2020", "Câmara", "Aprovado o Substitutivo do Senado Federal ao Projeto de Lei nº 4.372", {"IU": 1},
+     "no substitutivo do Senado ao PL 4372/2020, regulamentação do Fundeb (Sim = aprovar o texto do Senado)"),
+    ("PL 3292/2020", "Câmara", "Aprovado o Substitutivo ao Projeto de Lei nº 3.292", {"IDEC": -1},
+     "no PL 3292/2020, que reserva parte do PNAE para o leite fluido (Sim = aprovar o texto)",
+     "contra pela posição pública do Idec, que assinou carta contra o projeto em 2021"),
+    ("PL 3179/2012", "Câmara", "Aprovada a Subemenda Substitutiva Global ao Projeto de Lei nº 3.179", {"FMCSV": -1, "ISG": -1},
+     "no PL 3179/2012, que permite a educação domiciliar (Sim = permitir)"),
+    ("PLP 235/2019", "Câmara", "Aprovada a Subemenda Substitutiva Global ao Projeto de Lei Complementar nº 235", {"IU": 1, "ISG": 1},
+     "no PLP 235/2019, que cria o Sistema Nacional de Educação (Sim = aprovar o texto)"),
+    ("PLP 243/2023", "Câmara", "Aprovado o Projeto de Lei Complementar nº 243", {"ISG": 1, "IU": 1},
+     "no PLP 243/2023, incentivo à permanência no ensino médio, o Pé-de-Meia (Sim = aprovar o texto)"),
+    ("PL 3626/2023", "Câmara", "Rejeitada a Emenda de Plenário nº 26", {"IEPS": 1, "Vital Strategies": 1},
+     "na Emenda de Plenário 26 à lei das bets, que proibia aposta de inadimplente, de inscrito no CadÚnico e de quem recebe BPC (Sim = restringir as apostas)",
+     "a favor pela pauta Apostas online e saúde mental: o cliente defende restringir as apostas"),
 ]
 
 
@@ -427,7 +450,7 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
         for r in v.itertuples():
             if r.Parlamentar in out:
                 s = sentidos[cliente] * (1 if r.Voto == "Sim" else -1)
-                onde = f"plenário da {casa}" if str(r.Colegiado) in ("PLEN", "", "plenário do Senado") else str(r.Colegiado)
+                onde = ("plenário da Câmara" if casa == "Câmara" else "plenário do Senado") if str(r.Colegiado) in ("PLEN", "", "plenário do Senado") else str(r.Colegiado)
                 lado = fonte[0] if fonte else f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar"
                 out[r.Parlamentar].append(("forte", s, f"votou {r.Voto} {rot} ({onde}, {str(r.Data)[:4]}; {lado})"))
     for n, sentidos, forca, texto in SINAIS_DIRETOS:
