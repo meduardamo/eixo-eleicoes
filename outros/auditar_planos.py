@@ -84,7 +84,7 @@ def _medir_atribuicao(linhas: list, col: dict, n: int) -> int:
 
     Nenhuma guarda cobre isso: a citação existe no plano e é literal, mas fala
     de outro assunto. Na medição de 11/08/2026 foram 2 em 10 (uma seção sobre
-    idosos e pessoas com deficiência arquivada em Educação Inclusiva e EJA).
+    idosos e pessoas com deficiência arquivada no antigo tema Educação Inclusiva e EJA).
 
     Como mede: mostra ao modelo só o trecho gravado e pergunta o tema, com a
     mesma reanalisar_tema da produção. Se ele responder "Não menciona" olhando

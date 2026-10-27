@@ -136,7 +136,7 @@ EIXOS = {
         # os dois da MegaEdu), depois os demais. É a ordem em que o painel lista
         # os temas; a análise salva é indexada por nome e não muda.
         "Tempo Integral": "educação em tempo integral e jornada escolar ampliada, em qualquer etapa da educação básica: desenho da jornada, vagas, escolas de tempo integral — o conteúdo que ocupa a jornada ampliada, quando é arte ou cultura, é o tema Educação, Arte e Cultura",
-        "Alfabetização": "alfabetização de crianças na idade certa (PNAIC, PNA, Compromisso Nacional Criança Alfabetizada ou equivalente) — creche e pré-escola são o tema Educação Infantil, no eixo de Primeira Infância",
+        "Alfabetização": "alfabetização de crianças na idade certa (PNAIC, PNA, Compromisso Nacional Criança Alfabetizada ou equivalente) — a alfabetização de jovens, adultos e idosos é o tema EJA, e creche e pré-escola são o tema Educação Infantil, no eixo de Primeira Infância",
         "Educação Profissional": "educação profissional e técnica (EPT, SENAI, SENAC, institutos federais, cursos técnicos)",
         # Entraram em 19/08/2026 a pedido do Itaú:
         "Educação, Arte e Cultura": "integração de arte, cultura e linguagens artísticas no currículo escolar e na educação integral: arte na escola, oficinas e projetos culturais com estudantes — a política cultural fora da escola (fomento, gestão, patrimônio, equipamentos, leitura, culturas populares) são os outros temas do eixo de Cultura. Este tema fica nos dois eixos, Educação e Cultura",
@@ -174,7 +174,15 @@ EIXOS = {
         "Fundamental": "ensino fundamental anos iniciais (2º ao 5º ano) e anos finais (6º ao 9º ano) — exclui alfabetização do 1º ano, que é tema próprio",
         "Ensino Médio": "ensino médio regular da rede estadual: matrícula, evasão, novo ensino médio, currículo e resultado de aprendizagem — o tempo integral é tema próprio",
         "Valorização Docente": "carreira, salário, piso, concurso, formação continuada e condições de trabalho de professores e demais profissionais da educação",
-        "Educação Inclusiva e EJA": "educação especial e inclusiva, estudante com deficiência, educação de jovens e adultos, educação no campo, indígena e quilombola — a desigualdade de aprendizagem entre grupos, a ação afirmativa na educação e a busca ativa de estudante em vulnerabilidade são o tema Equidade Educacional",
+        # Os três temas abaixo eram um só até 27/10/2026, "Educação Inclusiva e
+        # EJA", que juntava públicos diferentes: estudante com deficiência,
+        # jovem e adulto fora da idade própria e escola do campo, da aldeia e do
+        # quilombo. Se campo, indígena e quilombola ficassem num dos dois, o
+        # problema voltava. Como o tema se dividiu, a análise antiga não vale
+        # para nenhum dos três e as linhas dele saíram da aba.
+        "Educação Inclusiva": "educação especial na perspectiva inclusiva: estudante com deficiência, transtorno do espectro autista (TEA), altas habilidades ou superdotação e outros transtornos de aprendizagem na escola, atendimento educacional especializado (AEE), sala de recursos multifuncionais, profissional de apoio, cuidador e mediador escolar, acessibilidade da escola e do material didático, Libras, braile, escola bilíngue de surdos e formação de professor para a educação inclusiva — a acessibilidade e os serviços para pessoa com deficiência fora da escola são o tema Pessoa com Deficiência, no eixo de Direitos humanos e igualdade, a escolarização de jovens e adultos é o tema EJA, e a desigualdade de aprendizagem entre grupos, a ação afirmativa na educação e a busca ativa de estudante em vulnerabilidade são o tema Equidade Educacional",
+        "EJA": "educação de jovens e adultos: escolarização e elevação da escolaridade de quem não concluiu a educação básica na idade própria, alfabetização de jovens, adultos e idosos (Brasil Alfabetizado e programas equivalentes), turmas de EJA, EJA integrada à educação profissional (PROEJA, que conta aqui e também no tema Educação Profissional), exame de certificação (ENCCEJA, supletivo) e educação no sistema prisional — alfabetizar a criança na idade certa é o tema Alfabetização, o estudante com deficiência é o tema Educação Inclusiva, e a busca ativa e a permanência do estudante em idade escolar são o tema Equidade Educacional",
+        "Educação do Campo, Indígena e Quilombola": "educação do campo, educação escolar indígena e educação escolar quilombola: escolas rurais, do campo, das aldeias, dos quilombos e das comunidades ribeirinhas, fechamento e nucleação de escolas rurais, transporte escolar no campo, pedagogia da alternância e escola família agrícola, currículo, calendário e material didático próprios, ensino bilíngue e em língua indígena, formação e contratação de professor indígena, quilombola e do campo (licenciatura intercultural e em educação do campo) — a conexão das escolas rurais é o tema Conectividade, o território, a saúde e as demais políticas para povos indígenas e quilombolas fora da escola são o tema Povos Indígenas e Quilombolas, no eixo de Direitos humanos e igualdade, e a desigualdade de resultado da rede aberta por raça ou território é o tema Equidade Educacional",
         # Entrou em 10/08/2026. Os outros temas de educação são por etapa, então
         # proposta de dinheiro não achava onde cair: no plano da Samara Martins
         # (UP), "10% do PIB para educação" foi classificada em Ciência,
@@ -191,11 +199,12 @@ EIXOS = {
         # para trás: desigualdade de aprendizagem entre grupos não tinha onde
         # cair, e a única leitura racial da escola morava em Igualdade Racial,
         # no eixo de Direitos humanos e igualdade, que é política fora da
-        # escola. A fronteira está escrita nos dois lados com "Educação
-        # Inclusiva e EJA", que é o tema por público (deficiência, EJA, campo,
-        # indígena, quilombola), e com "Financiamento da Educação", que é o
-        # desenho do gasto e não o critério de quem recebe mais.
-        "Equidade Educacional": "redução da desigualdade de aprendizagem e de acesso entre grupos de estudantes: resultado da rede aberto por raça, renda, gênero ou território, escolas e regiões que ficam para trás, busca ativa e permanência de estudante em vulnerabilidade, ação afirmativa e cota na educação, educação antirracista e destinação de mais recurso a quem tem mais desvantagem — o estudante com deficiência, a educação especial, a EJA e a educação do campo, indígena e quilombola são o tema Educação Inclusiva e EJA, a política de igualdade racial fora da escola é o tema Igualdade Racial, no eixo de Direitos humanos e igualdade, e o tamanho e a origem do dinheiro da educação são o tema Financiamento da Educação",
+        # escola. A fronteira está escrita nos dois lados com os temas por
+        # público (Educação Inclusiva, EJA e Educação do Campo, Indígena e
+        # Quilombola, que até 27/10/2026 eram um tema só) e com "Financiamento
+        # da Educação", que é o desenho do gasto e não o critério de quem
+        # recebe mais.
+        "Equidade Educacional": "redução da desigualdade de aprendizagem e de acesso entre grupos de estudantes: resultado da rede aberto por raça, renda, gênero ou território, escolas e regiões que ficam para trás, busca ativa e permanência de estudante em vulnerabilidade, ação afirmativa e cota na educação, educação antirracista e destinação de mais recurso a quem tem mais desvantagem — o estudante com deficiência e a educação especial são o tema Educação Inclusiva, a escolarização de jovens e adultos é o tema EJA, a educação do campo, indígena e quilombola é o tema Educação do Campo, Indígena e Quilombola, a política de igualdade racial fora da escola é o tema Igualdade Racial, no eixo de Direitos humanos e igualdade, e o tamanho e a origem do dinheiro da educação são o tema Financiamento da Educação",
         # Voltou para Educação em 14/09/2026, com o MESMO nome, que é o que
         # indexa a análise salva. Tinha ido em 31/08 para o eixo "Conectividade e
         # Infraestrutura Digital", que acabou, e o recorte não mudou: continua só
@@ -366,8 +375,18 @@ TERMOS_ANCORA = {
     "Educação Profissional": ["educacao profissional", "ensino tecnico", "curso tecnico",
                               "senai", "senac", "instituto federal", "profissionalizante"],
     "Valorização Docente": ["professor", "docente", "magisterio", "piso salarial"],
-    "Educação Inclusiva e EJA": ["educacao especial", "educacao inclusiva", "jovens e adultos",
-                                 "eja", "autis*", "estudante com deficiencia"],
+    "Educação Inclusiva": ["educacao especial", "educacao inclusiva", "autis*",
+                           "estudante com deficiencia", "aluno com deficiencia",
+                           "atendimento educacional especializado",
+                           "sala de recursos", "salas de recursos"],
+    "EJA": ["jovens e adultos", "eja", "proeja", "encceja", "supletivo",
+            "brasil alfabetizado"],
+    "Educação do Campo, Indígena e Quilombola": [
+        "educacao do campo", "educacao no campo", "escola do campo",
+        "educacao escolar indigena", "educacao indigena", "escola indigena",
+        "educacao escolar quilombola", "educacao quilombola", "escola quilombola",
+        "escola rural", "escolas rurais", "educacao rural",
+        "pedagogia da alternancia", "escola familia agricola"],
     "Educação, Arte e Cultura": ["arte e cultura", "cultura na escola", "cultura nas escolas",
                                  "arte na escola", "artes na escola", "linguagens artisticas",
                                  "educacao artistica", "ensino de arte"],
@@ -698,12 +717,33 @@ TERMOS_AUSENCIA = {
         "concurso para professor", "valorizacao do magisterio",
         "plano de carreira do magisterio", "residencia pedagogica", "pibid",
     ],
-    "Educação Inclusiva e EJA": [
-        "educacao especial", "educacao inclusiva", "jovens e adultos", "eja",
-        "autis*", "tea", "neurodivergen*", "estudante com deficiencia",
-        "atendimento educacional especializado", "sala de recursos",
-        "educacao bilingue", "libras", "educacao do campo", "educacao no campo",
-        "educacao escolar indigena", "educacao quilombola",
+    "Educação Inclusiva": [
+        "educacao especial", "educacao inclusiva", "autis*", "tea",
+        "neurodivergen*", "estudante com deficiencia", "aluno com deficiencia",
+        "atendimento educacional especializado", "aee", "sala de recursos",
+        "salas de recursos", "educacao bilingue", "libras", "braile", "braille",
+        "surdo*", "altas habilidades", "superdotacao", "tdah", "dislexia",
+        "profissional de apoio", "cuidador escolar", "mediador escolar",
+        "escola inclusiva", "escolas inclusivas",
+    ],
+    "EJA": [
+        "jovens e adultos", "eja", "proeja", "encceja", "supletivo",
+        "brasil alfabetizado", "analfabet*", "alfabetizacao de adultos",
+        "alfabetizacao de jovens", "elevacao de escolaridade",
+        "elevacao da escolaridade", "educacao prisional", "sistema prisional",
+        "ensino noturno",
+    ],
+    "Educação do Campo, Indígena e Quilombola": [
+        "educacao do campo", "educacao no campo", "escola do campo",
+        "educacao escolar indigena", "educacao indigena", "escola indigena",
+        "educacao escolar quilombola", "educacao quilombola", "escola quilombola",
+        "escola rural", "escolas rurais", "educacao rural", "zona rural",
+        "pedagogia da alternancia", "escola familia agricola",
+        "casa familiar rural", "nucleacao", "fechamento de escolas",
+        "transporte escolar", "escola ribeirinha", "escolas ribeirinhas",
+        "educacao ribeirinha", "licenciatura intercultural", "intercultural",
+        "professor indigena", "professores indigenas", "lingua indigena",
+        "linguas indigenas", "pronacampo", "indigena*", "quilombola*",
     ],
     "Educação, Arte e Cultura": [
         "arte e cultura", "cultura na escola", "cultura nas escolas",
@@ -3437,7 +3477,7 @@ def tema_na_citacao(trecho: str, tema: str, desc: str = "") -> str | None:
         "  'sim' — a frase é sobre o tema, ainda que de passagem, ainda que o "
         "tema seja um de vários assuntos dela.\n"
         "  'nao' — a frase é sobre outro assunto. Ex.: uma frase sobre "
-        "atendimento à pessoa idosa arquivada em Educação Inclusiva e EJA, ou "
+        "atendimento à pessoa idosa arquivada em Educação Inclusiva, ou "
         "uma frase sobre estradas arquivada em Saúde Mental.\n\n"
         "Seja generoso com o 'sim': o tema não precisa ser o assunto principal "
         "da frase, basta que ela diga algo sobre ele. Só responda 'nao' quando "

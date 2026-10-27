@@ -438,7 +438,7 @@ def conferir_classificacao(classif: dict, texto: str,
 # Efeito medido rodando as 12 reperguntas: 10 voltaram com nível e citação
 # literal do plano, 2 confirmaram a ausência. Duas das 10 atribuíram o trecho ao
 # tema errado (uma seção sobre idosos e pessoas com deficiência virou Educação
-# Inclusiva e EJA). Testei exigir que a citação devolvida contivesse termo do
+# Inclusiva e EJA, o tema antigo). Testei exigir que a citação devolvida contivesse termo do
 # próprio tema e a regra reprovou zero dos 12, então não serve como filtro e não
 # está aqui.
 #

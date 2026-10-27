@@ -11,13 +11,22 @@ import processar_planos as pp
 
 class TestTaxonomiaETemas(unittest.TestCase):
     def test_eixos_e_temas_totais(self):
-        """Garante 15 eixos e 72 temas únicos; Educação, Arte e Cultura fica em dois."""
+        """Garante 15 eixos e 74 temas únicos; Educação, Arte e Cultura fica em dois."""
         self.assertEqual(len(ap.EIXOS), 15)
         todos_temas = [t for temas in ap.EIXOS.values() for t in temas]
-        self.assertEqual(len(todos_temas), 73)
-        self.assertEqual(len(set(todos_temas)), 72)
-        self.assertEqual(len(ap.TEMAS), 72)
-        self.assertEqual(len(ap.EIXO_DO_TEMA), 72)
+        self.assertEqual(len(todos_temas), 75)
+        self.assertEqual(len(set(todos_temas)), 74)
+        self.assertEqual(len(ap.TEMAS), 74)
+        self.assertEqual(len(ap.EIXO_DO_TEMA), 74)
+
+    def test_inclusiva_eja_e_campo_separados(self):
+        """O tema antigo virou três em 27/10/2026, todos em Educação."""
+        self.assertNotIn("Educação Inclusiva e EJA", ap.TEMAS)
+        for tema in ("Educação Inclusiva", "EJA",
+                     "Educação do Campo, Indígena e Quilombola"):
+            self.assertEqual(ap.EIXO_DO_TEMA[tema], "Educação")
+            self.assertIn(tema, ap.TERMOS_ANCORA)
+            self.assertIn(tema, ap.TERMOS_AUSENCIA)
 
     def test_eixo_cultura(self):
         """Cultura é eixo próprio; o tema geral antigo saiu e EAC fica nos dois eixos."""
