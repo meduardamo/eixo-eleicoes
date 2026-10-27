@@ -894,15 +894,22 @@ def _e_presidenciavel(candidato) -> bool:
 # para a Fazenda" saiu como PI em 26/10.
 _RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
-    r"|reforma ministerial|\blula 4\b|\bquarto mandato\b|governo lula"
-    # "Cotado para Fazenda" sem a palavra ministério; a secretaria estadual não conta.
-    r"|(?<!secretaria da )(?<!secretario da )(?<!secretaria de )(?<!secretario de )(?<!de estado da )\bfazenda\b")
+    r"|reforma ministerial|\blula 4\b"
+    # "Cotado para Fazenda" sem a palavra ministério; a secretaria estadual e a
+    # "Fazenda do Rio" não contam.
+    r"|(?<!secretaria da )(?<!secretario da )(?<!secretaria de )(?<!secretario de )(?<!de estado da )"
+    r"\bfazenda\b(?!\s+(?:estadual\b|(?:do|de|da)\s+(?:estado|estadual|rio|sao paulo|minas|bahia|parana|goias|pernambuco|ceara|para|piaui|maranhao|alagoas|sergipe|paraiba|amazonas|acre|amapa|roraima|rondonia|tocantins|mato grosso|espirito santo|santa catarina|distrito federal|df|rs|sp|rj|mg|ba|pe|ce|go|pr|sc|es|ma|pa|pi|al|se|pb|am|ac|ap|rr|ro|to|mt|ms|rn)\b))")
+# Sinal fraco: só faz a notícia federal quando ela não tem UF. "Eduardo Braide e
+# a relação com o governo Lula" é do MA.
+_RE_TITULO_FEDERAL_FRACO = re.compile(r"\bquarto mandato\b|governo lula")
 
 
 def _e_transicao_federal(n) -> bool:
     if "transição" not in (n.get("alerta_tema"), n.get("tipo")):
         return False
-    return bool(_RE_TITULO_FEDERAL.search(_sem_acento(n.get("titulo") or "").lower()))
+    titulo = _sem_acento(n.get("titulo") or "").lower()
+    return bool(_RE_TITULO_FEDERAL.search(titulo)
+                or (not str(n.get("uf") or "").strip() and _RE_TITULO_FEDERAL_FRACO.search(titulo)))
 
 
 def _uf_da_busca(busca) -> str:

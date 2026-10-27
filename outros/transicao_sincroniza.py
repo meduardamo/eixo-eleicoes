@@ -49,8 +49,10 @@ UF_POR_NOME = {
 # de quem é cotado.
 RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
-    r"|reforma ministerial|\blula 4\b|\bquarto mandato\b|governo lula"
-    r"|(?<!secretaria da )(?<!secretario da )(?<!secretaria de )(?<!secretario de )(?<!de estado da )\bfazenda\b")
+    r"|reforma ministerial|\blula 4\b"
+    r"|(?<!secretaria da )(?<!secretario da )(?<!secretaria de )(?<!secretario de )(?<!de estado da )"
+    r"\bfazenda\b(?!\s+(?:estadual\b|(?:do|de|da)\s+(?:estado|estadual|rio|sao paulo|minas|bahia|parana|goias|pernambuco|ceara|para|piaui|maranhao|alagoas|sergipe|paraiba|amazonas|acre|amapa|roraima|rondonia|tocantins|mato grosso|espirito santo|santa catarina|distrito federal|df|rs|sp|rj|mg|ba|pe|ce|go|pr|sc|es|ma|pa|pi|al|se|pb|am|ac|ap|rr|ro|to|mt|ms|rn)\b))")
+RE_TITULO_FEDERAL_FRACO = re.compile(r"\bquarto mandato\b|governo lula")
 
 
 def sem_acento(texto) -> str:
@@ -244,7 +246,8 @@ def noticias(planilha) -> list:
             continue
         vistas.add(chave)
         uf = v("uf", i).upper()
-        if RE_TITULO_FEDERAL.search(sem_acento(manchete)):
+        if RE_TITULO_FEDERAL.search(sem_acento(manchete)) or (
+                not uf and RE_TITULO_FEDERAL_FRACO.search(sem_acento(manchete))):
             uf = "BR"
         elif not uf:
             uf = _uf_da_busca(v("busca", i)) or "BR"
