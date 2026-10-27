@@ -840,6 +840,20 @@ def aplicar_regra_alerta(dados, texto: str = "", titulo: str = "") -> dict:
     return dados
 
 
+def _cargo_do_fato(n) -> str:
+    """Cargo do classificador, mas Lula e Flávio Bolsonaro contam sempre como presidente.
+
+    Depois do 2º turno o modelo passou a dar a Flávio cargo de senador ou "outro"
+    e a UF de quem publicou: em 27/10 a investigação da PF sobre a viagem dele saiu
+    como alerta separado em MS, AP, BA, MA, SP, AC, AL, RJ e DF, todos marcados
+    "Subnacional". O fato é nacional, então a régua é a de presidente.
+    """
+    cand = _sem_acento(n.get("candidato") or "").lower()
+    if "flavio bolsonaro" in cand or "lula" in re.findall(r"[a-z]+", cand):
+        return "presidente"
+    return str(n.get("cargo") or "").strip().lower()
+
+
 def _uf_relevante(n) -> str:
     """UF que descreve o FATO, não o veículo que publicou.
 
@@ -855,7 +869,7 @@ def _uf_relevante(n) -> str:
     uf = str(n.get("uf") or "").strip().upper()
     if uf in ("", "NAN", "NONE", "NULL"):
         return ""
-    cargo = str(n.get("cargo") or "").strip().lower()
+    cargo = _cargo_do_fato(n)
     if cargo != "presidente":
         return uf
     # Em visita de presidenciável a UF é o fato inteiro (Lula na Bahia), então
@@ -884,8 +898,7 @@ def chave_alerta(n) -> str:
     if not n.get("alerta_tema"):
         return ""
     cand = _chave_texto(n.get("candidato"))
-    partes = [n.get("alerta_tema"), _uf_relevante(n),
-              str(n.get("cargo") or "").lower(),
+    partes = [n.get("alerta_tema"), _uf_relevante(n), _cargo_do_fato(n),
               cand or f"titulo:{_chave_texto(n.get('titulo'))[:60]}"]
     # Pesquisa é identificada pelo instituto: Quaest e Datafolha no mesmo dia são
     # dois fatos. Sem ele, 22% das pesquisas rebaixadas até 24/09 eram de outro
@@ -1181,7 +1194,7 @@ def _header_alerta(n) -> str:
     uf = _uf_relevante(n)
     if uf:
         return f"Alerta | EixoGov | {assunto} | Subnacional | {uf}"
-    if str(n.get("cargo") or "").strip().lower() == "presidente":
+    if _cargo_do_fato(n) == "presidente":
         return f"Alerta | EixoGov | {assunto} | Gov. Federal"
     # Transição sem UF só vira alerta passando pela trava federal
     # (eh_alerta_transicao_valido), então o escopo é o governo federal.
