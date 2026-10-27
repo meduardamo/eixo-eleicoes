@@ -50,7 +50,7 @@ UF_POR_NOME = {
 RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
     r"|reforma ministerial|\blula 4\b|\bquarto mandato\b|governo lula"
-    r"|(?<!secretaria da )(?<!secretario da )(?<!de estado da )\bfazenda\b")
+    r"|(?<!secretaria da )(?<!secretario da )(?<!secretaria de )(?<!secretario de )(?<!de estado da )\bfazenda\b")
 
 
 def sem_acento(texto) -> str:
