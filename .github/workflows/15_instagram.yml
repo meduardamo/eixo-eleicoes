@@ -1,4 +1,15 @@
 name: 15 - Instagram Coleta
+# O nome da rodada avisa o 16 - Instagram Análise, que dispara no fim de toda
+# rodada daqui e não recebe os inputs dela (o evento workflow_run não os traz).
+# "Só relatório": o 16 nem roda. "Sem email" e "Teste" (campo `para`): o 16
+# analisa, mas não manda o clipping à lista. Antes disso, em 27/10/2026, três
+# testes com `para` mandaram o clipping à lista inteira pelo 16.
+run-name: >-
+  ${{ github.event_name != 'workflow_dispatch' && '15 - Instagram Coleta'
+  || inputs.so_relatorio && '15 - Só relatório'
+  || inputs.sem_email && '15 - Sem email'
+  || inputs.para != '' && '15 - Teste'
+  || '15 - Instagram Coleta' }}
 
 on:
   workflow_dispatch:
