@@ -18,7 +18,7 @@ concurrency:
 jobs:
   visitar:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -32,6 +32,8 @@ jobs:
 
       - run: python -m outros.manter_paineis_acordados
         env:
+          # Sem buffer: se o job for cancelado, o log mostra até onde chegou.
+          PYTHONUNBUFFERED: "1"
           # Uma URL por linha. Painel novo entra aqui, não no código.
           PAINEIS: |
             https://candidaturas-2026.streamlit.app/
@@ -47,5 +49,4 @@ jobs:
             https://painel-fomento.streamlit.app/
             https://painel-apuracao-2026.streamlit.app/
             https://comparativo-presidente-eixo.streamlit.app/
-            https://painel-transicao-2027.streamlit.app/
             https://painel-transicao-2027.streamlit.app/
