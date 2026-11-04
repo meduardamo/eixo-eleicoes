@@ -9,7 +9,7 @@ Fontes (só leitura):
 
 Destino: três abas da planilha de transição, reescritas inteiras a cada rodada
 para que correção feita na origem chegue sozinha. As abas curadas à mão
-(Decretos de transição, Equipe 2027 etc.) não são tocadas.
+(Decretos de transição etc.) não são tocadas.
 
     python -m outros.transicao_sincroniza [--seco]
 
@@ -260,9 +260,12 @@ def secretariado(planilha) -> list:
         data, fonte = _fonte_do_nome(d)
         base = ["BR", _campo(d, "orgao federal")[0], _campo(d, "cargo oficial")[0],
                 _campo(d, "ocupante do cargo")[0], "", ato if not novos else ""]
+        status = STATUS.get(sem_acento(_exato(d, "status")[0]), "")
         for novo in novos or [""]:
-            # a coluna é de cotados; sem sufixo, o nome é cotado
+            # a coluna é de cotados; sem Status nem sufixo, o nome é cotado
             nome, situacao = _situacao_do_nome(novo, "Cotado") if novo else ("", "")
+            if nome and status:
+                situacao = status
             saida.append(base + [nome, situacao, data if nome else "", ato if novos else "",
                                  _link(ato, link) or (fonte if nome else ""), ""])
     return saida
