@@ -1148,7 +1148,15 @@ def garantir_aba(sh: gspread.Spreadsheet, roster: list[str],
         novas = [[""] * largura for _ in faltando]
         for linha, candidato in zip(novas, faltando):
             linha[i_cand] = candidato
-        aba.append_rows(novas, value_input_option="RAW")
+        # Linha explícita, não append_rows: o append do Sheets procura o fim da
+        # tabela e para antes do grupo recolhido de não eleitos, gravando por
+        # cima dele. Foi assim que Alan Rick, Flavio Bolsonaro, Romeu Zema e
+        # Ronaldo Caiado sumiram da aba em 04/11/2026.
+        primeira = len(valores) + 1
+        if aba.row_count < primeira + len(novas) - 1:
+            aba.add_rows(primeira + len(novas) - 1 - aba.row_count)
+        aba.update(novas, f"A{primeira}:{_letra_coluna(largura - 1)}{primeira + len(novas) - 1}",
+                   value_input_option="RAW")
         print(f"{len(faltando)} candidato(s) acrescentado(s) à aba "
               f"'{ABA_ALINHAMENTO}': {', '.join(faltando[:5])}"
               f"{'...' if len(faltando) > 5 else ''}")
