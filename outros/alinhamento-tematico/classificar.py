@@ -71,6 +71,20 @@ SITUACOES_ELEITO = {"eleito", "eleita", "reeleito", "reeleita"}
 # Quem já tinha linha na aba e saiu do cadastro perdeu no 1º turno (ou nem
 # chegou a concorrer: aí a célula é corrigida à mão e o script não mexe nela).
 SITUACAO_FORA_DO_CADASTRO = "Não eleito"
+COLUNA_CARGO = "Cargo"
+COLUNA_UF = "UF"
+# Logo depois de Candidato, nesta ordem.
+COLUNAS_CADASTRO = [COLUNA_CARGO, COLUNA_UF, COLUNA_SITUACAO]
+ORDEM_CARGO = {"presidente": 0, "governador": 1, "senador": 2}
+# Cadastro do 1º turno: dá cargo e UF de quem saiu da aba "Instagram".
+ABA_CADASTRO_ANTIGO = "Instagram_Backup_1Turno"
+
+MARINHO = {"red": 25 / 255, "green": 45 / 255, "blue": 78 / 255}
+GELO = {"red": 244 / 255, "green": 243 / 255, "blue": 239 / 255}
+BRANCO = {"red": 1, "green": 1, "blue": 1}
+PRETO = {"red": 0, "green": 0, "blue": 0}
+CINZA = {"red": 153 / 255, "green": 153 / 255, "blue": 153 / 255}
+CINZA_CLARO = {"red": 225 / 255, "green": 225 / 255, "blue": 225 / 255}
 COLUNA_PERCENTUAL = "% dos posts em que aparece"
 COLUNA_PERCENTUAL_ANTIGA = "% dos posts"
 COLUNA_TEMAS_BRUTOS = "Temas"
@@ -351,8 +365,20 @@ def ler_posts(sh: gspread.Spreadsheet) -> dict[str, list[list[str]]]:
             if any(celula.strip().startswith(m) for m in MARCAS_NAO_ANALISADO):
                 continue
             resumo = linha[i_resumo] if 0 <= i_resumo < len(linha) else ""
-            por_candidato[candidato].append([temas_do_post(celula), resumo])
+            por_candidato[candidato].append([temas_do_post(celula), resumo, nome_aba])
     return por_candidato
+
+
+def periodo(posts: list[list]) -> str:
+    """Meses em que o candidato tem post, na ordem das abas: 'outubro e novembro'."""
+    meses = [m for m in ABAS_MENSAIS if any(len(p) > 2 and p[2] == m for p in posts)]
+    if not meses:
+        return "no período monitorado"
+    if len(meses) == 1:
+        return meses[0]
+    if len(meses) > 2 and meses == ABAS_MENSAIS[ABAS_MENSAIS.index(meses[0]):][:len(meses)]:
+        return f"{meses[0]} a {meses[-1]}"
+    return ", ".join(meses[:-1]) + " e " + meses[-1]
 
 
 def ler_uf(sh: gspread.Spreadsheet) -> dict[str, str]:
@@ -382,56 +408,118 @@ def ler_uf(sh: gspread.Spreadsheet) -> dict[str, str]:
     return por_candidato
 
 
-def ler_situacao(sh: gspread.Spreadsheet) -> dict[str, str] | None:
-    """Situação de cada candidato na aba 'Instagram'. None se a coluna não existe."""
+def ler_cadastro(sh: gspread.Spreadsheet, nome_aba: str) -> dict[str, dict[str, str]] | None:
+    """Cargo, UF e Situação de cada candidato numa aba de cadastro. None se a aba não existe.
+
+    A coluna Estado só vem preenchida na primeira linha de cada bloco e é
+    arrastada para baixo. O bloco dos presidenciáveis não tem UF: vira BR.
+    """
     try:
-        valores = sh.worksheet("Instagram").get_all_values()
+        valores = sh.worksheet(nome_aba).get_all_values()
     except gspread.exceptions.WorksheetNotFound:
         return None
     cabecalho = valores[0]
-    if COLUNA_SITUACAO not in cabecalho or COLUNA_CANDIDATO not in cabecalho:
+    if COLUNA_CANDIDATO not in cabecalho:
         return None
-    i_sit, i_cand = cabecalho.index(COLUNA_SITUACAO), cabecalho.index(COLUNA_CANDIDATO)
-    situacao = {}
+    i_cand = cabecalho.index(COLUNA_CANDIDATO)
+    indice = {n: cabecalho.index(n) for n in ("Estado", COLUNA_CARGO, COLUNA_SITUACAO)
+              if n in cabecalho}
+
+    def celula(linha, nome):
+        i = indice.get(nome)
+        return linha[i].strip() if i is not None and i < len(linha) else ""
+
+    cadastro: dict[str, dict[str, str]] = {}
+    uf_atual = ""
     for linha in valores[1:]:
+        estado = celula(linha, "Estado")
+        if estado:
+            uf_atual = estado if len(estado) == 2 else "BR"
         candidato = linha[i_cand].strip() if i_cand < len(linha) else ""
         if candidato:
-            situacao[candidato] = linha[i_sit].strip() if i_sit < len(linha) else ""
-    return situacao
+            cadastro[candidato] = {COLUNA_CARGO: celula(linha, COLUNA_CARGO),
+                                   COLUNA_UF: uf_atual,
+                                   COLUNA_SITUACAO: celula(linha, COLUNA_SITUACAO)}
+    if COLUNA_SITUACAO not in indice:
+        for dados in cadastro.values():
+            dados.pop(COLUNA_SITUACAO)
+    return cadastro
 
 
 def e_eleito(situacao: str) -> bool:
     return situacao.strip().lower() in SITUACOES_ELEITO
 
 
-def garantir_situacao(aba: gspread.Worksheet, situacao: dict[str, str]) -> None:
-    """Coluna Situação logo depois de Candidato, preenchida a cada rodada.
+def garantir_cadastro(aba: gspread.Worksheet, atual: dict[str, dict[str, str]],
+                      antigo: dict[str, dict[str, str]]) -> None:
+    """Cargo, UF e Situação logo depois de Candidato, preenchidos a cada rodada.
 
-    Quem está no cadastro recebe a situação de lá. Quem não está mais fica com
-    o que a célula já tem; vazia, vira "Não eleito".
+    Quem está no cadastro atual recebe os três de lá. Quem saiu dele pega cargo
+    e UF do cadastro do 1º turno; o que nenhum dos dois tem fica como está na
+    célula (correção à mão não é apagada). Situação vazia fora do cadastro vira
+    "Não eleito".
     """
+    tem_situacao = any(COLUNA_SITUACAO in d for d in atual.values())
+    colunas = [n for n in COLUNAS_CADASTRO if n != COLUNA_SITUACAO or tem_situacao]
     valores = aba.get_all_values()
     cabecalho = valores[0]
     i_cand = cabecalho.index(COLUNA_CANDIDATO)
-    if COLUNA_SITUACAO not in cabecalho:
-        aba.insert_cols([[COLUNA_SITUACAO]], col=i_cand + 2,
-                        value_input_option="RAW", inherit_from_before=True)
-        valores = aba.get_all_values()
-        cabecalho = valores[0]
-    i_sit = cabecalho.index(COLUNA_SITUACAO)
-    coluna = []
+    for k, nome in enumerate(colunas):
+        if nome not in cabecalho:
+            aba.insert_cols([[nome]], col=i_cand + 2 + k,
+                            value_input_option="RAW", inherit_from_before=True)
+            valores = aba.get_all_values()
+            cabecalho = valores[0]
+    indices = {n: cabecalho.index(n) for n in colunas}
+
+    escritas = {n: [] for n in colunas}
     for linha in valores[1:]:
         candidato = linha[i_cand].strip() if i_cand < len(linha) else ""
-        atual = linha[i_sit].strip() if i_sit < len(linha) else ""
-        if not candidato:
-            coluna.append([atual])
-        elif candidato in situacao and situacao[candidato]:
-            coluna.append([situacao[candidato]])
-        else:
-            coluna.append([atual or SITUACAO_FORA_DO_CADASTRO])
-    if coluna:
-        letra = _letra_coluna(i_sit)
-        aba.update(coluna, f"{letra}2:{letra}{len(coluna) + 1}", value_input_option="RAW")
+        for nome, i in indices.items():
+            existente = linha[i].strip() if i < len(linha) else ""
+            novo = (atual.get(candidato) or {}).get(nome, "") if candidato else ""
+            if candidato and not novo and nome != COLUNA_SITUACAO:
+                novo = (antigo.get(candidato) or {}).get(nome, "")
+            if candidato and not novo and nome == COLUNA_SITUACAO:
+                novo = existente or SITUACAO_FORA_DO_CADASTRO
+            escritas[nome].append([novo or existente])
+    if len(valores) > 1:
+        aba.batch_update([
+            {"range": f"{_letra_coluna(i)}2:{_letra_coluna(i)}{len(valores)}",
+             "values": escritas[n]}
+            for n, i in indices.items()
+        ], value_input_option="RAW")
+
+
+def ordenar_aba(aba: gspread.Worksheet) -> None:
+    """Eleitos no topo, por cargo, UF e nome; os demais embaixo, na mesma ordem.
+
+    O script grava pelo número da linha lido depois daqui, então reordenar
+    antes da classificação não desalinha nada.
+    """
+    valores = aba.get_all_values()
+    cabecalho = valores[0]
+    if COLUNA_SITUACAO not in cabecalho:
+        return
+    i_cand, i_sit = cabecalho.index(COLUNA_CANDIDATO), cabecalho.index(COLUNA_SITUACAO)
+    i_cargo = cabecalho.index(COLUNA_CARGO) if COLUNA_CARGO in cabecalho else None
+    i_uf = cabecalho.index(COLUNA_UF) if COLUNA_UF in cabecalho else None
+    largura = len(cabecalho)
+    linhas = [l + [""] * (largura - len(l)) for l in valores[1:] if any(c.strip() for c in l)]
+
+    def chave(l):
+        cargo = l[i_cargo].strip().lower() if i_cargo is not None else ""
+        return (0 if e_eleito(l[i_sit]) else 1,
+                ORDEM_CARGO.get(cargo, len(ORDEM_CARGO)),
+                l[i_uf] if i_uf is not None else "",
+                normalizar(l[i_cand]))
+
+    ordenadas = sorted(linhas, key=chave)
+    if ordenadas == [l + [""] * (largura - len(l)) for l in valores[1:]]:
+        return
+    fim = _letra_coluna(largura - 1)
+    aba.batch_clear([f"A2:{fim}{len(valores)}"])
+    aba.update(ordenadas, f"A2:{fim}{len(ordenadas) + 1}", value_input_option="RAW")
 
 
 def contar(posts: list[list], ruido_extra: set[str] | None = None) -> tuple[Counter, dict[str, str], int, dict[str, set[int]]]:
@@ -449,7 +537,7 @@ def contar(posts: list[list], ruido_extra: set[str] | None = None) -> tuple[Coun
     descartar = RUIDO | (ruido_extra or set())
     analisados = 0
 
-    for indice_post, (temas, _resumo) in enumerate(posts):
+    for indice_post, (temas, _resumo, *_) in enumerate(posts):
         if not temas:
             continue
         analisados += 1
@@ -489,7 +577,7 @@ ESQUEMA = {
 
 PROMPT = """Você organiza o monitoramento de redes de pré-candidatos.
 
-Abaixo estão os temas que apareceram nos posts de Instagram de {candidato} em julho e agosto de 2026, com o número de posts em que cada um aparece. O mesmo assunto está escrito de várias formas.
+Abaixo estão os temas que apareceram nos posts de Instagram de {candidato} de {periodo} de 2026, com o número de posts em que cada um aparece. O mesmo assunto está escrito de várias formas.
 
 Tarefa 1. Agrupe as variações do mesmo assunto e devolva, em "temas", os grupos que são pauta de política pública ou projeto concreto: o que o candidato defende, promete, critica ou está executando.
 
@@ -582,7 +670,8 @@ def _gerar_classificacao(gem: genai.Client, prompt: str):
 
 def classificar(gem: genai.Client, candidato: str, contagem: Counter,
                 canonico: dict[str, str],
-                posts_por_tema: dict[str, set[int]]) -> tuple[list[dict], str, dict]:
+                posts_por_tema: dict[str, set[int]],
+                periodo_texto: str = "no período monitorado") -> tuple[list[dict], str, dict]:
     entrada = [(canonico[c], n) for c, n in contagem.most_common() if n >= MINIMO_POSTS_POR_TEMA]
     if not entrada:
         return [], "", {"entrada": 0, "saida": 0, "pensamento": 0}
@@ -612,7 +701,7 @@ def classificar(gem: genai.Client, candidato: str, contagem: Counter,
     texto_abaixo = "\n".join(f"- {r} ({n} post{'s' if n != 1 else ''})"
                                for r, n in abaixo[:30]) or "(vazio)"
 
-    prompt = PROMPT.format(candidato=candidato, lista=lista,
+    prompt = PROMPT.format(candidato=candidato, lista=lista, periodo=periodo_texto,
                            vocabulario=texto_vocabulario, abaixo_corte=texto_abaixo)
 
     resp = com_retry(
@@ -812,7 +901,8 @@ def compactar_rotulo(rotulo: str, limite: int = 8) -> str:
 
 def montar_resumo(candidato: str, resumo_modelo: str, temas: list[dict],
                   analisados: int, total_posts: int, contagem: Counter,
-                  canonico: dict[str, str]) -> str:
+                  canonico: dict[str, str],
+                  periodo_texto: str = "no período monitorado") -> str:
     """Junta a frase de volume, escrita aqui, com as duas frases do modelo.
 
     O modelo não escreve número. A frase com os números é montada com o que foi
@@ -821,7 +911,7 @@ def montar_resumo(candidato: str, resumo_modelo: str, temas: list[dict],
     if not temas:
         return ""
 
-    abertura = (f"Dos {total_posts} posts de julho e agosto, {analisados} têm temas analisados, "
+    abertura = (f"Dos {total_posts} posts de {periodo_texto}, {analisados} têm temas analisados, "
                 f"e o tema mais recorrente é {temas[0]['rotulo'].lower()}, "
                 f"em {temas[0]['posts']} deles.")
     complemento = ""
@@ -887,62 +977,109 @@ def garantir_colunas(aba: gspread.Worksheet, cabecalho: list[str]) -> dict[str, 
 
 LARGURA_COLUNA = {
     COLUNA_CANDIDATO: 170,
+    COLUNA_CARGO: 100,
+    COLUNA_UF: 50,
     COLUNA_SITUACAO: 100,
     "Temas Principais": 520,
     "Resumo da conta": 430,
 }
+COLUNAS_VISIVEIS = list(LARGURA_COLUNA)
+COLUNAS_CENTRALIZADAS = {COLUNA_CARGO, COLUNA_UF, COLUNA_SITUACAO}
 
 
-def formatar_aba(sh: gspread.Spreadsheet, aba: gspread.Worksheet,
-                 cabecalho: list[str], indices: dict[str, int]) -> None:
-    """Deixa a aba legível: quebra de linha, largura e colunas de conferência ocultas.
+def formatar_aba(sh: gspread.Spreadsheet, aba: gspread.Worksheet) -> None:
+    """Padrão Eixo e eleitos em evidência.
 
-    Roda toda vez porque o ranking em uma célula só não se lê sem quebra de
-    linha: sem isso a coluna vira uma linha única cortada na borda.
+    Montserrat 10, cabeçalho marinho, corpo gelo, tudo no meio, grade do
+    tamanho dos dados. Os não eleitos ficam embaixo, em cinza, num grupo de
+    linhas recolhido. Roda toda vez porque linhas novas chegam sem formato e o
+    grupo muda de tamanho.
     """
+    valores = aba.get_all_values()
+    cabecalho = valores[0]
+    n_linhas, n_colunas = len(valores), len(cabecalho)
+    if aba.row_count != n_linhas or aba.col_count != n_colunas:
+        aba.resize(rows=n_linhas, cols=n_colunas)
     id_aba = aba.id
+
+    def faixa(linha_ini, linha_fim, col_ini=0, col_fim=n_colunas):
+        return {"sheetId": id_aba, "startRowIndex": linha_ini, "endRowIndex": linha_fim,
+                "startColumnIndex": col_ini, "endColumnIndex": col_fim}
+
+    def formato(rng, fmt, campos):
+        return {"repeatCell": {"range": rng, "cell": {"userEnteredFormat": fmt},
+                               "fields": f"userEnteredFormat({campos})"}}
+
     pedidos: list[dict] = [{
         "updateSheetProperties": {
-            "properties": {"sheetId": id_aba, "gridProperties": {"frozenRowCount": 1}},
-            "fields": "gridProperties.frozenRowCount",
+            "properties": {"sheetId": id_aba, "gridProperties": {
+                "frozenRowCount": 1, "frozenColumnCount": 1,
+                "rowGroupControlAfter": False}},
+            "fields": "gridProperties(frozenRowCount,frozenColumnCount,rowGroupControlAfter)",
         }
     }]
 
-    visiveis = [COLUNA_CANDIDATO, COLUNA_SITUACAO, "Temas Principais", "Resumo da conta"]
-    for nome in visiveis:
-        indice = indices.get(nome, cabecalho.index(nome) if nome in cabecalho else None)
-        if indice is None:
+    # Grupo antigo sai antes de qualquer coisa: o tamanho muda a cada rodada.
+    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties.sheetId,rowGroups)"})
+    for folha in meta.get("sheets", []):
+        if folha["properties"]["sheetId"] != id_aba:
             continue
-        pedidos.append({
-            "repeatCell": {
-                "range": {"sheetId": id_aba, "startRowIndex": 1,
-                          "startColumnIndex": indice, "endColumnIndex": indice + 1},
-                "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP",
-                                               "verticalAlignment": "TOP"}},
-                "fields": "userEnteredFormat(wrapStrategy,verticalAlignment)",
-            }
-        })
-        pedidos.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": id_aba, "dimension": "COLUMNS",
-                          "startIndex": indice, "endIndex": indice + 1},
-                "properties": {"pixelSize": LARGURA_COLUNA[nome]},
-                "fields": "pixelSize",
-            }
-        })
+        for grupo in sorted(folha.get("rowGroups", []), key=lambda g: -g.get("depth", 1)):
+            pedidos.append({"deleteDimensionGroup": {"range": grupo["range"]}})
 
-    for nome in COLUNAS_CONFERENCIA:
-        indice = indices.get(nome, cabecalho.index(nome) if nome in cabecalho else None)
-        if indice is None:
-            continue
-        pedidos.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": id_aba, "dimension": "COLUMNS",
-                          "startIndex": indice, "endIndex": indice + 1},
-                "properties": {"hiddenByUser": True},
-                "fields": "hiddenByUser",
-            }
-        })
+    pedidos.append(formato(faixa(0, 1), {
+        "backgroundColor": MARINHO, "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP",
+        "horizontalAlignment": "LEFT",
+        "textFormat": {"fontFamily": "Montserrat", "fontSize": 10, "bold": True,
+                       "foregroundColor": BRANCO}},
+        "backgroundColor,verticalAlignment,wrapStrategy,horizontalAlignment,textFormat"))
+    if n_linhas > 1:
+        pedidos.append(formato(faixa(1, n_linhas), {
+            "backgroundColor": GELO, "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP",
+            "horizontalAlignment": "LEFT",
+            "textFormat": {"fontFamily": "Montserrat", "fontSize": 10, "bold": False,
+                           "foregroundColor": PRETO}},
+            "backgroundColor,verticalAlignment,wrapStrategy,horizontalAlignment,textFormat"))
+        pedidos.append({"updateBorders": {
+            "range": faixa(1, n_linhas),
+            "innerHorizontal": {"style": "SOLID", "color": CINZA_CLARO},
+            "bottom": {"style": "SOLID", "color": CINZA_CLARO}}})
+
+    for nome in cabecalho:
+        indice = cabecalho.index(nome)
+        if nome in COLUNAS_CENTRALIZADAS:
+            pedidos.append(formato(faixa(0, n_linhas, indice, indice + 1),
+                                   {"horizontalAlignment": "CENTER"}, "horizontalAlignment"))
+        if nome in COLUNAS_CONFERENCIA:
+            # Texto longo oculto não pode esticar a altura da linha.
+            pedidos.append(formato(faixa(1, n_linhas, indice, indice + 1),
+                                   {"wrapStrategy": "CLIP"}, "wrapStrategy"))
+        propriedades = {"hiddenByUser": nome in COLUNAS_CONFERENCIA}
+        campos = "hiddenByUser"
+        if nome in LARGURA_COLUNA:
+            propriedades["pixelSize"] = LARGURA_COLUNA[nome]
+            campos += ",pixelSize"
+        pedidos.append({"updateDimensionProperties": {
+            "range": {"sheetId": id_aba, "dimension": "COLUMNS",
+                      "startIndex": indice, "endIndex": indice + 1},
+            "properties": propriedades, "fields": campos}})
+
+    if COLUNA_SITUACAO in cabecalho:
+        i_sit = cabecalho.index(COLUNA_SITUACAO)
+        demais = [n for n, l in enumerate(valores[1:], start=1)
+                  if not e_eleito(l[i_sit] if i_sit < len(l) else "")]
+        # ordenar_aba deixa os não eleitos juntos no fim; se não estiverem, o
+        # grupo não é criado para não esconder eleito.
+        if demais and demais == list(range(demais[0], n_linhas)):
+            pedidos.append(formato(faixa(demais[0], n_linhas), {
+                "textFormat": {"fontFamily": "Montserrat", "fontSize": 10,
+                               "foregroundColor": CINZA}}, "textFormat"))
+            dimensao = {"sheetId": id_aba, "dimension": "ROWS",
+                        "startIndex": demais[0], "endIndex": n_linhas}
+            pedidos.append({"addDimensionGroup": {"range": dimensao}})
+            pedidos.append({"updateDimensionGroup": {
+                "dimensionGroup": {"range": dimensao, "depth": 1, "collapsed": True},
+                "fields": "collapsed"}})
 
     sh.batch_update({"requests": pedidos})
 
@@ -1015,7 +1152,11 @@ def main() -> None:
 
     posts_por_candidato = ler_posts(sh)
     uf_por_candidato = ler_uf(sh)
-    situacao = ler_situacao(sh)
+    cadastro = ler_cadastro(sh, "Instagram") or {}
+    cadastro_antigo = ler_cadastro(sh, ABA_CADASTRO_ANTIGO) or {}
+    tem_situacao = any(COLUNA_SITUACAO in d for d in cadastro.values())
+    situacao = ({c: d.get(COLUNA_SITUACAO, "") for c, d in cadastro.items()}
+                if tem_situacao else None)
     print(f"{sum(len(v) for v in posts_por_candidato.values())} posts lidos "
           f"de {len(posts_por_candidato)} candidato(s) nas abas {', '.join(ABAS_MENSAIS)}.")
 
@@ -1030,12 +1171,14 @@ def main() -> None:
               f"{', '.join(fora) or 'ninguém'}.")
 
     aba = garantir_aba(sh, roster, set(posts_por_candidato))
-    if situacao is not None:
-        garantir_situacao(aba, situacao)
+    garantir_cadastro(aba, cadastro, cadastro_antigo)
+    ordenar_aba(aba)
     valores = aba.get_all_values()
     cabecalho = valores[0]
     indices = garantir_colunas(aba, cabecalho)
-    formatar_aba(sh, aba, cabecalho, indices)
+    formatar_aba(sh, aba)
+    valores = aba.get_all_values()
+    cabecalho = valores[0]
     i_cand = cabecalho.index(COLUNA_CANDIDATO)
     i_feito = cabecalho.index("Temas Principais") if "Temas Principais" in cabecalho else -1
 
@@ -1089,7 +1232,7 @@ def main() -> None:
 
         try:
             grupos, resumo_modelo, uso = classificar(
-                gem, candidato, contagem, canonico, posts_por_tema)
+                gem, candidato, contagem, canonico, posts_por_tema, periodo(posts))
         except Exception as erro:
             print(f"[{i}/{len(alvos)}] {candidato}: falhou ({str(erro)[:160]}), pulando.")
             continue
@@ -1115,7 +1258,7 @@ def main() -> None:
             continue
 
         resumo = montar_resumo(candidato, resumo_modelo, temas, analisados,
-                                len(posts), contagem, canonico)
+                                len(posts), contagem, canonico, periodo(posts))
 
         escritas.extend(escritas_da_linha(indices, numero, {
             "Temas Principais": bloco_temas(temas),
