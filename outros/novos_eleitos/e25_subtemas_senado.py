@@ -3,7 +3,7 @@
 Subtemas tirados da taxonomia dos planos de governo (outros/analise_planos.py) e das pautas dos clientes:
 tempo integral e recomposição das aprendizagens (ISG, IU), alfabetização (Lemann), conectividade (MegaEdu),
 tabaco e álcool (Vital), alimentação saudável e ultraprocessados (Desiderata, IDEC, Umane), violência contra
-crianças, adolescentes e mulheres e casamento infantil (Vital, Infinis, Coletivo, UNFPA), planos de saúde (IDEC, IEPS),
+crianças e adolescentes, violência contra a mulher e casamento infantil (Vital, Cactus, Infinis, Coletivo, UNFPA), planos de saúde (IDEC, IEPS),
 saúde mental, drogas e apostas (Cactus, IEPS), incentivo ao esporte (REMS), primeira infância (FMCSV) etc.
 
 Cada matéria da etapa 21 (primeira autoria e relatorias com parecer, Senado e Câmara) foi lida pela ementa e
@@ -24,8 +24,19 @@ direitos do nascituro (NC); gravidez infantil e aborto em meninas (GI); planejam
 saúde da mulher, gestação e parto (MU, o que sobrou). As 65 matérias de MU foram relidas (11 mudaram de código; os
 PDLs das portarias do Ministério da Saúde lidos pelo texto: 2.561/2020 e a nota técnica de 2024 sobre idade gestacional
 são RE, a Rede de Atenção Materna e Infantil é MU) e as 128 matérias da base completa com termo reprodutivo foram lidas
-uma a uma; 20 entraram (temas_clientes/reprodutivos_lidos.csv). Estupro de vulnerável sem gravidez segue em VI;
+uma a uma; 20 entraram (temas_clientes/reprodutivos_lidos.csv). Estupro de vulnerável sem gravidez fica em VC;
 direito trabalhista e previdenciário da gestante fica fora. Ensino superior e o que não cabe em subtema de cliente ficam fora das colunas.
+
+Também em 04/11/2026 a violência (VI) virou três subtemas: violência contra crianças e adolescentes (VC), violência
+contra a mulher (VM) e casamento infantil e uniões precoces (CI). Foram lidas uma a uma as 330 matérias de VI, as 150
+da leitura de 19/10 que tinham ficado fora, as 139 que só batiam com palavra-chave de cliente e nunca tinham sido lidas
+e as 236 da base completa com termo de violência (estupro, assédio, dignidade sexual, feminicídio etc.) que nenhuma
+leitura tinha pego. Regras: crime contra a dignidade sexual sem vítima especificada é VM, e VC quando a vítima é
+vulnerável; medida de segurança para mulheres em transporte, bar ou evento é VM; violência sem recorte de mulher ou
+criança, maus-tratos a animais, idosos, tráfico de pessoas sem recorte, LGBT, desaparecidos, assistência, adoção,
+socioeducativo e direito trabalhista ficam fora. 415 entraram (temas_clientes/violencia_lidos.csv, agora com o código;
+algumas levam também código de outro tema, como TA para propaganda de bebida). O que ficou fora em cada leitura, com o
+motivo, está em temas_clientes/leituras_fora.csv.
 
 Emendas lidas pelo texto (EMENDAS_LIDAS, 04/11/2026) contam como item; as do senador a um mesmo projeto contam uma vez.
 Nível por subtema, pelo número de matérias distintas do senador no subtema (autor ou relator):
@@ -49,7 +60,9 @@ SUBTEMAS = [
     ("Saúde", "SME", "Saúde mental, drogas e apostas"),
     ("Saúde", "TA", "Tabaco e álcool"),
     ("Saúde", "AS", "Alimentação saudável, ultraprocessados e agrotóxicos"),
-    ("Saúde", "VI", "Violência contra crianças, adolescentes e mulheres e casamento infantil"),
+    ("Saúde", "VC", "Violência contra crianças e adolescentes"),
+    ("Saúde", "VM", "Violência contra a mulher"),
+    ("Saúde", "CI", "Casamento infantil e uniões precoces"),
     ("Saúde", "PS", "Planos de saúde"),
     ("Saúde", "MV", "Medicamentos e vacinas"),
     ("Saúde", "DC", "Doenças e condições de saúde específicas"),
@@ -101,7 +114,7 @@ EMENDAS_LIDAS = [
     ("Magno Malta", "Senado", "PLP 68/2024", "1928", 2024, ("Saúde", "AS"), "tira as bebidas açucaradas do Imposto Seletivo"),
     ("Beto Faro", "Senado", "PLP 68/2024", "2197", 2024, ("Saúde", "AS"), "estende o Imposto Seletivo às bebidas ultraprocessadas"),
     ("Tereza Cristina", "Senado", "PLP 68/2024", "1873", 2024, ("Saúde", "TA"), "escalona o Imposto Seletivo das bebidas alcoólicas"),
-    ("Carlos Portinho", "Senado", "PL 4/2025", "741", 2025, ("Saúde", "VI"), "fixa 18 anos como idade mínima para o casamento"),
+    ("Carlos Portinho", "Senado", "PL 4/2025", "741", 2025, ("Saúde", "CI"), "fixa 18 anos como idade mínima para o casamento"),
     ("Damares Alves", "Senado", "PL 4/2025", "15, 26, 27, 38 e 40", 2025, ("Saúde", "NC"),
      "vida desde a concepção, personalidade civil e direitos do nascituro, vedação ao descarte de embriões"),
     ("Jorge Seif", "Senado", "PL 4/2025", "56, 61 e 67", 2025, ("Saúde", "NC"), "nascituro titular de direitos da personalidade, vida desde a concepção"),
@@ -123,7 +136,9 @@ def main():
     # violência quase toda caiu em Segurança na etapa 18, fora das matérias dos quatro temas: entra pela base completa
     viol = c.ler_csv("temas_clientes/violencia_lidos.csv")
     for r in viol.itertuples():
-        cod.setdefault((r.Casa, r.Matéria), set()).add(("Saúde", "VI"))
+        for s in str(r.Subtemas).split(","):
+            tema, s = JUNTA.get((r._1, s), (r._1, s))
+            cod.setdefault((r.Casa, r.Matéria), set()).add((tema, s))
     # direitos reprodutivos fora dos quatro temas (Constituição, Código Penal, Conanda, FGTS) entram pela base completa
     repro = c.ler_csv("temas_clientes/reprodutivos_lidos.csv")
     for r in repro.itertuples():
