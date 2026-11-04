@@ -894,11 +894,13 @@ def _aparar_cauda(rotulo: str) -> str:
     return (podado or texto).strip(" ,;:-")
 
 
-def compactar_rotulo(rotulo: str, limite: int = 8) -> str:
+def compactar_rotulo(rotulo: str, limite: int = 10) -> str:
     """Impõe no Python o limite que o prompt pede ao modelo.
 
-    Preserva primeiro a categoria antes dos dois-pontos e depois os primeiros
-    descritores completos, sem deixar vírgula, conjunção ou aspa pendurada.
+    Corta só entre itens (vírgula, "e", "ou"), nunca no meio de um: o corte por
+    número de palavras publicava "Zona Franca de Manaus e Polo", "Transposição
+    do Rio São" e "Minha Casa Minha" (rodada de 04/11/2026). Se nem o primeiro
+    item do descritor cabe, fica só a categoria antes dos dois-pontos.
     """
     # Quebra de linha no meio da palavra ("Saúde P\n\tública") é lixo de geração
     # e, no ranking em uma célula só, partiria o item em duas linhas.
@@ -909,13 +911,30 @@ def compactar_rotulo(rotulo: str, limite: int = 8) -> str:
     rotulo = re.sub(r",?\s+(com foco em|incluindo|com destaque para)\s+", ": ",
                     rotulo, flags=re.IGNORECASE)
     rotulo = re.sub(r":\s*:\s*", ": ", rotulo)
-    palavras = rotulo.split()
-    if len(palavras) <= limite:
-        return _fechar_aspas(rotulo)
-    limite_real = limite
-    if limite < len(palavras) and palavras[limite - 1].lower() in {"primeiro", "sistema", "pix"}:
-        limite_real += 1
-    curto = " ".join(palavras[:limite_real]).rstrip(" ,;:-")
+    # Nome de programa com vírgula dentro não pode virar dois itens.
+    rotulo = re.sub(r"Minha Casa,\s*Minha Vida", "Minha Casa Minha Vida", rotulo,
+                    flags=re.IGNORECASE)
+    rotulo = _fechar_aspas(rotulo)
+    if len(rotulo.split()) <= limite:
+        return rotulo
+
+    categoria, dois_pontos, descritor = rotulo.partition(":")
+    base = descritor.strip() if dois_pontos else rotulo
+    prefixo = f"{categoria.strip()}: " if dois_pontos else ""
+    cortes = [m.start() for m in SEPARADOR_DE_ITEM.finditer(base)]
+    for corte in reversed(cortes):
+        resto = base[:corte].strip(" ,;:-")
+        # Lista que ficou terminada em vírgula ganha o "e" antes do último item.
+        if "," in resto and not re.search(r"\s(e|ou)\s[^,]*$", resto):
+            antes, _, ultimo = resto.rpartition(",")
+            resto = f"{antes.strip()} e {ultimo.strip()}"
+        candidato = (prefixo + resto).strip()
+        if len(candidato.split()) <= limite and not CONECTOR_FINAL.search(candidato):
+            return candidato
+    if dois_pontos and len(categoria.split()) <= limite:
+        return categoria.strip()
+    # Sem ponto de corte entre itens: último recurso, o corte antigo por palavra.
+    curto = " ".join(rotulo.split()[:limite]).rstrip(" ,;:-")
     return _aparar_cauda(_fechar_aspas(curto))
 
 
