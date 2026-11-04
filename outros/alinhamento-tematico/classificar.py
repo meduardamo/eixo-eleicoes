@@ -323,20 +323,27 @@ def com_retry(funcao, contexto: str = "", tentativas: int = TENTATIVAS):
 def temas_do_post(celula: str) -> list[str]:
     """Extrai os temas de uma célula da coluna 'Temas' de uma aba mensal.
 
-    O Gemini grava em bullet ("*   Educação"), mas em 142 posts de agosto ele
-    devolveu tudo numa linha só separado por vírgula. Sem tratar os dois casos
-    esses posts contam como um tema gigante, e some do ranking o que eles tinham
-    de verdade.
+    O Gemini grava em bullet ("*   Educação"), mas também devolve tudo numa
+    linha só, separado por ponto e vírgula (72% das células de outubro/2026)
+    ou por vírgula (142 posts de agosto). Sem tratar os três casos esses posts
+    contam como um tema gigante, e some do ranking o que eles tinham de verdade.
     """
     itens: list[str] = []
-    for linha in celula.splitlines():
+    linhas = [l for l in celula.splitlines() if l.strip()]
+    for linha in linhas:
         limpo = linha.strip().lstrip("*-•·—– \t").strip()
         if not limpo:
             continue
-        if len(celula.strip().splitlines()) <= 2 and limpo.count(",") >= 3:
-            itens.extend(p.strip() for p in limpo.split(",") if p.strip())
+        if ";" in limpo:
+            partes = limpo.split(";")
+        elif len(linhas) <= 2 and limpo.count(",") >= 3:
+            partes = limpo.split(",")
         else:
-            itens.append(limpo)
+            partes = [limpo]
+        for parte in partes:
+            parte = parte.strip().lstrip("*-•·—– \t").rstrip(". ").strip()
+            if parte:
+                itens.append(parte)
     return itens
 
 
