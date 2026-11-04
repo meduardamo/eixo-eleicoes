@@ -30,6 +30,10 @@ on:
         description: "Pula os N primeiros perfis, para rodar backfill em lotes (apenas no modo --perfis)"
         required: false
         default: ""
+      posts_por_perfil:
+        description: "Máximo de posts por perfil na Apify (vazio = 12); para backfill de um mês use 300"
+        required: false
+        default: ""
       so_relatorio:
         description: "So o e-mail com o clipping do que ja esta gravado, sem coletar nada (data opcional em data_minima)"
         type: boolean
@@ -133,11 +137,17 @@ jobs:
           DATA_MINIMA: ${{ inputs.data_minima }}
           LIMITE_PERFIS: ${{ inputs.limite_perfis }}
           PULAR_PERFIS: ${{ inputs.pular_perfis }}
+          POSTS_POR_PERFIL: ${{ inputs.posts_por_perfil }}
           SO_RELATORIO: ${{ inputs.so_relatorio }}
         run: |
           if [ -z "$APIFY_TOKEN" ]; then
             echo "Secret APIFY_TOKEN não configurado no repositório."
             exit 1
+          fi
+
+          # Vazio fica de fora: o script faz int() da variavel e quebra com "".
+          if [ -n "$POSTS_POR_PERFIL" ]; then
+            export POSTS_POR_PERFIL_LOWCOST="$POSTS_POR_PERFIL"
           fi
 
           ARGS=()
