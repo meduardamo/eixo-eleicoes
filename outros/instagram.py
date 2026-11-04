@@ -935,6 +935,7 @@ def linhas_pendentes(aba: gspread.Worksheet) -> list[dict]:
             "eh_video": celula(linha, "Tipo") == "Vídeo",
             "legenda": celula(linha, "Legenda"),
             "publicado": celula(linha, "Data de publicação")[:10],
+            "coletado": celula(linha, "Data/Hora")[:10],
             "candidato": celula(linha, "Candidato") if "Candidato" in idx else "",
         })
 
@@ -1024,7 +1025,11 @@ def rodar_analise_pendentes(limite: int | None = None) -> None:
     # morto, para sempre.
     hoje = datetime.now().strftime("%Y-%m-%d")
     corte = (datetime.now() - timedelta(days=DIAS_PARA_DESISTIR_DA_MIDIA)).strftime("%Y-%m-%d")
-    velhas = [p for p in pendentes if p["publicado"] and p["publicado"] < corte]
+    # O prazo do CDN corre a partir da coleta, não da publicação: no backfill de
+    # 04/11/2026 os posts de outubro tinham link recém-pego e foram marcados como
+    # expirados pela data de publicação. Linha sem Data/Hora usa a publicação.
+    velhas = [p for p in pendentes
+              if (p.get("coletado") or p["publicado"]) and (p.get("coletado") or p["publicado"]) < corte]
     pendentes = [p for p in pendentes if p not in velhas]
     if limite:
         pendentes = pendentes[:limite]
