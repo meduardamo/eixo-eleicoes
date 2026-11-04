@@ -17,7 +17,15 @@ segurança do prédio; 12 matérias, uma delas lida em Primeira infância) e ada
 (CL: 2 matérias). Defesa civil no currículo e o programa do RS para o ensino superior ficaram fora.
 Também em 20/10: as 170 matérias da base completa com termo escolar que a Casa classificou fora de Educação foram lidas
 uma a uma; 40 são de educação básica e entraram com o código do subtema (temas_clientes/educacao_outros_temas_lidos.csv;
-o PL 4501/2020, ultraprocessados nas escolas, conta também em Saúde). Ensino superior e o que não cabe em subtema de cliente ficam fora das colunas.
+o PL 4501/2020, ultraprocessados nas escolas, conta também em Saúde).
+Em 04/11/2026 "Saúde da mulher e direitos reprodutivos" (MU) virou seis subtemas, a pedido do Coletivo Feminista:
+aborto legal: acesso e garantia (AB); restrições ao aborto legal e criminalização (RE); vida desde a concepção e
+direitos do nascituro (NC); gravidez infantil e aborto em meninas (GI); planejamento reprodutivo e contracepção (PP);
+saúde da mulher, gestação e parto (MU, o que sobrou). As 65 matérias de MU foram relidas (11 mudaram de código; os
+PDLs das portarias do Ministério da Saúde lidos pelo texto: 2.561/2020 e a nota técnica de 2024 sobre idade gestacional
+são RE, a Rede de Atenção Materna e Infantil é MU) e as 128 matérias da base completa com termo reprodutivo foram lidas
+uma a uma; 20 entraram (temas_clientes/reprodutivos_lidos.csv). Estupro de vulnerável sem gravidez segue em VI;
+direito trabalhista e previdenciário da gestante fica fora. Ensino superior e o que não cabe em subtema de cliente ficam fora das colunas.
 
 Nível por subtema, pelo número de matérias distintas do senador no subtema (autor ou relator):
 0 = Não atua; 1 = Pouco; 2 a 4 = Atua; 5 ou mais = Referência. A nota da célula lista as matérias.
@@ -44,7 +52,12 @@ SUBTEMAS = [
     ("Saúde", "PS", "Planos de saúde"),
     ("Saúde", "MV", "Medicamentos e vacinas"),
     ("Saúde", "DC", "Doenças e condições de saúde específicas"),
-    ("Saúde", "MU", "Saúde da mulher e direitos reprodutivos"),
+    ("Saúde", "AB", "Aborto legal: acesso e garantia"),
+    ("Saúde", "RE", "Restrições ao aborto legal e criminalização"),
+    ("Saúde", "NC", "Vida desde a concepção e direitos do nascituro"),
+    ("Saúde", "GI", "Gravidez infantil e aborto em meninas"),
+    ("Saúde", "PP", "Planejamento reprodutivo e contracepção"),
+    ("Saúde", "MU", "Saúde da mulher, gestação e parto"),
     ("Saúde", "PR", "Profissionais e formação em saúde"),
     ("Saúde", "FG", "Financiamento e gestão do SUS"),
     ("Saúde", "VS", "Vigilância e emergências sanitárias"),
@@ -92,8 +105,13 @@ def main():
     viol = c.ler_csv("temas_clientes/violencia_lidos.csv")
     for r in viol.itertuples():
         cod.setdefault((r.Casa, r.Matéria), set()).add(("Saúde", "VI"))
+    # direitos reprodutivos fora dos quatro temas (Constituição, Código Penal, Conanda, FGTS) entram pela base completa
+    repro = c.ler_csv("temas_clientes/reprodutivos_lidos.csv")
+    for r in repro.itertuples():
+        for s in str(r.Subtemas).split(","):
+            cod.setdefault((r.Casa, r.Matéria), set()).add(("Saúde", s))
     reg = c.ler_csv("levantamento_senado/registros.csv").drop_duplicates(["Parlamentar", "Casa", "Matéria", "Registro"])
-    reg = reg.merge(pd.concat([viol, extra])[["Casa", "Matéria"]].drop_duplicates(), on=["Casa", "Matéria"])
+    reg = reg.merge(pd.concat([viol, extra, repro])[["Casa", "Matéria"]].drop_duplicates(), on=["Casa", "Matéria"])
     reg = reg.assign(**{"Ano": reg.Matéria.str.extract(r"/(\d{4})")[0], "Virou lei": ""})
     mats = pd.concat([c.ler_csv(f"temas_clientes/materias_{g}.csv") for g in GRUPOS])
     mats = pd.concat([mats, reg[[k for k in mats.columns if k in reg.columns]]]).reindex(columns=mats.columns)
