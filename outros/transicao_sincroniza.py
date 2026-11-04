@@ -249,7 +249,8 @@ def secretariado(planilha) -> list:
             if nome and nomeacao:
                 situacao = "Nomeado"
             saida.append(base + [nome, situacao, data if nome else "", nomeacao,
-                                 _link(nomeacao, link_nom) or (fonte if nome else "")])
+                                 _link(nomeacao, link_nom) or (fonte if nome else ""),
+                                 _campo(d, "pasta em 2027")[0] if nome else ""])
     for bruto in _por_nome(ler_com_links(planilha, "Ministros", quebras=True)):
         d = _uma_linha(bruto)
         novos = _nomes_da_celula(_campo(bruto, "cotado 2027", "ocupante do cargo 2027")[0])
@@ -263,7 +264,7 @@ def secretariado(planilha) -> list:
             # a coluna é de cotados; sem sufixo, o nome é cotado
             nome, situacao = _situacao_do_nome(novo, "Cotado") if novo else ("", "")
             saida.append(base + [nome, situacao, data if nome else "", ato if novos else "",
-                                 _link(ato, link) or (fonte if nome else "")])
+                                 _link(ato, link) or (fonte if nome else ""), ""])
     return saida
 
 
@@ -377,8 +378,9 @@ def main():
             "Ato ou fonte", "Link"], nomes, [50, 150, 210, 200, 120, 150, 120, 320, 220])
     gravar(destino, ABA_SECRETARIADO,
            ["UF", "Órgão", "Cargo", "Titular (set/2026)", "Titular (out/2026)", "Exoneração",
-            "Nome para 2027", "Situação", "Data do anúncio", "Ato de nomeação", "Link"],
-           secret, [50, 260, 240, 200, 180, 220, 200, 100, 110, 220, 220])
+            "Nome para 2027", "Situação", "Data do anúncio", "Ato de nomeação", "Link",
+            "Pasta em 2027"],
+           secret, [50, 260, 240, 200, 180, 220, 200, 100, 110, 220, 220, 260])
     gravar(destino, ABA_NOTICIAS,
            ["Data", "UF", "Escopo", "Pessoa", "Manchete", "Veículo", "Link"],
            notas, [90, 50, 110, 160, 480, 160, 260])
