@@ -1222,7 +1222,7 @@ def main() -> None:
         preenchido = 0 <= i_feito < len(linha) and linha[i_feito].strip()
         if preenchido and not args.forcar:
             continue
-        alvos.append((numero, candidato))
+        alvos.append((numero, candidato, linha[i_feito].strip() if preenchido else ""))
     if args.limite:
         alvos = alvos[:args.limite]
 
@@ -1236,7 +1236,7 @@ def main() -> None:
             aba.batch_update(escritas, value_input_option="RAW")
             escritas.clear()
 
-    for i, (numero, candidato) in enumerate(alvos, start=1):
+    for i, (numero, candidato, publicado) in enumerate(alvos, start=1):
         posts = posts_por_candidato.get(candidato, [])
         contagem, canonico, analisados, posts_por_tema = contar(
             posts, ruido_do_candidato(candidato, uf_por_candidato.get(candidato, "")))
@@ -1260,49 +1260,50 @@ def main() -> None:
             }))
             continue
 
-        try:
-            grupos, resumo_modelo, uso = classificar(
-                gem, candidato, contagem, canonico, posts_por_tema, periodo(posts))
-        except Exception as erro:
-            print(f"[{i}/{len(alvos)}] {candidato}: falhou ({str(erro)[:160]}), pulando.")
+        # Até três tentativas quando o modelo devolve grupos e todos caem nas
+        # guardas: a saída varia de uma chamada para outra.
+        grupos, temas, resumo_modelo, falhou = [], [], "", False
+        for tentativa in range(3):
+            try:
+                grupos, resumo_modelo, uso = classificar(
+                    gem, candidato, contagem, canonico, posts_por_tema, periodo(posts))
+            except Exception as erro:
+                print(f"[{i}/{len(alvos)}] {candidato}: falhou ({str(erro)[:160]}), pulando.")
+                falhou = True
+                break
+            entrada += uso["entrada"]
+            saida += uso["saida"]
+            pensamento += uso["pensamento"]
+            temas = consolidar(grupos, contagem, canonico, analisados, posts_por_tema,
+                               lugares_do_candidato(candidato, uf_por_candidato.get(candidato, "")))
+            if temas or not grupos:
+                break
+        if falhou:
             continue
 
-        entrada += uso["entrada"]
-        saida += uso["saida"]
-        pensamento += uso["pensamento"]
-
-        temas = consolidar(grupos, contagem, canonico, analisados, posts_por_tema,
-                           lugares_do_candidato(candidato, uf_por_candidato.get(candidato, "")))
-        # Nenhum tema sobreviveu às guardas: o modelo devolveu grupo que não
-        # tinha post real embaixo, e não há o que publicar. A linha fica como
-        # estava, igual ao caminho de erro logo acima.
-        #
-        # Sem isto o vazio ia por cima do que já estava publicado. Aconteceu na
-        # rodada de 14/08/2026 com Elmano de Freitas (137 posts) e Felipe
-        # Camarão (105): os dois tinham 7 e 6 temas do dia anterior e saíram da
-        # planilha em branco, o que lê como candidato sem post.
-        # Modelo sem nenhum grupo (ou nada com 3 posts para mandar a ele): o
-        # candidato não tem pauta recorrente, e a célula diz isso. Vazio em
-        # branco lia como falha da rodada.
-        if not grupos:
-            texto_periodo = periodo(posts)
+        # Sem tema depois das tentativas. Ranking já publicado fica: foi o que
+        # salvou Elmano de Freitas (137 posts) e Felipe Camarão (105) em
+        # 14/08/2026, quando uma rodada ruim ia gravar vazio por cima de 7 e 6
+        # temas. Sem ranking publicado, a célula diz o que a contagem mostra:
+        # nada de política pública chega a MINIMO_POSTS_POR_TEMA posts. Branco
+        # lia como falha da rodada.
+        if not temas:
+            if publicado.startswith("1."):
+                print(f"[{i}/{len(alvos)}] {candidato}: nenhum tema sobreviveu às "
+                      f"guardas sobre {analisados} post(s). Ranking anterior mantido.")
+                continue
             print(f"[{i}/{len(alvos)}] {candidato}: nenhuma pauta recorrente em "
                   f"{analisados} post(s).")
             escritas.extend(escritas_da_linha(indices, numero, {
                 "Temas Principais": f"Nenhuma pauta de política pública aparece em "
                                     f"{MINIMO_POSTS_POR_TEMA} posts ou mais.",
-                "Resumo da conta": f"Dos {len(posts)} posts de {texto_periodo}, {analisados} "
+                "Resumo da conta": f"Dos {len(posts)} posts de {periodo(posts)}, {analisados} "
                                    f"têm temas analisados, e nenhuma pauta de política "
                                    f"pública aparece em {MINIMO_POSTS_POR_TEMA} deles ou mais.",
                 "Nº de posts": "",
                 COLUNA_PERCENTUAL: "",
                 "Temas brutos agrupados": "",
             }))
-            continue
-        if not temas:
-            print(f"[{i}/{len(alvos)}] {candidato}: nenhum tema sobreviveu às "
-                  f"guardas sobre {analisados} post(s). Linha mantida como estava, "
-                  f"rode de novo.")
             continue
 
         resumo = montar_resumo(candidato, resumo_modelo, temas, analisados,
