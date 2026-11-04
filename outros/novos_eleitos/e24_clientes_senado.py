@@ -90,6 +90,9 @@ PARECER_LIDO = {
     # os dois mantêm o art. 2º da Câmara ("primeira infância ... desde a gestação"), só com emendas de redação (lidos em 27/10/2026)
     ("PL 1924/2025", "Damares Alves"): "parecer pela aprovação, mantida a gestação na definição de primeira infância",
     ("PL 1924/2025", "Humberto Costa"): "parecer pela aprovação, mantida a gestação na definição de primeira infância",
+    # relatorias dos projetos da descrição do cliente, pareceres lidos em 04/11/2026
+    ("PL 1125/2024", "Magno Malta"): "parecer pela aprovação (CDH, 2026)",
+    ("PL 848/2019", "Damares Alves"): "parecer pela aprovação, com emenda que mantém o alerta sobre os riscos do aborto (CDH, 2025)",
 }
 
 # Sinais na pauta, além dos projetos listados: votações nominais do Senado que separam os senadores na pauta e
@@ -300,6 +303,16 @@ DESCRICAO = {
     # 27/10/2026: aborto e nascituro fora de qualquer lista até aqui
     ("PL 1904/2024", "Câmara"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "equipara ao homicídio o aborto após 22 semanas, inclusive em caso de estupro"),
     ("PEC 29/2015", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "inviolabilidade do direito à vida desde a concepção"),
+    # 04/11/2026: projetos que entraram nos subtemas reprodutivos e não tinham sentido para o cliente (PDLs lidos pelo
+    # texto; PL 848/2019 e PL 1125/2024 pelo parecer). Só o Coletivo: o foco do UNFPA é a infância (Eduarda, 04/11)
+    ("PDL 24/2024", "Câmara"): ({"Coletivo Feminista": -1}, "susta a nota técnica do Ministério da Saúde que tirava o limite de idade gestacional do aborto legal"),
+    ("PDL 46/2023", "Câmara"): ({"Coletivo Feminista": -1}, "susta a revogação da Portaria 2.561/2020 (justificação e notificação à polícia no aborto legal)"),
+    ("PDL 19/2023", "Senado"): ({"Coletivo Feminista": -1}, "susta a revogação da Portaria 2.561/2020 (justificação e notificação à polícia no aborto legal)"),
+    ("PL 11/2024", "Senado"): ({"Coletivo Feminista": -1}, "programa nacional de conscientização contra o aborto"),
+    ("PL 1125/2024", "Senado"): ({"Coletivo Feminista": -1}, "exige boletim de ocorrência e exame de corpo de delito para o aborto legal em caso de estupro"),
+    ("PL 2007/2022", "Senado"): ({"Coletivo Feminista": -1}, "obriga preservar a vida do feto viável no aborto legal"),
+    ("PL 848/2019", "Senado"): ({"Coletivo Feminista": -1}, "campanha obrigatória sobre gravidez na adolescência e riscos do aborto"),
+    ("PL 3233/2015", "Câmara"): ({"Coletivo Feminista": 1}, "esterilização voluntária a partir dos 18 anos, sem consentimento do cônjuge"),
     # protocolos de acolhimento à vítima de violência sexual em lugares de lazer (inteiro teor lido): agenda do UNFPA;
     # o Coletivo fica de fora, a agenda declarada dele é aborto, contracepção e autodeterminação reprodutiva
     ("PL 999/2023", "Câmara"): ({"UNFPA": 1}, "protocolo de acolhimento às vítimas de violência sexual em lugares de lazer"),
@@ -356,6 +369,7 @@ SINAIS_DIRETOS = [
     ("Hamilton Mourão", {"Coletivo Feminista": -1}, "evidência", "autor da Emenda 139 ao PL 4/2025 (Código Civil), que repete a regra vigente do art. 2º sobre os direitos do nascituro desde a concepção"),
     ("Magno Malta", {"Coletivo Feminista": -1}, "evidência", "autor da Emenda 769 ao PL 4/2025 (Código Civil), que limita a recusa de tratamento a não violar direito de terceiros, com o nascituro na justificação"),
     ("Magno Malta", {"Coletivo Feminista": -1}, "evidência", "autor da Emenda 781 ao PL 4/2025 (Código Civil), que suprime os arts. 1.511-A a 1.511-G, inclusive a vida pré-uterina como potencialidade"),
+    ("Damares Alves", {"Coletivo Feminista": -1}, "evidência", "autora do PRS 26/2023, que cria a Frente Parlamentar Mista do Consenso de Genebra sobre Saúde da Mulher e Fortalecimento da Família (frente, sinal fraco)"),
     ("Teresa Leitão", {"Coletivo Feminista": 1}, "evidência", "autora da Emenda 697 ao PL 4/2025 (Código Civil), que reconhece a autonomia progressiva de crianças e adolescentes nas decisões sobre eles"),
 ]
 
@@ -449,7 +463,7 @@ POSICAO_PUBLICA = {
 }
 
 
-def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
+def sinais_descricao(cliente, ja_na_base, senadores, aut, votos, rel):
     out = {n: [] for n in senadores}
     vistos = set()
     for k, casa, trecho, sentidos, rot, *fonte in DESCRICAO_VOTOS:
@@ -485,6 +499,20 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos):
                 out[r.Parlamentar].append((peso, s if peso != "evidência" else 0,
                     f"{'autor' if forte else 'coautor'} do {k} ({rot}; {lado})"
                     + (" (assinatura de PEC, não conta)" if peso == "evidência" else "")))
+    # relatoria do projeto da descrição: conta só com o parecer lido (PARECER_LIDO); sem ele, fica como registro
+    for (k, casa), (sentidos, rot) in DESCRICAO.items():
+        if cliente not in sentidos or k in ja_na_base:
+            continue
+        s = sentidos[cliente]
+        for r in rel[(rel.k == k) & (rel.Casa == casa)].drop_duplicates("Parlamentar").itertuples():
+            if r.Parlamentar not in out:
+                continue
+            lado = POSICAO_PUBLICA.get((cliente, k), f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar")
+            lido = PARECER_LIDO.get((k, r.Parlamentar))
+            if lido:
+                out[r.Parlamentar].append(("forte", s, f"relator do {k} ({rot}) na {r.Colegiado}, com {lido} ({lado})"))
+            else:
+                out[r.Parlamentar].append(("evidência", 0, f"relator do {k} ({rot}) na {r.Colegiado} (sentido do parecer não lido)"))
     locais = c.ler_csv(LOCAIS)
     for r in locais[locais.Papel.isin(["Primeiro autor", "Coautor"])].itertuples():
         chave = (r.Parlamentar, str(r.Matéria).strip())
@@ -692,7 +720,7 @@ def main():
                 for n, s_ in sinais_pauta(pt.Pauta, pt._4 == "A favor", list(sinais), aut, com_votos).items():
                     sinais[n] += s_
         ja_na_base = {k for p in g.Projeto for k, _ in chaves(p)}
-        for n, s_ in sinais_descricao(cliente, ja_na_base, list(sinais), aut, votos_todos).items():
+        for n, s_ in sinais_descricao(cliente, ja_na_base, list(sinais), aut, votos_todos, rel).items():
             sinais[n] += s_
         com_registro = 0
         for n, s in sinais.items():

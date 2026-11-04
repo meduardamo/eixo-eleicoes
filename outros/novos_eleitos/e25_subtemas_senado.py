@@ -27,6 +27,7 @@ são RE, a Rede de Atenção Materna e Infantil é MU) e as 128 matérias da bas
 uma a uma; 20 entraram (temas_clientes/reprodutivos_lidos.csv). Estupro de vulnerável sem gravidez segue em VI;
 direito trabalhista e previdenciário da gestante fica fora. Ensino superior e o que não cabe em subtema de cliente ficam fora das colunas.
 
+Emendas lidas pelo texto (EMENDAS_LIDAS, 04/11/2026) contam como item; as do senador a um mesmo projeto contam uma vez.
 Nível por subtema, pelo número de matérias distintas do senador no subtema (autor ou relator):
 0 = Não atua; 1 = Pouco; 2 a 4 = Atua; 5 ou mais = Referência. A nota da célula lista as matérias.
 
@@ -89,6 +90,24 @@ SUBTEMAS = [
 # códigos lidos em outro tema que contam no subtema: (tema da leitura, código) -> (tema da coluna, código)
 JUNTA = {("Educação", "EI"): ("Primeira infância", "EI"), ("Saúde", "BT"): ("Saúde", "SME"),
          ("Primeira infância", "IN"): ("Educação", "IN")}
+# Emendas lidas pelo texto (as mesmas dos sinais diretos da etapa 24). Todas as emendas do senador a um mesmo projeto
+# contam como um item no subtema, para emenda não pesar mais que projeto. A 697 (Teresa Leitão, autonomia progressiva) e a
+# 769 (Magno Malta, recusa de tratamento) ao Código Civil não têm subtema.
+EMENDAS_LIDAS = [
+    # (senador, Casa, projeto emendado, números, ano, (tema, código), o que fazem)
+    ("Efraim Filho", "Senado", "PLP 68/2024", "1490", 2024, ("Saúde", "AS"), "tira as bebidas açucaradas do Imposto Seletivo"),
+    ("Laércio Oliveira", "Senado", "PLP 68/2024", "642", 2024, ("Saúde", "AS"), "limita a 1% o Imposto Seletivo das bebidas açucaradas"),
+    ("Veneziano Vital do Rêgo", "Senado", "PLP 68/2024", "1730", 2024, ("Saúde", "AS"), "tira as bebidas açucaradas do Imposto Seletivo"),
+    ("Magno Malta", "Senado", "PLP 68/2024", "1928", 2024, ("Saúde", "AS"), "tira as bebidas açucaradas do Imposto Seletivo"),
+    ("Beto Faro", "Senado", "PLP 68/2024", "2197", 2024, ("Saúde", "AS"), "estende o Imposto Seletivo às bebidas ultraprocessadas"),
+    ("Tereza Cristina", "Senado", "PLP 68/2024", "1873", 2024, ("Saúde", "TA"), "escalona o Imposto Seletivo das bebidas alcoólicas"),
+    ("Carlos Portinho", "Senado", "PL 4/2025", "741", 2025, ("Saúde", "VI"), "fixa 18 anos como idade mínima para o casamento"),
+    ("Damares Alves", "Senado", "PL 4/2025", "15, 26, 27, 38 e 40", 2025, ("Saúde", "NC"),
+     "vida desde a concepção, personalidade civil e direitos do nascituro, vedação ao descarte de embriões"),
+    ("Jorge Seif", "Senado", "PL 4/2025", "56, 61 e 67", 2025, ("Saúde", "NC"), "nascituro titular de direitos da personalidade, vida desde a concepção"),
+    ("Hamilton Mourão", "Senado", "PL 4/2025", "139", 2025, ("Saúde", "NC"), "repete a regra vigente sobre os direitos do nascituro desde a concepção"),
+    ("Magno Malta", "Senado", "PL 4/2025", "781", 2025, ("Saúde", "NC"), "suprime a vida pré-uterina como potencialidade"),
+]
 NIVEL = lambda n: "Não atua" if n == 0 else "Pouco" if n == 1 else "Atua" if n <= 4 else "Referência"
 
 
@@ -128,6 +147,10 @@ def main():
                     k = (r.Casa, r.Matéria)
                     lei = str(r._10).strip() == "Sim"
                     achou.setdefault(k, [set(), lei, str(r.Ementa), int(str(r.Ano)[:4]) if str(r.Ano)[:4].isdigit() else 0])[0].add(papel)
+            for sen, casa, proj, nums, ano, cod_e, faz in EMENDAS_LIDAS:
+                if sen == nome and cod_e == (tema, s):
+                    plural = "Emendas" if " e " in nums else "Emenda"
+                    achou[(casa, f"{plural} {nums} ao {proj}")] = [{"autor"}, False, faz, ano]
             linha[f"{tema}|{rot}"] = NIVEL(len(achou))
             if achou:
                 itens = sorted(achou.items(), key=lambda x: -x[1][3])
