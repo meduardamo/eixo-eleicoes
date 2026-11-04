@@ -15,7 +15,8 @@ entrada). Quem soma as contagens é o Python, depois do agrupamento. O modelo
 nunca escreve um número.
 
 O script se vira sozinho: a lista de candidatos sai da aba "Instagram", que é o
-cadastro do monitoramento, e a aba "Alinhamento Temático" é criada e preenchida
+cadastro do monitoramento (desde o 2º turno, só quem tem Situação de eleito;
+os demais ficam na aba com o resultado antigo e marcados na coluna Situação), e a aba "Alinhamento Temático" é criada e preenchida
 se ainda não existir. Não depende de nenhuma outra rodada ter passado antes.
 
 Grava cinco colunas na aba "Alinhamento Temático". As duas primeiras são as que
@@ -58,9 +59,18 @@ from google.oauth2.service_account import Credentials
 
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "1piO-m19orW1i-Z-6rNeWdXnEAWqw5wneiDpdHZqOa6Y")
 ABA_ALINHAMENTO = os.getenv("ABA_ALINHAMENTO_TEMATICO", "Alinhamento Temático")
-ABAS_MENSAIS = [a.strip() for a in os.getenv("ABAS_MENSAIS", "julho,agosto").split(",") if a.strip()]
+# Aba que não existe é pulada com aviso, então dezembro pode ficar na lista.
+ABAS_MENSAIS = [a.strip() for a in os.getenv(
+    "ABAS_MENSAIS", "julho,agosto,setembro,outubro,novembro,dezembro").split(",") if a.strip()]
 
 COLUNA_CANDIDATO = "Candidato"
+# Depois do 2º turno só os eleitos são reclassificados. A situação vem da aba
+# "Instagram", a mesma coluna que a coleta usa para escolher quem segue.
+COLUNA_SITUACAO = "Situação"
+SITUACOES_ELEITO = {"eleito", "eleita", "reeleito", "reeleita"}
+# Quem já tinha linha na aba e saiu do cadastro perdeu no 1º turno (ou nem
+# chegou a concorrer: aí a célula é corrigida à mão e o script não mexe nela).
+SITUACAO_FORA_DO_CADASTRO = "Não eleito"
 COLUNA_PERCENTUAL = "% dos posts em que aparece"
 COLUNA_PERCENTUAL_ANTIGA = "% dos posts"
 COLUNA_TEMAS_BRUTOS = "Temas"
@@ -370,6 +380,58 @@ def ler_uf(sh: gspread.Spreadsheet) -> dict[str, str]:
         if candidato:
             por_candidato[candidato] = uf_atual
     return por_candidato
+
+
+def ler_situacao(sh: gspread.Spreadsheet) -> dict[str, str] | None:
+    """Situação de cada candidato na aba 'Instagram'. None se a coluna não existe."""
+    try:
+        valores = sh.worksheet("Instagram").get_all_values()
+    except gspread.exceptions.WorksheetNotFound:
+        return None
+    cabecalho = valores[0]
+    if COLUNA_SITUACAO not in cabecalho or COLUNA_CANDIDATO not in cabecalho:
+        return None
+    i_sit, i_cand = cabecalho.index(COLUNA_SITUACAO), cabecalho.index(COLUNA_CANDIDATO)
+    situacao = {}
+    for linha in valores[1:]:
+        candidato = linha[i_cand].strip() if i_cand < len(linha) else ""
+        if candidato:
+            situacao[candidato] = linha[i_sit].strip() if i_sit < len(linha) else ""
+    return situacao
+
+
+def e_eleito(situacao: str) -> bool:
+    return situacao.strip().lower() in SITUACOES_ELEITO
+
+
+def garantir_situacao(aba: gspread.Worksheet, situacao: dict[str, str]) -> None:
+    """Coluna Situação logo depois de Candidato, preenchida a cada rodada.
+
+    Quem está no cadastro recebe a situação de lá. Quem não está mais fica com
+    o que a célula já tem; vazia, vira "Não eleito".
+    """
+    valores = aba.get_all_values()
+    cabecalho = valores[0]
+    i_cand = cabecalho.index(COLUNA_CANDIDATO)
+    if COLUNA_SITUACAO not in cabecalho:
+        aba.insert_cols([[COLUNA_SITUACAO]], col=i_cand + 2,
+                        value_input_option="RAW", inherit_from_before=True)
+        valores = aba.get_all_values()
+        cabecalho = valores[0]
+    i_sit = cabecalho.index(COLUNA_SITUACAO)
+    coluna = []
+    for linha in valores[1:]:
+        candidato = linha[i_cand].strip() if i_cand < len(linha) else ""
+        atual = linha[i_sit].strip() if i_sit < len(linha) else ""
+        if not candidato:
+            coluna.append([atual])
+        elif candidato in situacao and situacao[candidato]:
+            coluna.append([situacao[candidato]])
+        else:
+            coluna.append([atual or SITUACAO_FORA_DO_CADASTRO])
+    if coluna:
+        letra = _letra_coluna(i_sit)
+        aba.update(coluna, f"{letra}2:{letra}{len(coluna) + 1}", value_input_option="RAW")
 
 
 def contar(posts: list[list], ruido_extra: set[str] | None = None) -> tuple[Counter, dict[str, str], int, dict[str, set[int]]]:
@@ -825,6 +887,7 @@ def garantir_colunas(aba: gspread.Worksheet, cabecalho: list[str]) -> dict[str, 
 
 LARGURA_COLUNA = {
     COLUNA_CANDIDATO: 170,
+    COLUNA_SITUACAO: 100,
     "Temas Principais": 520,
     "Resumo da conta": 430,
 }
@@ -845,7 +908,7 @@ def formatar_aba(sh: gspread.Spreadsheet, aba: gspread.Worksheet,
         }
     }]
 
-    visiveis = [COLUNA_CANDIDATO, "Temas Principais", "Resumo da conta"]
+    visiveis = [COLUNA_CANDIDATO, COLUNA_SITUACAO, "Temas Principais", "Resumo da conta"]
     for nome in visiveis:
         indice = indices.get(nome, cabecalho.index(nome) if nome in cabecalho else None)
         if indice is None:
@@ -952,10 +1015,23 @@ def main() -> None:
 
     posts_por_candidato = ler_posts(sh)
     uf_por_candidato = ler_uf(sh)
+    situacao = ler_situacao(sh)
     print(f"{sum(len(v) for v in posts_por_candidato.values())} posts lidos "
-          f"de {len(posts_por_candidato)} candidato(s).")
+          f"de {len(posts_por_candidato)} candidato(s) nas abas {', '.join(ABAS_MENSAIS)}.")
 
-    aba = garantir_aba(sh, list(uf_por_candidato), set(posts_por_candidato))
+    # Sem a coluna Situação no cadastro, roda todo mundo, como antes.
+    if situacao is None:
+        roster = list(uf_por_candidato)
+        print("Aba 'Instagram' sem coluna Situação: todos os candidatos entram.")
+    else:
+        roster = [c for c in uf_por_candidato if e_eleito(situacao.get(c, ""))]
+        fora = [c for c in uf_por_candidato if c not in roster]
+        print(f"{len(roster)} eleito(s) no cadastro; fora da rodada: "
+              f"{', '.join(fora) or 'ninguém'}.")
+
+    aba = garantir_aba(sh, roster, set(posts_por_candidato))
+    if situacao is not None:
+        garantir_situacao(aba, situacao)
     valores = aba.get_all_values()
     cabecalho = valores[0]
     indices = garantir_colunas(aba, cabecalho)
@@ -969,6 +1045,8 @@ def main() -> None:
         if not candidato:
             continue
         if args.candidato and candidato != args.candidato:
+            continue
+        if situacao is not None and candidato not in roster:
             continue
         preenchido = 0 <= i_feito < len(linha) and linha[i_feito].strip()
         if preenchido and not args.forcar:

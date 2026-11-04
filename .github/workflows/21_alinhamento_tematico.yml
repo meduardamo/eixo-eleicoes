@@ -20,7 +20,7 @@ concurrency:
 jobs:
   classificar:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 150
     env:
       TZ: America/Recife
 
