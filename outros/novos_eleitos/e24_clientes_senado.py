@@ -197,12 +197,14 @@ DESCRICAO = {
     ("PEC 4/2019", "Senado"): ({"UNFPA": -1, "Infinis": -1}, "reduz a maioridade penal"),
     ("PEC 15/2019", "Senado"): ({"UNFPA": -1, "Infinis": -1}, "reduz a maioridade penal"),
     ("PEC 32/2019", "Senado"): ({"UNFPA": -1, "Infinis": -1}, "reduz a maioridade penal para 16 anos"),
-    ("PLS 46/2017", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "criminaliza o aborto em qualquer fase"),
-    ("PEC 49/2023", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "direito à vida desde o nascituro"),
-    ("PLP 61/2025", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "proteção do nascituro pelo Ministério Público"),
-    ("PL 2873/2022", "Senado"): ({"UNFPA": 1, "Coletivo Feminista": 1}, "crime violar o sigilo do aborto legal"),
-    ("PL 3415/2019", "Câmara"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "agrava a pena de venda de remédio abortivo"),
-    ("PDL 612/2021", "Câmara"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "susta recomendação de aborto legal por telessaúde"),
+    # 04/11/2026: UNFPA saiu de todos os projetos de aborto e nascituro. O programa do UNFPA no Brasil (DP/FPA/CPD/BRA/7,
+    # 2024-2028) não tem ação sobre aborto e a pauta dele com a Eixo é casamento infantil, maioridade penal e Código Civil
+    ("PLS 46/2017", "Senado"): ({"Coletivo Feminista": -1}, "criminaliza o aborto em qualquer fase"),
+    ("PEC 49/2023", "Senado"): ({"Coletivo Feminista": -1}, "direito à vida desde o nascituro"),
+    ("PLP 61/2025", "Senado"): ({"Coletivo Feminista": -1}, "proteção do nascituro pelo Ministério Público"),
+    ("PL 2873/2022", "Senado"): ({"Coletivo Feminista": 1}, "crime violar o sigilo do aborto legal"),
+    ("PL 3415/2019", "Câmara"): ({"Coletivo Feminista": -1}, "agrava a pena de venda de remédio abortivo"),
+    ("PDL 612/2021", "Câmara"): ({"Coletivo Feminista": -1}, "susta recomendação de aborto legal por telessaúde"),
     ("PL 5011/2023", "Câmara"): ({"UNFPA": -1}, "casamento na idade núbil com assinatura de um dos pais"),
     ("PL 4968/2019", "Câmara"): ({"UNFPA": 1}, "saúde menstrual nas escolas"),
     ("PL 5474/2019", "Câmara"): ({"UNFPA": 1}, "absorventes na atenção primária"),
@@ -298,11 +300,11 @@ DESCRICAO = {
     ("PDC 341/2016", "Câmara"): ({"IDEC": 1}, "susta reajuste de 12,5% dos medicamentos acima da inflação"),
     ("PL 4231/2019", "Senado"): ({"IDEC": 1}, "limita novos registros de agrotóxicos"),
     ("PL 494/2022", "Senado"): ({"IDEC": 1}, "reavaliação periódica de agrotóxicos"),
-    ("PL 1838/2022", "Câmara"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "exige autorização judicial para o aborto legal em caso de estupro"),
-    ("PL 1648/2023", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "comunicação à polícia de aborto autoprovocado"),
+    ("PL 1838/2022", "Câmara"): ({"Coletivo Feminista": -1}, "exige autorização judicial para o aborto legal em caso de estupro"),
+    ("PL 1648/2023", "Senado"): ({"Coletivo Feminista": -1}, "comunicação à polícia de aborto autoprovocado"),
     # 27/10/2026: aborto e nascituro fora de qualquer lista até aqui
-    ("PL 1904/2024", "Câmara"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "equipara ao homicídio o aborto após 22 semanas, inclusive em caso de estupro"),
-    ("PEC 29/2015", "Senado"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "inviolabilidade do direito à vida desde a concepção"),
+    ("PL 1904/2024", "Câmara"): ({"Coletivo Feminista": -1}, "equipara ao homicídio o aborto após 22 semanas, inclusive em caso de estupro"),
+    ("PEC 29/2015", "Senado"): ({"Coletivo Feminista": -1}, "inviolabilidade do direito à vida desde a concepção"),
     # 04/11/2026: projetos que entraram nos subtemas reprodutivos e não tinham sentido para o cliente (PDLs lidos pelo
     # texto; PL 848/2019 e PL 1125/2024 pelo parecer). Só o Coletivo: o foco do UNFPA é a infância (Eduarda, 04/11)
     ("PDL 24/2024", "Câmara"): ({"Coletivo Feminista": -1}, "susta a nota técnica do Ministério da Saúde que tirava o limite de idade gestacional do aborto legal"),
@@ -379,7 +381,7 @@ SINAIS_DIRETOS = [
 DESCRICAO_VOTOS = [
     ("PDL 3/2025", "Câmara", "Aprovado o Projeto de Decreto Legislativo", {"Coletivo Feminista": -1},
      "no PDL 3/2025, que susta a resolução 258 do Conanda sobre o atendimento, inclusive o aborto legal, de meninas vítimas de violência sexual (Sim = sustar a resolução)"),
-    ("PEC 164/2012", "Câmara", "Aprovado o Parecer", {"Coletivo Feminista": -1, "UNFPA": -1},
+    ("PEC 164/2012", "Câmara", "Aprovado o Parecer", {"Coletivo Feminista": -1},
      "no parecer da PEC 164/2012, que põe na Constituição a inviolabilidade da vida desde a concepção (Sim = aprovar o parecer)"),
     # Emenda de Plenário 2 (Chris Tonietto): "primeira infância o período desde a gestação"; a coordenação marcou o PL 1924
     # como detrator para o Coletivo enquanto a gestação estiver no texto
@@ -425,8 +427,8 @@ DESCRICAO_LOCAL = {
     ("Capitão Contar", "PL 423/2021"): ({"Cactus": 1}, "política de diagnóstico e tratamento da depressão"),
     ("Capitão Contar", "PL 2866/2019"): ({"UNFPA": 1}, "proteção da gestante e da parturiente contra a violência obstétrica"),
     ("Carlos Bolsonaro", "PL 3/2021"): ({"ISG": -1, "FMCSV": -1}, "permite a educação domiciliar"),
-    ("Carlos Bolsonaro", "PL 1296/2025"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "campanha permanente contra o aborto"),
-    ("Carlos Bolsonaro", "PL 1888/2023"): ({"UNFPA": -1, "Coletivo Feminista": -1}, "impõe exigência às equipes médicas antes do aborto legal"),
+    ("Carlos Bolsonaro", "PL 1296/2025"): ({"Coletivo Feminista": -1}, "campanha permanente contra o aborto"),
+    ("Carlos Bolsonaro", "PL 1888/2023"): ({"Coletivo Feminista": -1}, "impõe exigência às equipes médicas antes do aborto legal"),
     ("Carlos Bolsonaro", "PL 1451/2025"): ({"Vital Strategies": 1}, "campanha de prevenção ao alcoolismo juvenil"),
     ("Carlos Bolsonaro", "PL 1556/2025"): ({"Umane": 1}, "prevenção de doenças crônicas não transmissíveis nas redes de saúde e de educação"),
     ("Chicão", "PL 125/2016"): ({"FMCSV": 1}, "políticas públicas para a primeira infância"),
