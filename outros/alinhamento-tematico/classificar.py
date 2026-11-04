@@ -105,7 +105,9 @@ TOP_N = int(os.getenv("TOP_N_TEMAS", "10"))
 MINIMO_POSTS_POR_TEMA = int(os.getenv("MINIMO_POSTS_POR_TEMA", "3"))
 # Abaixo disso o top N não descreve nada: são poucos posts para qualquer
 # ranking. A linha sai marcada em vez de sair errada.
-MINIMO_POSTS_CANDIDATO = int(os.getenv("MINIMO_POSTS_CANDIDATO", "20"))
+# Era 20 até 04/11/2026; baixou a pedido dela para Lahesio Bonfim (18) e Mauro
+# Mendes (17) entrarem no ranking.
+MINIMO_POSTS_CANDIDATO = int(os.getenv("MINIMO_POSTS_CANDIDATO", "10"))
 
 MODELO = os.getenv("MODELO_GEMINI", "gemini-3.6-flash")
 TENTATIVAS = 4
@@ -1246,10 +1248,12 @@ def main() -> None:
             # em 'Temas Principais' lê como falha da rodada, e aqui não houve
             # falha nenhuma, houve pouco post.
             escritas.extend(escritas_da_linha(indices, numero, {
-                "Temas Principais": f"Base pequena para ranquear: {analisados} "
-                                    f"post(s) analisado(s), mínimo de "
+                "Temas Principais": f"Poucos posts para ranquear: {analisados} "
+                                    f"com temas analisados, mínimo de "
                                     f"{MINIMO_POSTS_CANDIDATO}.",
-                "Resumo da conta": "Base pequena demais para ranquear.",
+                "Resumo da conta": f"Dos {len(posts)} posts de {periodo(posts)}, só "
+                                   f"{analisados} têm temas analisados, poucos para "
+                                   f"ranquear.",
                 "Nº de posts": analisados,
                 COLUNA_PERCENTUAL: "",
                 "Temas brutos agrupados": "",
@@ -1277,6 +1281,24 @@ def main() -> None:
         # rodada de 14/08/2026 com Elmano de Freitas (137 posts) e Felipe
         # Camarão (105): os dois tinham 7 e 6 temas do dia anterior e saíram da
         # planilha em branco, o que lê como candidato sem post.
+        # Modelo sem nenhum grupo (ou nada com 3 posts para mandar a ele): o
+        # candidato não tem pauta recorrente, e a célula diz isso. Vazio em
+        # branco lia como falha da rodada.
+        if not grupos:
+            texto_periodo = periodo(posts)
+            print(f"[{i}/{len(alvos)}] {candidato}: nenhuma pauta recorrente em "
+                  f"{analisados} post(s).")
+            escritas.extend(escritas_da_linha(indices, numero, {
+                "Temas Principais": f"Nenhuma pauta de política pública aparece em "
+                                    f"{MINIMO_POSTS_POR_TEMA} posts ou mais.",
+                "Resumo da conta": f"Dos {len(posts)} posts de {texto_periodo}, {analisados} "
+                                   f"têm temas analisados, e nenhuma pauta de política "
+                                   f"pública aparece em {MINIMO_POSTS_POR_TEMA} deles ou mais.",
+                "Nº de posts": "",
+                COLUNA_PERCENTUAL: "",
+                "Temas brutos agrupados": "",
+            }))
+            continue
         if not temas:
             print(f"[{i}/{len(alvos)}] {candidato}: nenhum tema sobreviveu às "
                   f"guardas sobre {analisados} post(s). Linha mantida como estava, "
