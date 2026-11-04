@@ -77,9 +77,11 @@ def _id(nome: str) -> str:
     return valor
 
 
-def ler_com_links(planilha, aba: str) -> list:
+def ler_com_links(planilha, aba: str, quebras: bool = False) -> list:
     """Linhas da aba como [(texto, link)], com o link da célula quando houver
-    (HYPERLINK, link inserido ou link num trecho do texto)."""
+    (HYPERLINK, link inserido ou link num trecho do texto). quebras=True
+    mantém a quebra de linha dentro da célula (um nome por linha)."""
+    arruma = (lambda t: "\n".join(filter(None, map(limpo, str(t or "").split("\n"))))) if quebras else limpo
     meta = planilha.fetch_sheet_metadata(params={
         "includeGridData": "true", "ranges": f"'{aba}'",
         "fields": "sheets.data.rowData.values(formattedValue,hyperlink,"
@@ -92,7 +94,7 @@ def ler_com_links(planilha, aba: str) -> list:
             if not link:
                 link = next((r["format"]["link"]["uri"] for r in v.get("textFormatRuns", [])
                              if r.get("format", {}).get("link", {}).get("uri")), "")
-            celulas.append((limpo(v.get("formattedValue", "")), link))
+            celulas.append((arruma(v.get("formattedValue", "")), link))
         linhas.append(celulas)
     return linhas
 
@@ -109,11 +111,16 @@ def _cabecalho(linhas: list) -> int:
 def _por_nome(linhas: list):
     """Gera dicts {coluna normalizada: (texto, link)} a partir do cabeçalho."""
     i = _cabecalho(linhas)
-    nomes = [sem_acento(t) for t, _ in linhas[i]]
+    nomes = [sem_acento(limpo(t)) for t, _ in linhas[i]]
     for l in linhas[i + 1:]:
         l = l + [("", "")] * (len(nomes) - len(l))
         if any(t for t, _ in l):
             yield {n: l[j] for j, n in enumerate(nomes) if n}
+
+
+def _uma_linha(d: dict) -> dict:
+    """Mesmo dict, com quebras de linha viradas espaço (campos de um valor só)."""
+    return {n: (limpo(t), lk) for n, (t, lk) in d.items()}
 
 
 def _campo(d: dict, *inicios) -> tuple:
@@ -125,17 +132,47 @@ def _campo(d: dict, *inicios) -> tuple:
     return ("", "")
 
 
+def _exato(d: dict, nome: str) -> tuple:
+    """(texto, link) da coluna com esse nome exato ("Fonte" não é "Fonte Oficial")."""
+    return d.get(sem_acento(nome), ("", ""))
+
+
 def _link(texto: str, link: str) -> str:
     return link or (texto if texto.startswith("http") else "")
 
 
-def _situacao_do_nome(texto: str) -> tuple:
+def _situacao_do_nome(texto: str, padrao: str = "Anunciado") -> tuple:
     """'Maria Gabriela Bessa - cotada' -> ('Maria Gabriela Bessa', 'Cotado')."""
     m = re.search(r"\s*[-–(]\s*(cotad|anunciad|nomead|confirmad)[oa]s?\)?\s*$", texto, re.I)
     if not m:
-        return texto, "Anunciado"
+        return texto, padrao
     rotulo = {"cotad": "Cotado", "nomead": "Nomeado"}.get(sem_acento(m[1]), "Anunciado")
     return texto[:m.start()].strip(), rotulo
+
+
+# Coluna Status das abas do monitoramento (desde 03/11/2026).
+STATUS = {"cotado": "Cotado", "definido": "Anunciado", "anunciado": "Anunciado",
+          "nomeado": "Nomeado"}
+
+
+def _nomes_da_celula(texto: str) -> list:
+    """Uma célula pode trazer vários nomes, um por linha ("- Fulano (PT-CE);")."""
+    saida = []
+    for parte in re.split(r"\n+", str(texto or "")):
+        parte = re.sub(r"^[\s\-–•]+|[\s;,.]+$", "", parte)
+        if parte:
+            saida.append(parte)
+    return saida
+
+
+def _data_do_anuncio(texto: str) -> str:
+    """'3/11' -> '03/11/2026'; data completa fica como está."""
+    m = re.fullmatch(r"(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?", texto.strip())
+    if not m:
+        return texto.strip()
+    ano = m[3] or "2026"
+    ano = "20" + ano if len(ano) == 2 else ano
+    return f"{int(m[1]):02d}/{int(m[2]):02d}/{ano}"
 
 
 # ─── Monitoramento ───────────────────────────────────────────────────────────
@@ -177,36 +214,56 @@ def nomes_da_transicao(planilha) -> list:
     return saida
 
 
+def _fonte_do_nome(d: dict) -> tuple:
+    """(data do anúncio, link da fonte) da linha. 'Fonte Oficial' é a página do
+    titular de hoje e não serve de origem do nome para 2027."""
+    texto, link = _exato(d, "fonte")
+    return _data_do_anuncio(_campo(d, "data de anuncio")[0]), _link(texto, link)
+
+
 def secretariado(planilha) -> list:
-    """Linhas com nome para 2027 ou com mudança no titular de hoje (ato de
-    exoneração ou titular de outubro). O '*' da coluna de exoneração marca
-    pasta prioritária, não ato, e não conta."""
+    """Uma linha por nome para 2027, e as linhas com mudança no titular de hoje
+    (ato de exoneração ou titular de outubro). O '*' da coluna de exoneração
+    marca pasta prioritária, não ato, e não conta.
+
+    Situação: coluna Status (Cotado / Definido); sem Status, vale o sufixo
+    antigo "- cotado" no nome; ato de nomeação preenchido = Nomeado."""
     saida = []
-    for d in _por_nome(ler_com_links(planilha, "Secretários")):
+    for bruto in _por_nome(ler_com_links(planilha, "Secretários", quebras=True)):
+        d = _uma_linha(bruto)
         uf = _campo(d, "uf")[0]
-        novo = _campo(d, "ocupante do cargo 2027")[0]
+        novos = _nomes_da_celula(_campo(bruto, "cotado 2027", "ocupante do cargo 2027")[0])
         exon = _campo(d, "decreto/ato de exoneracao")[0].strip("* ").strip()
         outubro = _campo(d, "ocupante do cargo out")[0]
-        if not (novo or exon or outubro):
+        if not (novos or exon or outubro):
             continue
-        nome, situacao = _situacao_do_nome(novo) if novo else ("", "")
+        status = STATUS.get(sem_acento(_exato(d, "status")[0]), "")
         nomeacao, link_nom = _campo(d, "decreto/ato de nomeacao")
-        if nome and nomeacao:
-            situacao = "Nomeado"
-        saida.append([uf, _campo(d, "secretaria de estado")[0], _campo(d, "cargo oficial")[0],
-                      _campo(d, "ocupante do cargo set")[0], outubro, exon, nome, situacao,
-                      # só o link do ato: a fonte oficial da linha é a página do
-                      # titular de hoje, não a origem do nome para 2027
-                      nomeacao, _link(nomeacao, link_nom)])
-    for d in _por_nome(ler_com_links(planilha, "Ministros")):
-        novo = _campo(d, "ocupante do cargo 2027")[0]
+        data, fonte = _fonte_do_nome(d)
+        base = [uf, _campo(d, "secretaria de estado")[0], _campo(d, "cargo oficial")[0],
+                _campo(d, "ocupante do cargo set")[0], outubro, exon]
+        for novo in novos or [""]:
+            nome, situacao = _situacao_do_nome(novo) if novo else ("", "")
+            if nome and status:
+                situacao = status
+            if nome and nomeacao:
+                situacao = "Nomeado"
+            saida.append(base + [nome, situacao, data if nome else "", nomeacao,
+                                 _link(nomeacao, link_nom) or (fonte if nome else "")])
+    for bruto in _por_nome(ler_com_links(planilha, "Ministros", quebras=True)):
+        d = _uma_linha(bruto)
+        novos = _nomes_da_celula(_campo(bruto, "cotado 2027", "ocupante do cargo 2027")[0])
         ato, link = _campo(d, "decreto/ato")
-        if not (novo or ato):
+        if not (novos or ato):
             continue
-        nome, situacao = _situacao_do_nome(novo) if novo else ("", "")
-        saida.append(["BR", _campo(d, "orgao federal")[0], _campo(d, "cargo oficial")[0],
-                      _campo(d, "ocupante do cargo")[0], "", ato if not novo else "",
-                      nome, situacao, ato if novo else "", _link(ato, link)])
+        data, fonte = _fonte_do_nome(d)
+        base = ["BR", _campo(d, "orgao federal")[0], _campo(d, "cargo oficial")[0],
+                _campo(d, "ocupante do cargo")[0], "", ato if not novos else ""]
+        for novo in novos or [""]:
+            # a coluna é de cotados; sem sufixo, o nome é cotado
+            nome, situacao = _situacao_do_nome(novo, "Cotado") if novo else ("", "")
+            saida.append(base + [nome, situacao, data if nome else "", ato if novos else "",
+                                 _link(ato, link) or (fonte if nome else "")])
     return saida
 
 
@@ -320,8 +377,8 @@ def main():
             "Ato ou fonte", "Link"], nomes, [50, 150, 210, 200, 120, 150, 120, 320, 220])
     gravar(destino, ABA_SECRETARIADO,
            ["UF", "Órgão", "Cargo", "Titular (set/2026)", "Titular (out/2026)", "Exoneração",
-            "Nome para 2027", "Situação", "Ato de nomeação", "Link"],
-           secret, [50, 260, 240, 200, 180, 220, 200, 100, 220, 220])
+            "Nome para 2027", "Situação", "Data do anúncio", "Ato de nomeação", "Link"],
+           secret, [50, 260, 240, 200, 180, 220, 200, 100, 110, 220, 220])
     gravar(destino, ABA_NOTICIAS,
            ["Data", "UF", "Escopo", "Pessoa", "Manchete", "Veículo", "Link"],
            notas, [90, 50, 110, 160, 480, 160, 260])
