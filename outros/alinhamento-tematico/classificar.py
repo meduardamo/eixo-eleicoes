@@ -595,7 +595,7 @@ ESQUEMA = {
     "required": ["temas", "resumo"],
 }
 
-PROMPT = """Você organiza o monitoramento de redes de pré-candidatos.
+PROMPT = """Você organiza o monitoramento de redes de políticos eleitos em 2026. Não chame a pessoa de pré-candidato nem de candidato.
 
 Abaixo estão os temas que apareceram nos posts de Instagram de {candidato} de {periodo} de 2026, com o número de posts em que cada um aparece. O mesmo assunto está escrito de várias formas.
 
@@ -951,16 +951,16 @@ def montar_resumo(candidato: str, resumo_modelo: str, temas: list[dict],
         return ""
 
     abertura = (f"Dos {total_posts} posts de {periodo_texto}, {analisados} têm temas analisados, "
-                f"e o tema mais recorrente é {temas[0]['rotulo'].lower()}, "
+                f"e o tema mais recorrente é {temas[0]['rotulo']}, "
                 f"em {temas[0]['posts']} deles.")
     complemento = ""
     if len(temas) > 1:
         seguintes = [t["rotulo"] for t in temas[1:4]]
         if len(seguintes) == 1:
-            lista_seguintes = seguintes[0]
+            complemento = f"A outra pauta recorrente é {seguintes[0]}."
         else:
             lista_seguintes = ", ".join(seguintes[:-1]) + " e " + seguintes[-1]
-        complemento = f"As outras pautas mais recorrentes são {lista_seguintes}."
+            complemento = f"As outras pautas mais recorrentes são {lista_seguintes}."
 
     # Nome próprio citado no resumo tem que existir na lista que o modelo
     # recebeu. Se não existir, a frase sai. É a mesma checagem que o
@@ -984,7 +984,14 @@ def montar_resumo(candidato: str, resumo_modelo: str, temas: list[dict],
             continue
         frases.append(frase.strip())
 
-    return " ".join([abertura, complemento] + frases).strip()
+    # Com um ou dois temas, a frase do modelo citava assunto que não chegou ao
+    # ranking (saúde e emprego no resumo de quem só tinha representatividade
+    # feminina, 04/11/2026). O ranking curto já está inteiro nas frases acima.
+    if len(temas) <= 2:
+        frases = []
+    frases = [re.sub(r"\b[Pp]ré-candidat[oa]s?\b", lambda m: "candidata" if m.group(0).lower().endswith("a") else "candidato", f)
+              for f in frases]
+    return " ".join(p for p in [abertura, complemento] + frases if p).strip()
 
 
 def garantir_colunas(aba: gspread.Worksheet, cabecalho: list[str]) -> dict[str, int]:
