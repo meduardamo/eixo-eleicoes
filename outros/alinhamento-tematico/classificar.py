@@ -363,6 +363,7 @@ def ler_posts(sh: gspread.Spreadsheet) -> dict[str, list[list[str]]]:
             continue
         i_cand, i_temas = cabecalho.index("Candidato"), cabecalho.index("Temas")
         i_resumo = cabecalho.index("Resumo da legenda") if "Resumo da legenda" in cabecalho else -1
+        i_data = cabecalho.index("Data de publicação") if "Data de publicação" in cabecalho else -1
 
         for linha in valores[1:]:
             candidato = linha[i_cand].strip() if i_cand < len(linha) else ""
@@ -372,18 +373,28 @@ def ler_posts(sh: gspread.Spreadsheet) -> dict[str, list[list[str]]]:
             if any(celula.strip().startswith(m) for m in MARCAS_NAO_ANALISADO):
                 continue
             resumo = linha[i_resumo] if 0 <= i_resumo < len(linha) else ""
-            por_candidato[candidato].append([temas_do_post(celula), resumo, nome_aba])
+            # O mês vem da publicação, não da aba: a aba é a do mês da coleta, e
+            # um backfill grava posts de outubro na aba de novembro.
+            data = linha[i_data][:7] if 0 <= i_data < len(linha) else ""
+            mes = MESES.get(data[5:7], nome_aba) if len(data) == 7 else nome_aba
+            por_candidato[candidato].append([temas_do_post(celula), resumo, mes])
     return por_candidato
+
+
+MESES = {"01": "janeiro", "02": "fevereiro", "03": "março", "04": "abril",
+         "05": "maio", "06": "junho", "07": "julho", "08": "agosto",
+         "09": "setembro", "10": "outubro", "11": "novembro", "12": "dezembro"}
 
 
 def periodo(posts: list[list]) -> str:
     """Meses em que o candidato tem post, na ordem das abas: 'outubro e novembro'."""
-    meses = [m for m in ABAS_MENSAIS if any(len(p) > 2 and p[2] == m for p in posts)]
+    ordem = list(MESES.values())
+    meses = [m for m in ordem if any(len(p) > 2 and p[2] == m for p in posts)]
     if not meses:
         return "no período monitorado"
     if len(meses) == 1:
         return meses[0]
-    if len(meses) > 2 and meses == ABAS_MENSAIS[ABAS_MENSAIS.index(meses[0]):][:len(meses)]:
+    if len(meses) > 2 and meses == ordem[ordem.index(meses[0]):][:len(meses)]:
         return f"{meses[0]} a {meses[-1]}"
     return ", ".join(meses[:-1]) + " e " + meses[-1]
 
