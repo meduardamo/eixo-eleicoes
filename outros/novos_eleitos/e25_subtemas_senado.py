@@ -202,6 +202,8 @@ NIVEL = lambda n: "Não atua" if n == 0 else "Pouco" if n == 1 else "Atua" if n 
 def main():
     # educação que a Casa classificou em outro tema (orçamento, segurança, tributos etc.) entra pela base completa
     extra = c.ler_csv("temas_clientes/educacao_outros_temas_lidos.csv")
+    # busca local de 04/11/2026: projetos de Assembleia e câmara municipal lidos nos 45 subtemas
+    extra = pd.concat([extra, c.ler_csv("temas_clientes/locais_lidos.csv")])
     lidos = pd.concat([c.ler_csv("temas_clientes/subtemas_lidos.csv"), extra])
     cod = {}
     for r in lidos.itertuples():

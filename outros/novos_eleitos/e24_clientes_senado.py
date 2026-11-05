@@ -502,6 +502,16 @@ def _junta_violencia():
 
 
 _junta_violencia()
+# Busca local de 04/11/2026: projetos de Assembleia e câmara municipal lidos nos subtemas dos clientes, no sentido da ementa.
+# Não passa por cima do que já estava em DESCRICAO_LOCAL. Doença, hospital, medicamento, urgência e vigilância não contam.
+LOCAIS_CLIENTES = "temas_clientes/locais_clientes_senado.csv"
+def _junta_locais():
+    for r in c.ler_csv(LOCAIS_CLIENTES).itertuples():
+        k = (r.Parlamentar, r.Matéria)
+        sentidos, rot = DESCRICAO_LOCAL.get(k, ({}, r.Rótulo)); sentidos = dict(sentidos)
+        for x in r.Clientes.split(";"): sentidos.setdefault(x, int(r.sentido))
+        DESCRICAO_LOCAL[k] = (sentidos, rot)
+_junta_locais()
 
 
 def sinais_descricao(cliente, ja_na_base, senadores, aut, votos, rel):
