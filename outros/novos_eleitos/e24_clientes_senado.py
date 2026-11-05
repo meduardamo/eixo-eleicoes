@@ -464,6 +464,45 @@ POSICAO_PUBLICA = {
     ("IDEC", "PL 12/2021"): "a favor pela posição pública do Idec, que chamou a aprovação no Senado de vitória histórica (30/04/2021)",
 }
 
+# Violência pela régua da Câmara (04/11/2026): os projetos lidos na etapa 25 com subtema de violência (VC, VM, CI) ou
+# gravidez infantil (GI) entram como sinal para os clientes que acompanham o subtema, no sentido lido na ementa
+# (temas_clientes/violencia_clientes_senado.csv, sentido +1, -1 ou 0; a coluna Clientes, quando preenchida, limita os clientes). Ficam fora (0) porte de arma ou de defesa pessoal
+# para a mulher, castração química, prisão perpétua, data comemorativa e nome de lei, pena maior para falsa
+# comunicação de crime sexual e notificação de aborto autoprovocado. O Coletivo segue só com aborto, contracepção e
+# autonomia reprodutiva; a gravidez na adolescência fica fora do UNFPA (foco na infância).
+VIOLENCIA = "temas_clientes/violencia_clientes_senado.csv"
+CLIENTES_VIOLENCIA = {"VC": ("Cactus", "Infinis", "UNFPA", "Vital Strategies"), "VM": ("Cactus", "UNFPA", "Vital Strategies"),
+                      "CI": ("UNFPA",), "GI": ("UNFPA",)}
+
+
+def _junta_violencia():
+    lidos, locais = c.ler_csv(VIOLENCIA), c.ler_csv(LOCAIS)
+    for r in lidos.itertuples():
+        s = int(r.sentido)
+        clientes = sorted({x for cod in re.split(r"[,; ]+", r.Subtemas) for x in CLIENTES_VIOLENCIA.get(cod, ())})
+        if r.Clientes:  # recorte manual quando o projeto só interessa a parte dos clientes do subtema
+            clientes = [x for x in clientes if x in r.Clientes.split(";")]
+        if not s or not clientes:
+            continue
+        if r.Casa == "Local":
+            chaves = [k for k in DESCRICAO_LOCAL if k[1] == r.Matéria]
+            if not chaves:
+                m = locais[(locais["Matéria"].str.strip() == r.Matéria)
+                           & (locais.Ementa.str[:60].str.lower() == r.Ementa[:60].lower())]
+                chaves = [(n, r.Matéria) for n in m.Parlamentar.unique()]
+            alvo = DESCRICAO_LOCAL
+        else:
+            chaves, alvo = [(r.Matéria, r.Casa)], DESCRICAO
+        for k in chaves:
+            sentidos, rot = alvo.get(k, ({}, r.Rótulo))
+            sentidos = dict(sentidos)
+            for x in clientes:
+                sentidos.setdefault(x, s)
+            alvo[k] = (sentidos, rot)
+
+
+_junta_violencia()
+
 
 def sinais_descricao(cliente, ja_na_base, senadores, aut, votos, rel):
     out = {n: [] for n in senadores}
