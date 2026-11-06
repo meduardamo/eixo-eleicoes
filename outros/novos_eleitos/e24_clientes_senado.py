@@ -472,7 +472,7 @@ POSICAO_PUBLICA = {
 # autonomia reprodutiva; a gravidez na adolescência fica fora do UNFPA (foco na infância).
 VIOLENCIA = "temas_clientes/violencia_clientes_senado.csv"
 CLIENTES_VIOLENCIA = {"VC": ("Cactus", "Infinis", "UNFPA", "Vital Strategies"), "VM": ("Cactus", "UNFPA", "Vital Strategies"),
-                      "CI": ("UNFPA",), "GI": ("UNFPA",)}
+                      "CI": ("Infinis", "UNFPA"), "GI": ("UNFPA",)}  # 06/11: CI virou subtema do Infinis
 
 
 def _junta_violencia():
