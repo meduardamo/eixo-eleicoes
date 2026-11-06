@@ -512,6 +512,20 @@ def _junta_locais():
         for x in r.Clientes.split(";"): sentidos.setdefault(x, int(r.sentido))
         DESCRICAO_LOCAL[k] = (sentidos, rot)
 _junta_locais()
+# 06/11/2026: lado dos projetos federais lidos no texto integral nos subtemas dos clientes (agentes, um lado por cliente).
+# Não passa por cima do que já estava em DESCRICAO. Linha: Casa, Matéria, Cliente, sentido (+1/-1), Rótulo.
+LADO_FEDERAL = "temas_clientes/lado_federal_senado.csv"
+def _junta_lado_federal():
+    try:
+        d = c.ler_csv(LADO_FEDERAL)
+    except FileNotFoundError:
+        return
+    for r in d.itertuples():
+        k = (r.Matéria, r.Casa)
+        sentidos, rot = DESCRICAO.get(k, ({}, r.Rótulo)); sentidos = dict(sentidos)
+        sentidos.setdefault(r.Cliente, int(r.sentido))
+        DESCRICAO[k] = (sentidos, rot)
+_junta_lado_federal()
 
 
 def sinais_descricao(cliente, ja_na_base, senadores, aut, votos, rel):
