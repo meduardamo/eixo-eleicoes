@@ -143,8 +143,8 @@ DEFINICAO = {
                       "Epidemia e emergência sanitária (Vigilância e emergências sanitárias)"),
     ("Saúde", "SME"): ("Saúde mental, Rede de Atenção Psicossocial e CAPS, suicídio e automutilação, dependência química, comunidades terapêuticas, ludopatia e proteção ao apostador",
                        "Regulação econômica das apostas (Esporte, Apostas esportivas); tabaco e álcool (Tabaco e álcool)"),
-    ("Saúde", "TA"): ("Produtos de tabaco e cigarro eletrônico; bebida alcoólica: propaganda, rotulagem, advertência, venda a menor, venda em estrada, posto e estádio, tributação e Imposto Seletivo",
-                      "Álcool ao volante como crime de trânsito"),
+    ("Saúde", "TA"): ("Produtos de tabaco e cigarro eletrônico; bebida alcoólica: propaganda, rotulagem, advertência, venda a menor, venda em estrada, posto e estádio, tributação e Imposto Seletivo; álcool ao volante (embriaguez, lei seca, teste de alcoolemia, pena para quem dirige sob efeito de álcool)",
+                      "Segurança viária sem álcool (velocidade, capacete, cinto, radar)"),
     ("Saúde", "AS"): ("Rotulagem e publicidade de alimentos, ultraprocessados, bebidas açucaradas, educação alimentar, segurança alimentar e nutricional, agrotóxicos",
                       "Merenda escolar (Educação, Alimentação, transporte e segurança escolar); fiscalização sanitária de alimentos (Vigilância e emergências sanitárias)"),
     ("Saúde", "VC"): ("Violência física, sexual e psicológica contra criança e adolescente: estupro de vulnerável, exploração sexual, abuso online, maus-tratos, bullying, indução à autolesão, notificação, escuta protegida, cadastro de condenados, atendimento à vítima",
@@ -204,6 +204,8 @@ def main():
     extra = c.ler_csv("temas_clientes/educacao_outros_temas_lidos.csv")
     # busca local de 04/11/2026: projetos de Assembleia e câmara municipal lidos nos 45 subtemas
     extra = pd.concat([extra, c.ler_csv("temas_clientes/locais_lidos.csv")])
+    # 06/11/2026: álcool ao volante (Transporte) entra em Tabaco e álcool pela base completa
+    extra = pd.concat([extra, c.ler_csv("temas_clientes/outros_temas_lidos.csv")])
     lidos = pd.concat([c.ler_csv("temas_clientes/subtemas_lidos.csv"), extra])
     cod = {}
     for r in lidos.itertuples():
