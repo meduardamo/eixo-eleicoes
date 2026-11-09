@@ -526,6 +526,39 @@ def _junta_lado_federal():
         sentidos.setdefault(r.Cliente, int(r.sentido))
         DESCRICAO[k] = (sentidos, rot)
 _junta_lado_federal()
+# 09/11/2026: corte da aba Lado dos projetos. Os itens que pesam na classificação foram lidos no texto por cliente
+# (temas_clientes/lado_corte_senado.csv). Lido e não ambíguo: o lado lido substitui o da descrição (0 = não conta).
+# Ambíguo: o lado fica como estava e o item é o único que segue com aviso de checagem e na aba Lado.
+LADO_CORTE = "temas_clientes/lado_corte_senado.csv"
+CORTE_AMBIGUO, CORTE_LIDO = set(), set()
+def _aplica_corte():
+    try:
+        d = c.ler_csv(LADO_CORTE)
+    except FileNotFoundError:
+        return
+    locais = c.ler_csv(LOCAIS)
+    casa_loc = {(r.Parlamentar, str(r.Matéria).strip()): r.Casa for r in locais.itertuples()}
+    for r in d.itertuples():
+        amb, lido = str(r.ambiguo) == "True", str(r.lido) == "True"
+        if amb:
+            CORTE_AMBIGUO.add((r.Cliente, r.Matéria)); continue
+        if not lido:
+            continue
+        CORTE_LIDO.add((r.Cliente, r.Matéria))
+        if r.Casa in ("Câmara", "Senado"):
+            alvos = [(DESCRICAO, (r.Matéria, r.Casa))]
+        else:
+            alvos = [(DESCRICAO_LOCAL, k) for k in DESCRICAO_LOCAL if k[1] == r.Matéria and casa_loc.get(k, r.Casa) == r.Casa]
+        for dic, k in alvos:
+            if k in dic and r.Cliente in dic[k][0]:
+                sentidos, rot = dic[k]; sentidos = dict(sentidos); sentidos[r.Cliente] = int(r.sentido)
+                dic[k] = (sentidos, rot)
+_aplica_corte()
+
+
+def lado_txt(s):
+    """Texto do lado de um item da descrição; 0 sai como 'não conta' depois da leitura do texto."""
+    return "o texto não dá lado para o cliente" if s == 0 else f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar"
 
 
 def sinais_descricao(cliente, ja_na_base, senadores, aut, votos, rel):
@@ -560,7 +593,7 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos, rel):
                     out[r.Parlamentar].append(("evidência", 0, f"{'autor' if forte else 'coautor'} do {k} ({rot}; mesma proposta reapresentada, conta uma vez)"))
                     continue
                 vistos.add((r.Parlamentar, chave_texto, s))
-                lado = POSICAO_PUBLICA.get((cliente, k), f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar")
+                lado = POSICAO_PUBLICA.get((cliente, k), lado_txt(s))
                 out[r.Parlamentar].append((peso, s if peso != "evidência" else 0,
                     f"{'autor' if forte else 'coautor'} do {k} ({rot}; {lado})"
                     + (" (assinatura de PEC, não conta)" if peso == "evidência" else "")))
@@ -572,7 +605,7 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos, rel):
         for r in rel[(rel.k == k) & (rel.Casa == casa)].drop_duplicates("Parlamentar").itertuples():
             if r.Parlamentar not in out:
                 continue
-            lado = POSICAO_PUBLICA.get((cliente, k), f"{'a favor' if s > 0 else 'contra'} pela descrição do cliente, a confirmar")
+            lado = POSICAO_PUBLICA.get((cliente, k), lado_txt(s))
             lido = PARECER_LIDO.get((k, r.Parlamentar))
             if lido:
                 out[r.Parlamentar].append(("forte", s, f"relator do {k} ({rot}) na {r.Colegiado}, com {lido} ({lado})"))
@@ -588,7 +621,7 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos, rel):
             continue
         s, forte = sentidos[cliente], r.Papel == "Primeiro autor"
         out[r.Parlamentar].append(("forte" if forte else "médio", s,
-            f"{'autor' if forte else 'coautor'} do {chave[1]} na {r.Casa} ({rot}; {POSICAO_PUBLICA.get((cliente, chave[1]), ('a favor' if s > 0 else 'contra') + ' pela descrição do cliente, a confirmar')})"))
+            f"{'autor' if forte else 'coautor'} do {chave[1]} na {r.Casa} ({rot}; {POSICAO_PUBLICA.get((cliente, chave[1]), lado_txt(s))})"))
     return out
 
 
@@ -621,7 +654,7 @@ def sinais_pauta(pauta, a_favor, senadores, aut, com):
     return out
 
 
-def evidencias(s):
+def evidencias(s, cliente=None):
     """Lista numerada em três blocos com título: a favor do cliente, contra o cliente e o que não conta.
     O texto de cada item diz de onde vem o lado (coordenação, descrição do cliente ou posição na pauta)."""
     def tira_aninhado(t):
@@ -651,7 +684,21 @@ def evidencias(s):
         t = t.replace("; CCJC,", "; CCJ da Câmara,").replace("(CCJC,", "(CCJ da Câmara,")
         t = tira_aninhado(t)
         t = re.sub(r"\) \(", "; ", t)
-        return t
+        return aviso(t)
+
+    def cita(t, mat):
+        return re.search(r"(?<![\d/])" + re.escape(mat).replace(r"\ ", r"\s+(?:nº\s*)?") + r"\b", t) is not None
+
+    def aviso(t):
+        """09/11/2026: o aviso de checagem fica só no item ambíguo do corte da aba Lado; item lido no texto diz isso."""
+        if cliente is None or "precisa de checagem dos coordenadores" not in t:
+            return t
+        if any(cl == cliente and cita(t, m) for cl, m in CORTE_AMBIGUO):
+            return t
+        if any(cl == cliente and cita(t, m) for cl, m in CORTE_LIDO):
+            t = t.replace("lado tirado da descrição do cliente", "lado lido no texto")
+        t = t.replace("; precisa de checagem dos coordenadores", "").replace("precisa de checagem dos coordenadores; ", "")
+        return t.replace(" (precisa de checagem dos coordenadores)", "").replace("precisa de checagem dos coordenadores", "").replace("()", "").strip()
     blocos = [("A favor do cliente", [t for k, x, t in s if x > 0]),
               ("Contra o cliente", [t for k, x, t in s if x < 0]),
               ("Não conta (só registro)", [t for k, x, t in s if x == 0])]
@@ -802,7 +849,7 @@ def main():
                            "Partido": ficha.loc[n, "Partido"], "UF": ficha.loc[n, "UF"], "Cadeira": ficha.loc[n, "Cadeira"],
                            "Classificação": classifica(fp, fn, mp, mn),
                            "Sinais": sinal_txt,
-                           "Evidências": evidencias(s)})
+                           "Evidências": evidencias(s, cliente)})
         pautas = g.drop_duplicates("Pauta")
         resumo.append({"Área": area, "Cliente": cliente,
                        "Pautas": "; ".join(f"{r.Pauta} ({r._4.lower() or 'posição não informada'})" if r.Projeto else f"{r.Pauta} (fora da base de pautas; só pela descrição do cliente)" for r in pautas.itertuples()),

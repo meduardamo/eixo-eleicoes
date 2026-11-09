@@ -107,6 +107,13 @@ def _afet(r):
     return sorted(set(r.sen) & afetados.get((r.Cliente, m.group(1) if m else ''), set()))
 df['sen'] = df.apply(_afet, axis=1)
 df = df[df.sen.map(len) > 0].copy()
+# 09/11/2026: corte pedido por ela (os coordenadores não revisam milhares de linhas): fica só o item que pesa na
+# classificação e cujo lado ficou ambíguo na leitura do texto (temas_clientes/lado_corte_senado.csv), com a pergunta.
+corte = pd.read_csv(D + 'lado_corte_senado.csv', dtype=str).fillna('')
+corte = corte[corte.ambiguo == 'True']
+perg = {(r.Cliente, r.Projeto): r.pergunta for r in corte.itertuples()}
+df['pergunta'] = [perg.get((c, p), '') for c, p in zip(df.Cliente, df.Projeto)]
+df = df[df.pergunta != ''].copy()
 df['Área'] = df.Cliente.map(area)
 df['Senadores'] = df.sen.map(lambda x: '; '.join(sorted(x)))
 df['Qtd'] = df.sen.map(len)
@@ -119,7 +126,7 @@ df['Cliente'] = df.Cliente.replace(NOME)
 CAB = ['Área', 'Cliente', 'Projeto', 'O que o projeto faz', 'Lado assumido', 'De onde veio o lado',
        'Senadores cuja classificação depende disso', 'Revisão', 'Comentário']
 valores = [CAB] + [[r['Área'], r.Cliente, r.Projeto, r['O que o projeto faz'], r['Lado assumido'], r['De onde veio o lado'],
-                    f"{r.Qtd}: {r.Senadores}", '', ''] for _, r in df.iterrows()]
+                    f"{r.Qtd}: {r.Senadores}", '', f"precisa de checagem dos coordenadores: {r.pergunta}"] for _, r in df.iterrows()]
 n, m = len(valores), len(CAB)
 
 try:
