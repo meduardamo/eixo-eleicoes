@@ -175,6 +175,8 @@ notas = [(0, 7, 'Confirma: o lado está certo. Inverte o lado: o projeto é do l
 notas += [(i + 1, 2, e) for i, e in enumerate(df.Ementa) if e]
 reqs += [{'updateCells': {'range': R(a, a + 1, b, b + 1), 'rows': [{'values': [{'note': t}]}], 'fields': 'note'}} for a, b, t in notas]
 sh.batch_update({'requests': reqs})
+# 11/11/2026: sem projeto em revisão a aba fica oculta (aba vazia parece quebrada); volta a aparecer quando houver linha
+sh.batch_update({'requests': [{'updateSheetProperties': {'properties': {'sheetId': ws.id, 'hidden': len(df) == 0}, 'fields': 'hidden'}}]})
 
 from ordem_abas import ordenar
 print(TITULO, n - 1, 'linhas', df.groupby('Cliente').size().to_dict(), ordenar(sh))

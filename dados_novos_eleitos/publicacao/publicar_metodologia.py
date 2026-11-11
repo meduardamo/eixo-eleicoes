@@ -8,7 +8,7 @@ TITULO = 'Metodologia'
 LINHAS = [
     ['', 'Metodologia'],
     ['COMO USAR A PLANILHA'],
-    ['Abas', ['Para consultar: Por cliente e Por parlamentar', 'Bases: Parlamentares e Votações-chave, para comparar os senadores lado a lado', 'Ocultas: Perfil por tema e Clientes, que alimentam as abas de consulta (Exibir > Abas ocultas, se precisar filtrar todos de uma vez)', 'Em revisão pelos coordenadores: Subtemas por cliente e Lado dos projetos'], ''],
+    ['Abas', ['Para consultar: Por cliente e Por parlamentar', 'Bases: Parlamentares e Votações-chave, para comparar os senadores lado a lado', 'Ocultas: Perfil por tema e Clientes, que alimentam as abas de consulta (Exibir > Abas ocultas, se precisar filtrar todos de uma vez)', 'Em revisão pelos coordenadores: Subtemas por cliente e Lado dos projetos (oculta quando não há projeto em revisão)'], ''],
     ['Por cliente', ['Escolha o cliente na lista do alto', 'Aparecem os subtemas do cliente, as pautas, a contagem por classificação e os senadores com registro'], ''],
     ['Por parlamentar', ['Escolha o senador na lista do alto', 'Aparecem a ficha, a atuação em cada tema e subtema e a classificação em cada cliente'], ''],
     ['Parlamentares', ['Uma linha por senador', 'Identidade, posição no Senado, relevância, atuação nos quatro temas e destaques', 'Subtemas em grupos de colunas que abrem', 'Ficha à direita'], ''],
