@@ -141,8 +141,8 @@ f = f[ordem]
 ATU = TEMAS + [s for t in TEMAS for s in SUB[t]]
 LARG_P = {'Senador': 165, 'Partido/UF': 125, 'Cadeira': 112, 'Posição no Senado': 110, 'Relevância política (1 a 4)': 112,
           'Saúde': 96, 'Educação': 96, 'Esporte': 96, 'Primeira infância': 96, 'Destaques nos subtemas': 380,
-          'De onde vem': 230, 'Profissão declarada (TSE)': 170, 'Governismo': 120, 'O que define a relevância': 300,
-          'Comissões permanentes (titular)': 170, 'Preside hoje': 80, **{s: 128 for t in TEMAS for s in SUB[t]}}
+          'De onde vem': 230, 'Profissão declarada (TSE)': 170, 'Governismo': 165, 'O que define a relevância': 300,
+          'Comissões permanentes (titular)': 170, 'Preside hoje': 80, **{s: 150 for t in TEMAS for s in SUB[t]}}
 
 
 def pinta_p(df, R, fmt):
@@ -270,7 +270,7 @@ n_sen = sum(1 for c in cols[3:] if not c.startswith('Câmara') and 'CE (' not in
 n_com = sum(1 for c in cols[3:] if 'CE (' in c or 'CAS (' in c)
 n_cam = sum(1 for c in cols[3:] if c.startswith('Câmara'))
 GR_V = [('', 1), ('', 2), ('Senado: plenário', n_sen), ('Senado: comissões', n_com), ('Câmara: plenário (para quem era deputado)', n_cam)]
-LARG_V = {'Senador': 165, 'Partido/UF': 125, 'Cadeira': 112, **{c: 175 for c in cols[3:]}}
+LARG_V = {'Senador': 165, 'Partido/UF': 125, 'Cadeira': 140, **{c: 175 for c in cols[3:]}}
 
 
 def pinta_v(df, R, fmt):
