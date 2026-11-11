@@ -105,7 +105,7 @@ ID_PROJ = re.compile(r'(Emenda (?:de Plenário )?\d+ ao \S+ \d+/\d{4}|(?:PLS|PLP
 def _afet(r):
     m = ID_PROJ.search(r.Projeto) or ID_PROJ.search(r['O que o projeto faz'])
     return sorted(set(r.sen) & afetados.get((r.Cliente, m.group(1) if m else ''), set()))
-df['sen'] = df.apply(_afet, axis=1)
+df['sen'] = [_afet(r) for _, r in df.iterrows()]  # lista: apply em tabela vazia quebra
 df = df[df.sen.map(len) > 0].copy()
 # 09/11/2026: corte pedido por ela (os coordenadores não revisam milhares de linhas): fica só o item que pesa na
 # classificação e cujo lado ficou ambíguo na leitura do texto (temas_clientes/lado_corte_senado.csv), com a pergunta.
@@ -128,6 +128,8 @@ CAB = ['Área', 'Cliente', 'Projeto', 'O que o projeto faz', 'Lado assumido', 'D
 valores = [CAB] + [[r['Área'], r.Cliente, r.Projeto, r['O que o projeto faz'], r['Lado assumido'], r['De onde veio o lado'],
                     f"{r.Qtd}: {r.Senadores}", '', f"precisa de checagem dos coordenadores: {r.pergunta}"] for _, r in df.iterrows()]
 n, m = len(valores), len(CAB)
+if n == 1:  # nenhuma linha pendente: deixa uma linha em branco embaixo do cabeçalho
+    valores.append([''] * m); n = 2
 
 try:
     ws = sh.worksheet(TITULO)
