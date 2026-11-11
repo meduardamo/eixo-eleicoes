@@ -640,7 +640,9 @@ def sinais_pauta(pauta, a_favor, senadores, aut, com):
             voto = (p.get("voto") or "").upper()
             if n and voto in ("SIM", "NÃO"):
                 s = sentido * lado * (1 if voto == "SIM" else -1)
-                out[n].append(("forte", s, f"votou {voto.capitalize().replace('Nao', 'Não')} na {rot} (plenário do Senado, {data[:4]}); {cfg['lado'] if a_favor else cfg['lado_contra']}"))
+                # 11/11/2026: voto em requerimento de urgência é sinal fraco (regra da Metodologia, igual à Câmara)
+                urg = rot.startswith("urgência")
+                out[n].append(("evidência" if urg else "forte", s, f"votou {voto.capitalize().replace('Nao', 'Não')} na {rot} (plenário do Senado, {data[:4]}{'; urgência, sinal fraco' if urg else ''}); {cfg['lado'] if a_favor else cfg['lado_contra']}"))
     for data, colegiado, mat, sentido, rot in cfg["comissao"]:
         for r in com[(com.Data == data) & (com.Colegiado == colegiado) & (com["Matéria"] == mat)].itertuples():
             if r.Parlamentar in out and r.Voto in ("Sim", "Não"):
