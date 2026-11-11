@@ -471,7 +471,7 @@ POSICAO_PUBLICA = {
 # comunicação de crime sexual e notificação de aborto autoprovocado. O Coletivo segue só com aborto, contracepção e
 # autonomia reprodutiva; a gravidez na adolescência fica fora do UNFPA (foco na infância).
 VIOLENCIA = "temas_clientes/violencia_clientes_senado.csv"
-CLIENTES_VIOLENCIA = {"VC": ("Cactus", "Infinis", "UNFPA", "Vital Strategies"), "VM": ("Cactus", "UNFPA", "Vital Strategies"),
+CLIENTES_VIOLENCIA = {"VC": ("Cactus", "FMCSV", "Infinis", "UNFPA", "Vital Strategies"), "VM": ("Cactus", "UNFPA", "Vital Strategies"),
                       "CI": ("Infinis", "UNFPA"), "GI": ("UNFPA",)}  # 06/11: CI virou subtema do Infinis
 
 
