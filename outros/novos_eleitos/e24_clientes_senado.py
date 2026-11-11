@@ -709,6 +709,8 @@ def evidencias(s, cliente=None):
         itens = list(dict.fromkeys(itens))
         if not itens:
             continue
+        if out:
+            out.append("")  # linha em branco entre os blocos, como na Câmara
         out.append(titulo.upper())
         for t in itens:
             i += 1

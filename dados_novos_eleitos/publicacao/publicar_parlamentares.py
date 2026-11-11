@@ -139,7 +139,7 @@ ordem += FICHA
 GR_P.append(('Ficha', len(FICHA)))
 f = f[ordem]
 ATU = TEMAS + [s for t in TEMAS for s in SUB[t]]
-LARG_P = {'Senador': 165, 'Partido/UF': 125, 'Cadeira': 112, 'Posição no Senado': 110, 'Relevância política (1 a 4)': 96,
+LARG_P = {'Senador': 165, 'Partido/UF': 125, 'Cadeira': 112, 'Posição no Senado': 110, 'Relevância política (1 a 4)': 112,
           'Saúde': 96, 'Educação': 96, 'Esporte': 96, 'Primeira infância': 96, 'Destaques nos subtemas': 380,
           'De onde vem': 230, 'Profissão declarada (TSE)': 170, 'Governismo': 120, 'O que define a relevância': 300,
           'Comissões permanentes (titular)': 170, 'Preside hoje': 80, **{s: 128 for t in TEMAS for s in SUB[t]}}
