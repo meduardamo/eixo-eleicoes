@@ -83,7 +83,8 @@ def publicar(titulo, df, grupos, largura, congela_col, pinta, notas=None, recolh
                                                'properties': {'pixelSize': alt_cab or (120 if any('\n' in c for c in df.columns) else 58)}, 'fields': 'pixelSize'}})
     reqs += pinta(df, R, fmt)
     if notas:
-        reqs += notas(df, ws)
+        # 11/11/2026: apaga as notas antigas antes (nota fica na célula mesmo quando a coluna muda de lugar)
+        reqs += [{'updateCells': {'range': R(0, ws.row_count, 0, ws.col_count), 'fields': 'note'}}] + notas(df, ws)
     if altura:
         for c in corta:
             j = list(df.columns).index(c)
