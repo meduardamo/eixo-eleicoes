@@ -293,6 +293,10 @@ def main():
     tot, com_gov = governismo(datas)
 
     lideres = liderancas_atuais()
+    try:
+        PROJECAO = {r.Parlamentar: r.Motivo for r in c.ler_csv("temas_clientes/influencia_projecao.csv").itertuples() if r.Casa == "Senado"}
+    except FileNotFoundError:
+        PROJECAO = {}
     # Cabeças do Congresso do DIAP (etapa 26): Cabeça em 2026 garante nível 3; em ascensão só aparece no texto
     try:
         diap = c.ler_csv("temas_clientes/diap_cabecas.csv").set_index("Senador")["2026"].to_dict()
@@ -314,6 +318,10 @@ def main():
             nivel = max(nivel, 3)
         elif d.startswith("Em ascensão"):
             porque = f"{porque}; em ascensão no DIAP 2026"
+        # 12/11/2026: presidiu comissão permanente (Câmara ou Senado) desde 2019, ou foi o deputado mais votado da UF
+        # em 2026, garante 3. Lista em temas_clientes/influencia_projecao.csv (Agência Câmara, API da Câmara e do Senado, TSE)
+        if nome in PROJECAO and nivel < 3:
+            nivel, porque = 3, f"{porque}; {PROJECAO[nome]}"
         k = chave(nome)
         k = k if k in tot else next((x for x in tot if k in x or x in k), k)
         n = tot.get(k, 0)
