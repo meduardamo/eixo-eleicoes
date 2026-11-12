@@ -7,9 +7,10 @@ Parlamentares, uma linha por senador, em três blocos:
 - Atuação em cada tema dos clientes (Não atua, Pouco, Atua, Referência), pelos números da etapa 22.
 
 Regras (as mesmas da aba Metodologia):
-- Governismo: votações nominais do plenário desde fev/2023 em que a liderança do Governo orientou Sim ou Não; conta
-  o voto Sim/Não do senador igual à orientação. Base a partir de 85%, Oposição até 65%, Independente entre os dois.
-  Menos de 20 votações (ministro no período, por exemplo) fica sem posição.
+- Governismo: votações nominais do plenário desde fev/2023 em que a liderança do Governo orientou Sim ou Não, fora as
+  consensuais (mais de 90% dos votos iguais); votos iguais à orientação sobre votos dados (Sim, Não, abstenção e
+  obstrução), ausência não conta. Base a partir de 85%, Oposição até 65%, Independente entre os dois (percentual
+  arredondado). Menos de 20 votações (ministro no período, por exemplo) fica sem posição. Mesma regra da Câmara.
 - Relevância: 4 = foi ou é governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da República,
   ou é hoje líder do governo, da oposição, da maioria ou da minoria; 3 = prefeito, vice-governador, secretário de
   estado, presidente de Assembleia, Mesa do Senado, líder de partido ou bloco hoje ou presidente de comissão
@@ -76,6 +77,9 @@ def painel(data):
     return json.loads(p.read_text()).get("votacoes") or []
 
 
+VOTOS_GOV = ("SIM", "NÃO", "ABSTENÇÃO", "OBSTRUÇÃO")  # votos dados; ausência e presidente da sessão ficam fora
+
+
 def governismo(datas):
     tot, com = {}, {}
     for d in datas:
@@ -83,11 +87,15 @@ def governismo(datas):
             g = {o["partido"]: o["voto"] for o in (v.get("orientacoesLideranca") or [])}.get("Governo")
             if g not in ("SIM", "NÃO"):
                 continue
-            for p in v["votosParlamentar"]:
-                if (p.get("voto") or "").upper() in ("SIM", "NÃO"):
-                    k = chave(p["nomeParlamentar"])
+            votos = [(chave(p["nomeParlamentar"]), (p.get("voto") or "").upper()) for p in v["votosParlamentar"]]
+            dados = [x for _, x in votos if x in VOTOS_GOV]
+            # votação consensual (mais de 90% dos votos iguais) não separa base de oposição
+            if not dados or max(dados.count("SIM"), dados.count("NÃO")) / len(dados) > 0.9:
+                continue
+            for k, x in votos:
+                if x in VOTOS_GOV:
                     tot[k] = tot.get(k, 0) + 1
-                    com[k] = com.get(k, 0) + ((p["voto"] or "").upper() == g)
+                    com[k] = com.get(k, 0) + (x == g)
     return tot, com
 
 
