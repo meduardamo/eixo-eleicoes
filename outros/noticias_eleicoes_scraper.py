@@ -250,11 +250,12 @@ def google_news_rss(busca, max_itens=20, tentativas=3):
 # candidatura, troca de partido, coligação, federação) saíram em 15/10, com o 1º
 # turno encerrado, para abrir espaço.
 
-# Bloco 1: pesquisa de intenção de voto (frases genéricas e nomes de institutos,
-# o sinal mais forte).
+# Bloco 1: pesquisa de opinião (frases genéricas e nomes de institutos, o sinal
+# mais forte). Em 16/11 "segundo turno" deu lugar a "aprovação": com a eleição
+# encerrada, o que sai é avaliação de governo, e a troca mantém o total de termos.
 TERMOS = ('("pesquisa eleitoral" OR "intenção de voto" '
           'OR Datafolha OR Quaest OR Ipec OR AtlasIntel OR "Paraná Pesquisas" '
-          'OR "Real Time Big Data" OR "segundo turno")')
+          'OR "Real Time Big Data" OR aprovação)')
 
 # Bloco 2: o que acontece na campanha: apoio e neutralidade no 2º turno,
 # agenda e educação (para pegar crítica sobre política pública de educação). Debate
@@ -994,9 +995,9 @@ def classificar_com_gemini(titulo, trecho="", uf_dica=""):
         '  "convencao": true ou false — true SOMENTE se a notícia trata diretamente de uma convenção partidária '
         "(data, realização, resultado ou decisão tomada em convenção). Independente do status da candidatura.\n"
         '  "tipo": "agenda | pesquisa | aliança | apoio | crítica-educação | proposta-educação | visita-presidencial | impugnação | fato-eleitoral | transição | outro",\n'
-        '  "instituto": "Nome do instituto de pesquisa, se a notícia trata de pesquisa de intenção de voto '
+        '  "instituto": "Nome do instituto de pesquisa, se a notícia trata de pesquisa de opinião '
         "(ex: Datafolha, Quaest, Ipec, AtlasIntel). null se não for pesquisa ou se o instituto não for citado\",\n"
-        '  "abrangencia": "Só quando a notícia trata de pesquisa eleitoral: \'nacional\' se a pesquisa ouviu o '
+        '  "abrangencia": "Só quando a notícia trata de pesquisa de opinião: \'nacional\' se a pesquisa ouviu o '
         "Brasil inteiro, 'estadual' se ouviu só um estado. Repare que site regional publica pesquisa nacional "
         "o tempo todo: o que vale é quem foi ouvido, não quem publicou. null se não for pesquisa\",\n"
         '  "alerta_tema": "pesquisa-executivo | apoio | rompimento | proposta-educação | visita-presidencial | impugnação | fato-eleitoral | transição | nenhum",\n'
@@ -1007,9 +1008,9 @@ def classificar_com_gemini(titulo, trecho="", uf_dica=""):
         "- status='pré-candidato': intenção declarada publicamente, sem oficialização ainda\n"
         "- status='em disputa': partido ou coligação ainda decide entre dois ou mais nomes\n"
         "- status='renúncia' ou 'desistência': candidato que retirou ou perdeu a candidatura\n"
-        "- status='pesquisa': o tema central da notícia é o resultado ou a divulgação de uma pesquisa eleitoral de "
-        "intenção de voto (ex.: Datafolha, Quaest, Ipec, AtlasIntel, Paraná Pesquisas, Real Time Big Data), trazendo "
-        "percentuais ou números de candidatos. Independente de citar convenção ou o status de alguma candidatura\n"
+        "- status='pesquisa': o tema central da notícia é o resultado ou a divulgação de uma pesquisa de opinião "
+        "(intenção de voto, aprovação ou avaliação de governo, cenário para 2030) (ex.: Datafolha, Quaest, Ipec, AtlasIntel, Paraná Pesquisas, Real Time Big Data), trazendo "
+        "percentuais. Independente de citar convenção ou o status de alguma candidatura\n"
         "- status='cobertura geral': cita um político, partido ou estado brasileiro e tem a ver com política/eleições "
         "do Brasil, mas não trata do status da candidatura em si nem é sobre uma pesquisa (ex.: declaração, agenda de "
         "campanha, repercussão de um fato político)\n"
@@ -1026,7 +1027,8 @@ def classificar_com_gemini(titulo, trecho="", uf_dica=""):
         "e tipo='apoio'). Escolha um só, o mais central à manchete:\n"
         "  - tipo='agenda': compromisso de campanha do candidato (comício, caravana, visita, viagem, evento, "
         "encontro com eleitor ou categoria), incluindo o anúncio da agenda e a cobertura do que aconteceu nela\n"
-        "  - tipo='pesquisa': resultado ou divulgação de pesquisa eleitoral de intenção de voto\n"
+        "  - tipo='pesquisa': resultado ou divulgação de pesquisa de opinião (intenção de voto, aprovação "
+        "ou avaliação de governo, cenário para 2030)\n"
         "  - tipo='aliança': composição partidária mudando (coligação, federação, palanque, partido trocando de "
         "lado, racha, rompimento, negociação de chapa, definição de vice)\n"
         "  - tipo='apoio': uma pessoa, partido, entidade ou grupo declara apoio ou endossa publicamente uma "
@@ -1073,16 +1075,19 @@ def classificar_com_gemini(titulo, trecho="", uf_dica=""):
         "Régua de alerta (campo alerta_tema). Diz se a notícia merece virar alerta para o cliente, e é "
         "independente de status, tipo e convencao. Aqui 'executivo' significa SOMENTE governador ou "
         "presidente, nunca senador, deputado, prefeito ou vereador:\n"
-        "- 'pesquisa-executivo': resultado ou divulgação de pesquisa de intenção de voto para governador "
-        "ou presidente. Pesquisa para Senado, Câmara ou Assembleia NÃO conta\n"
+        "- 'pesquisa-executivo': resultado ou divulgação de pesquisa de opinião sobre presidente ou "
+        "governador: aprovação ou avaliação do governo, desempenho do eleito, intenção de voto ou cenário "
+        "para 2030. Com a eleição de 2026 encerrada, avaliação de governo é o caso mais comum. Pesquisa "
+        "sobre Senado, Câmara ou Assembleia NÃO conta\n"
         "- 'apoio': declaração pública de apoio, endosso ou formação de aliança a favor de um candidato ao "
         "executivo, partindo de partido, dirigente partidário estadual ou nacional, ex-governador, "
         "ex-presidente ou prefeito de capital\n"
         "- 'rompimento': rompimento público de aliança ou retirada de apoio envolvendo candidato ao "
         "executivo e os mesmos atores acima\n"
-        "- 'educação': um candidato ao executivo, pré-candidato ou a campanha dele DISSE alguma coisa "
-        "sobre política de educação, e a notícia reporta o que foi dito. Vale proposta, plano de governo, "
-        "fala em debate ou sabatina, defesa da própria gestão e crítica à do adversário. Assuntos que "
+        "- 'educação': o presidente, um governador (eleito, reeleito ou em exercício), alguém que disputou "
+        "o executivo em 2026 ou quem fala pela equipe deles DISSE alguma coisa sobre política de educação, e "
+        "a notícia reporta o que foi dito. Vale anúncio, promessa, plano de governo, entrevista, defesa da "
+        "própria gestão e crítica à de outro. Assuntos que "
         "contam: tempo integral, educação profissional e tecnológica, alfabetização, escolas "
         "cívico-militares, anos finais do ensino fundamental, Ideb, professores, infraestrutura da rede.\n"
         "  Cobertura de debate conta, mesmo que o debate tenha tratado de vários assuntos, DESDE QUE a "
@@ -1111,8 +1116,8 @@ def classificar_com_gemini(titulo, trecho="", uf_dica=""):
         "decidiu se disputa o governo'), ou um tema que virou disputa política no estado "
         "(exploração de petróleo na Margem Equatorial, no Amapá, por exemplo);\n"
         "  (2) ligação com a eleição de 2026 dita na própria notícia: o fato envolve "
-        "candidato, pré-candidato, partido, aliado ou governo que está na disputa, ou o "
-        "tema está sendo tratado como bandeira de campanha.\n"
+        "quem disputou (eleito, reeleito ou derrotado), partido, aliado ou governo que "
+        "esteve na disputa, ou o tema foi bandeira de campanha.\n"
         "  Não conta: crime, operação, tragédia ou decisão judicial que a notícia não amarra "
         "a ninguém da disputa; notícia de gestão pública sem candidato na história; "
         "especulação de terceiro sobre o que um político faria\n"
@@ -1905,13 +1910,13 @@ def plantao(agora=None):
 
 
 ROTULO_TEMA = {
-    "pesquisa-executivo": "Pesquisa de opinião · Presidente e governadores",
+    "pesquisa-executivo": "Pesquisa de opinião",
     "apoio": "Apoio e aliança ao executivo",
     "rompimento": "Rompimento de aliança",
-    "educação": "Educação na campanha",
+    "educação": "Educação",
     "visita-presidencial": "Visita de presidenciável no estado",
     "impugnação": "Impugnação de candidatura",
-    "fato-eleitoral": "Fato com impacto eleitoral",
+    "fato-eleitoral": "Fato político",
     "transição-federal": "Transição de governo · Gov. Federal",
     "transição-subnacional": "Transição de governo · Subnacional",
 }
