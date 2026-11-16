@@ -59,11 +59,9 @@ paragrafo("Ninguém revisa a base inteira. Cada cliente tem uma lista de até 25
 
 # ---------------------------------------------------------------- prazos
 secao_titulo("Prazos")
-tabela([("Dia", 1700, None), ("O quê", LARGURA - 1700, None)], [
-    ["Ter 24/11", "Prazo final da revisão (sexta, 20/11, é feriado)"],
-    ["Qua 25/11", "Marcações aplicadas, com retorno na coluna Situação"],
-    ["Qui 26/11", "Responder só as linhas marcadas como Precisa de fonte"],
-    ["Seg 30/11", "Envio aos clientes"],
+tabela([("Dia", 1700, None), ("O que a equipe faz", LARGURA - 1700, None)], [
+    ["Ter 24/11", "Último dia da revisão"],
+    ["Qui 26/11", "Completar a fonte nas linhas que voltarem com Situação = Precisa de fonte"],
 ])
 
 # ---------------------------------------------------------------- onde
