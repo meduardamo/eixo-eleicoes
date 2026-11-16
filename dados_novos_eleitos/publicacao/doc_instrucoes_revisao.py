@@ -96,7 +96,7 @@ tabela([("Coluna", 2300, None), ("O que escrever", LARGURA - 2300, None)], [
 secao_titulo("Regras")
 item("Só vale informação concreta, com fonte. ", "Partido, perfil e impressão não contam.")
 item("Bastidor vale. ", "Muda a classificação, mas o cliente vê só “informação do monitoramento da Eixo”.")
-item("Nome fora da lista: ", "mandar direto para a Eduarda (Dados), com a fonte.")
+item("Nome fora da lista: ", "mandar direto para a equipe de Dados, com a fonte.")
 item("Coluna Situação: ", "traz o retorno de cada marcação. Aplicado, Precisa de fonte (completar a fonte) ou Não "
      "aplicado (o motivo fica na nota da célula).")
 
