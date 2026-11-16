@@ -383,6 +383,20 @@ def main():
         for r in v.itertuples():
             if r.Parlamentar in tab:
                 tab[r.Parlamentar][rot] = ({"Artigo 17": "Presidia a sessão"}.get(r.Voto, r.Voto), "")
+    # 16/11/2026: PL 442/1991 (jogos de azar, 23/02/2022) conta para IEPS e Vital no e24; fica fora do corte de 2023 acima.
+    # Entrou na planilha à mão, ao lado da Emenda 3; quem estava na sessão sem votar fica "Sem voto registrado"
+    rot = "Câmara: Jogos de azar, PL 442/1991 (fev/2022)"
+    notas[rot] = "Sim = legalizar cassinos, bingos e jogo do bicho; aprovado, 246 x 202."
+    v442 = c.ler_csv("perfil_camara_senado/votos.csv")
+    v442 = v442[(v442.Data.str[:10] == "2022-02-23") & (v442["Matéria"] == "PL 2234/2022")]
+    for r in v442.itertuples():
+        if r.Parlamentar in tab:
+            if r.Votação.startswith("Aprovada a Subemenda Substitutiva Global"):
+                tab[r.Parlamentar][rot] = ({"Artigo 17": "Presidia a sessão"}.get(r.Voto, r.Voto), "")
+            else:
+                tab[r.Parlamentar].setdefault(rot, ("Sem voto registrado", ""))
+    for n in tab:
+        tab[n].setdefault(rot, ("–", ""))
     colunas = list(dict.fromkeys([p[0] for p in PLENARIO] + [x[0] for x in COMISSAO] + list(notas)))
     cad = dict(zip(ficha.Senador, ficha.Cadeira))
     saida, nota_cel = [], {}
