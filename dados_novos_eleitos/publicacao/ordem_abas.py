@@ -3,13 +3,20 @@ consulta (escolhe o cliente ou o senador e lê a ficha, aba marinho), base (tabe
 referência no fim (subtemas por cliente, lado dos projetos e Metodologia, aba clara). EM_REVISAO vai para a frente enquanto
 os coordenadores revisam; esvaziar a lista devolve a aba ao fim. Todos os scripts de publicação chamam daqui, para a ordem não depender de qual rodou
 por último."""
-CONSULTA = ['Por cliente', 'Por parlamentar']
+# 16/11/2026: segunda etapa (revisão manual da equipe, até 23/11), na ordem de uso: onde se trabalha (lista e andamento),
+# a referência do cliente, a ficha de quem gera dúvida (Por parlamentar antes de Por cliente), a base e, no fim, a
+# referência de regra. Lado dos projetos fica logo depois da descrição enquanto a Leka responde (Câmara); depois vai para EM_REVISAO = REVISAO_MANUAL.
+# Subtemas por cliente saiu da revisão (decisão dela em 16/11) e foi para o fim.
+# Ao fechar a segunda etapa: esvaziar REVISAO_MANUAL e EM_REVISAO e voltar CONSULTA para ['Por cliente', 'Por parlamentar'].
+REVISAO_MANUAL = ['Revisão: lista prioritária', 'Revisão: andamento']
+EM_REVISAO = REVISAO_MANUAL  # 16/11: Leka respondeu tudo, Lado da Câmara vazio e oculto
+CONSULTA = ['Por parlamentar', 'Por cliente']
 BASE = ['Parlamentares', 'Perfil por tema', 'Votações-chave', 'Clientes']
-FIM = ['Subtemas por cliente', 'Lado dos projetos', 'Definição dos subtemas', 'Metodologia']
-EM_REVISAO = ['Subtemas por cliente', 'Lado dos projetos']
+# 16/11: Descrição dos clientes junto das referências de subtema (pedido dela)
+FIM = ['Definição dos subtemas', 'Subtemas por cliente', 'Descrição dos clientes', 'Lado dos projetos', 'Metodologia']
 # ocultas: o conteúdo já aparece em Por cliente e Por parlamentar, que leem delas por fórmula
 OCULTAS = ['Perfil por tema', 'Clientes']
-COR = {**{t: '#192D4E' for t in CONSULTA}, **{t: '#9A9A94' for t in BASE}, **{t: '#E1E1E1' for t in FIM}}
+COR = {**{t: '#E8A600' for t in REVISAO_MANUAL}, **{t: '#192D4E' for t in CONSULTA}, **{t: '#9A9A94' for t in BASE}, **{t: '#E1E1E1' for t in FIM}}
 cor = lambda h: {'red': int(h[1:3], 16) / 255, 'green': int(h[3:5], 16) / 255, 'blue': int(h[5:7], 16) / 255}
 
 

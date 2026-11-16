@@ -375,6 +375,24 @@ SINAIS_DIRETOS = [
     ("Teresa Leitão", {"Coletivo Feminista": 1}, "evidência", "autora da Emenda 697 ao PL 4/2025 (Código Civil), que reconhece a autonomia progressiva de crianças e adolescentes nas decisões sobre eles"),
 ]
 
+# 16/11/2026: itens do mapeamento de novatos feito para o IEPS (out/2026) que passam na régua e faltavam aqui
+# (autoria e voto nominal fortes, coautoria médio); o texto já traz o lado e a fonte
+SINAIS_NOVATOS_IEPS = [
+    ('Caroline de Toni', {'IEPS': 1}, 'forte', 'autora do PL 5153/2026 na Câmara, que extingue as apostas de quota fixa, proíbe sua exploração e encerra as autorizações vigentes (a favor pela pauta Saúde mental, drogas e apostas; fonte: mapeamento de novatos feito para o IEPS em out/2026)'),
+    ('Caroline de Toni', {'Vital Strategies': 1}, 'forte', 'autora do PL 5153/2026 na Câmara, que extingue as apostas de quota fixa, proíbe sua exploração e encerra as autorizações vigentes (a favor pela pauta Saúde mental, drogas e apostas; fonte: mapeamento de novatos feito para o IEPS em out/2026)'),
+    ('Luizianne Lins', {'IEPS': 1}, 'médio', 'coautora do PL 87/2026 na Câmara, que proíbe a exploração das apostas de quota fixa no país (coautoria pelo REQ 3479/2026, deferido em 09/07/2026; a favor pela pauta Saúde mental, drogas e apostas; fonte: mapeamento de novatos feito para o IEPS em out/2026)'),
+    ('Luizianne Lins', {'Vital Strategies': 1}, 'médio', 'coautora do PL 87/2026 na Câmara, que proíbe a exploração das apostas de quota fixa no país (coautoria pelo REQ 3479/2026, deferido em 09/07/2026; a favor pela pauta Saúde mental, drogas e apostas; fonte: mapeamento de novatos feito para o IEPS em out/2026)'),
+    ('Mara Rocha', {'IEPS': 1}, 'médio', 'coautora do PL 2847/2022 na Câmara, sobre prevenção do sofrimento psíquico entre jovens (a favor pela pauta Saúde mental, drogas e apostas; fonte: mapeamento de novatos feito para o IEPS em out/2026)'),
+    ('Nicoletti', {'IEPS': 1}, 'forte', 'autor do PL 3860/2023 na Câmara, que destina recursos do Fundo Nacional de Segurança Pública a programas de saúde física e mental dos profissionais de segurança (a favor pela pauta Saúde mental, drogas e apostas; fonte: mapeamento de novatos feito para o IEPS em out/2026)'),
+    ('José Medeiros', {'IEPS': 1}, 'forte', 'autor do PL 5328/2025 na Câmara, que cria a Política Nacional de Atenção Integral à Saúde da Pessoa com Depressão (a favor pela pauta Saúde mental, drogas e apostas; fonte: mapeamento de novatos feito para o IEPS em out/2026)'),
+    ('José Medeiros', {'IEPS': 1}, 'forte', 'autor do PL 5583/2026 na Câmara, sobre acesso a diagnóstico e tratamento em saúde mental (a favor pela pauta Saúde mental, drogas e apostas; fonte: mapeamento de novatos feito para o IEPS em out/2026)'),
+    ('Reinaldo Azambuja', {'IEPS': -1}, 'forte', 'autor, como governador, do PL 211/2020 na Assembleia Legislativa de MS, que criou a Lotesul (Lei MS 5.720/2021), loteria estadual cuja regulamentação inclui apostas de quota fixa presenciais e online (contra pela pauta Saúde mental, drogas e apostas; fonte: mapeamento de novatos feito para o IEPS em out/2026)'),
+    ('Reinaldo Azambuja', {'Vital Strategies': -1}, 'forte', 'autor, como governador, do PL 211/2020 na Assembleia Legislativa de MS, que criou a Lotesul (Lei MS 5.720/2021), loteria estadual cuja regulamentação inclui apostas de quota fixa presenciais e online (contra pela pauta Saúde mental, drogas e apostas; fonte: mapeamento de novatos feito para o IEPS em out/2026)'),
+]
+
+# 16/11/2026: contrato com a ASBAI acabou
+CLIENTES_ENCERRADOS = {"ASBAI"}
+
 # Votações pela descrição do cliente: (matéria, Casa, trecho do texto da votação, sentido do Sim para cada cliente,
 # rótulo[, de onde vem o lado]). Sem o sexto campo, o lado vem da descrição do cliente e fica a confirmar. Votação de
 # emenda só entra aqui com o texto da emenda lido; essas contam mesmo com o projeto na base de pautas, que não conta emenda.
@@ -408,9 +426,16 @@ DESCRICAO_VOTOS = [
      "no PLP 235/2019, que cria o Sistema Nacional de Educação (Sim = aprovar o texto)"),
     ("PLP 243/2023", "Câmara", "Aprovado o Projeto de Lei Complementar nº 243", {"ISG": 1, "IU": 1},
      "no PLP 243/2023, incentivo à permanência no ensino médio, o Pé-de-Meia (Sim = aprovar o texto)"),
-    ("PL 3626/2023", "Câmara", "Rejeitada a Emenda de Plenário nº 26", {"IEPS": 1, "Vital Strategies": 1},
-     "na Emenda de Plenário 26 à lei das bets, que proibia aposta de inadimplente, de inscrito no CadÚnico e de quem recebe BPC (Sim = restringir as apostas)",
-     "a favor pela pauta Apostas online e saúde mental: o cliente defende restringir as apostas"),
+    # Emenda de Plenário 26 ao PL 3626/2023 (CadÚnico e BPC) saiu em 16/11/2026, decisão dela: sentido ambíguo para o cliente
+    # (restringe as apostas e tira renda de quem já é vulnerável) e 82 x 342 diz pouco de cada um; Câmara também não conta
+    # 16/11/2026, depois do cruzamento com o mapeamento de novatos feito para o IEPS: votações de jogos e apostas na Câmara
+    # para os senadores ex-deputados (mesmo lado da Emenda 139 e do relatório do PL 2234 na CCJ)
+    ("PL 2234/2022", "Câmara", "Aprovada a Subemenda Substitutiva Global ao Projeto de Lei 442", {"IEPS": -1, "Vital Strategies": -1},
+     "na subemenda substitutiva global ao PL 442/1991, que legaliza cassinos, bingos e jogo do bicho (Sim = aprovar a legalização)",
+     "lado pela pauta Apostas online e saúde mental: o cliente defende restringir as apostas"),
+    ("PL 3626/2023", "Câmara", "Rejeitada a Emenda do Senado Federal nº 3", {"IEPS": 1, "Vital Strategies": 1},
+     "na Emenda 3 do Senado à lei das bets, que deixava fora da lei os jogos on-line, como cassino (Sim = manter fora da lei)",
+     "lado pela pauta Apostas online e saúde mental: o cliente defende restringir as apostas"),
 ]
 
 
@@ -579,6 +604,9 @@ def sinais_descricao(cliente, ja_na_base, senadores, aut, votos, rel):
         if cliente in sentidos and n in out:
             s = sentidos[cliente] if forca != "evidência" else 0
             out[n].append((forca, s, f"{texto} ({'a favor' if sentidos[cliente] > 0 else 'contra'} pela descrição do cliente, a confirmar)"))
+    for n, sentidos, forca, texto in SINAIS_NOVATOS_IEPS:
+        if cliente in sentidos and n in out:
+            out[n].append((forca, sentidos[cliente], texto))
     for (k, casa), (sentidos, rot) in DESCRICAO.items():
         if cliente not in sentidos or k in ja_na_base:
             continue
@@ -862,6 +890,9 @@ def main():
                        "Aguardando": int((g["Para o cliente"].isin(["", "Dúvida"]) & (g.Projeto != "")).sum()),
                        "Senadores com registro": com_registro,
                        "Posição fora da planilha": "; ".join(f"{r.Projeto}: {r._8}" for r in g.itertuples() if r._8 != "Coordenação")})
+    # contrato encerrado: o cliente sai das planilhas (os dados de origem ficam, para voltar se o contrato voltar)
+    linhas = [l for l in linhas if l["Cliente"] not in CLIENTES_ENCERRADOS]
+    resumo = [r for r in resumo if r["Cliente"] not in CLIENTES_ENCERRADOS]
     c.salvar_csv(pd.DataFrame(linhas), "temas_clientes/clientes_classificacao.csv")
     c.salvar_csv(pd.DataFrame(resumo), "temas_clientes/clientes_resumo.csv")
     print(pd.DataFrame(linhas).groupby(["Cliente", "Classificação"]).size().unstack(fill_value=0).to_string())
