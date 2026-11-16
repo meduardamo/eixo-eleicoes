@@ -60,9 +60,8 @@ paragrafo("Ninguém revisa a base inteira. Cada cliente tem uma lista de até 25
 # ---------------------------------------------------------------- prazos
 secao_titulo("Prazos")
 tabela([("Dia", 1700, None), ("O quê", LARGURA - 1700, None)], [
-    ["Qui 19/11", "Ponto de controle e primeiro lote aplicado (retorno na coluna Situação na sexta)"],
-    ["Ter 24/11", "Prazo final da revisão"],
-    ["Qua 25/11", "Segundo lote aplicado, com retorno na coluna Situação"],
+    ["Ter 24/11", "Prazo final da revisão (sexta, 20/11, é feriado)"],
+    ["Qua 25/11", "Marcações aplicadas, com retorno na coluna Situação"],
     ["Qui 26/11", "Responder só as linhas marcadas como Precisa de fonte"],
     ["Seg 30/11", "Envio aos clientes"],
 ])

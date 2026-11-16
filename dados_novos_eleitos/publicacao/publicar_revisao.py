@@ -183,7 +183,7 @@ reqs.append({'addConditionalFormatRule': {'index': 0, 'rule': {'ranges': [{'shee
 reqs += cores_resposta(ws, n, C_ERR, {'Classificação errada': '#F4C7C3', 'Evidência errada ou faltando': '#F6DFA4'})
 reqs += cores_resposta(ws, n, m - 1, {'Aplicado': '#9BD0B7', 'Precisa de fonte': '#F6DFA4', 'Não aplicado': '#E1E1E1'})
 reqs.append(nota(ws, m - 1, 'Retorno de cada marcação. Aplicado: entrou na base. Precisa de fonte: falta dizer de onde vem a informação para aplicar. '
-                          'Não aplicado: o motivo está na nota da célula. Aplicação em dois lotes: 19/11 e 25/11.'))
+                          'Não aplicado: o motivo está na nota da célula. Aplicação em 25/11, depois do prazo da revisão.'))
 cl = [l[1] for l in linhas]
 reqs += [{'updateBorders': {'range': {'sheetId': ws.id, 'startRowIndex': i + 1, 'endRowIndex': i + 2, 'startColumnIndex': 0, 'endColumnIndex': m}, 'bottom': grossa}}
          for i in range(len(cl)) if i + 1 == len(cl) or cl[i + 1] != cl[i]]
