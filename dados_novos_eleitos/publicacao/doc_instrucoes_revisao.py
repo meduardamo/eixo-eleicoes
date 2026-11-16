@@ -46,8 +46,7 @@ paragrafo("Instruções da revisão manual", 20, True, VINHO, depois=6, familia=
 paragrafo("Segunda fase · Saúde, Educação e Esporte · 16 a 24 de novembro de 2026", 9, cor=CINZA, depois=10)
 
 cartoes([("Prazo da revisão", "24/11", "terça-feira, fim do dia", VINHO),
-         ("Por cliente", "25 nomes", "em cada planilha, Câmara e Senado", AMBAR),
-         ("Tempo estimado", "5 min", "por cliente em cada planilha, mais os nomes que estranhar", MARINHO)])
+         ("Por cliente", "25 nomes", "em cada planilha, Câmara e Senado", AMBAR)])
 
 # ---------------------------------------------------------------- o que é
 secao_titulo("O que é a revisão")
