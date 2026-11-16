@@ -1905,7 +1905,7 @@ def plantao(agora=None):
 
 
 ROTULO_TEMA = {
-    "pesquisa-executivo": "Pesquisa eleitoral (governador ou presidente)",
+    "pesquisa-executivo": "Pesquisa de opinião · Presidente e governadores",
     "apoio": "Apoio e aliança ao executivo",
     "rompimento": "Rompimento de aliança",
     "educação": "Educação na campanha",
