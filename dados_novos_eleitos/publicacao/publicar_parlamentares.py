@@ -102,7 +102,8 @@ def publicar(titulo, df, grupos, largura, congela_col, pinta, notas=None, recolh
 
 
 # ---------------------------------------------------------------- Parlamentares
-f = pd.read_csv(D + 'parlamentares.csv', dtype=str).fillna('')
+import cadeira_genero
+f = cadeira_genero.ajusta(pd.read_csv(D + 'parlamentares.csv', dtype=str).fillna(''))
 f = f.rename(columns={c: c.replace('Atuação: ', '') for c in f.columns if c.startswith('Atuação: ')})
 f = f.rename(columns={'Relevância política (1 a 4)': 'Relevância política (1 a 4)', 'Por quê': 'O que define a relevância'})
 # subtemas (etapa 25), depois dos quatro grandes temas; textos longos num bloco de ficha no fim
@@ -243,7 +244,7 @@ publicar('Parlamentares', f, GR_P, LARG_P, 1, pinta_p, notas_parl, RECOLHER, alt
          corta=['Destaques nos subtemas'] + FICHA)
 
 # ---------------------------------------------------------------- Votações-chave
-v = pd.read_csv(D + 'votacoes_chave.csv', dtype=str).fillna('')
+v = cadeira_genero.ajusta(pd.read_csv(D + 'votacoes_chave.csv', dtype=str).fillna(''))
 notas = json.load(open(D + 'votacoes_chave_notas.json'))
 # o cabeçalho já diz o que o Sim faz; a nota do cabeçalho guarda o placar
 SIGLA = {'EDI 0-5': 'Primeira infância desde a gestação (PL 1924)',

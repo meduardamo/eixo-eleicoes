@@ -21,7 +21,8 @@ COLS = ['Cliente', 'Área', 'Senador', 'Partido/UF', 'Cadeira', 'Classificação
 LARG = {'Cliente': 140, 'Área': 80, 'Senador': 165, 'Partido/UF': 125, 'Cadeira': 112, 'Classificação': 150,
         'Sinais': 190, 'Atuação nos subtemas do cliente': 300, 'Evidências': 600, 'Subtemas do cliente': 300}
 
-cla = pd.read_csv(D + 'clientes_classificacao.csv', dtype=str).fillna('')
+import cadeira_genero
+cla = cadeira_genero.ajusta(pd.read_csv(D + 'clientes_classificacao.csv', dtype=str).fillna(''))
 N_SEN = len(pd.read_csv(D + 'parlamentares.csv'))  # os 81 da 58ª no Senado; quem não aparece na Clientes não tem registro
 res = pd.read_csv(D + 'clientes_resumo.csv', dtype=str).fillna('')
 # subtemas do cliente e quanto o senador atua neles (etapa 25), antes de trocar o nome do Coletivo

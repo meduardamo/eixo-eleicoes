@@ -43,7 +43,8 @@ for g, rot in CADEIRA.items():
     p = pd.read_csv(D + f'temas_clientes/perfil_{g}.csv', dtype=str).fillna('').rename(columns=RENOMEIA)
     p['Cadeira'] = rot
     partes.append(p)
-df = pd.concat(partes)
+import cadeira_genero
+df = cadeira_genero.ajusta(pd.concat(partes).reset_index(drop=True))
 df['ordem_tema'] = df.Tema.map(TEMAS.index)
 df = df.sort_values(['Senador', 'ordem_tema'], key=lambda s: s.str.normalize('NFKD') if s.dtype == object else s)
 # atuação no grande tema (etapa 23) e nos subtemas (etapa 25), ao lado do tema
