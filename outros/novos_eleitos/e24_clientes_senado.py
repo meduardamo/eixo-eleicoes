@@ -153,8 +153,8 @@ DESCRICAO = {
     ("PL 2681/2020", "Câmara"): ({"FMCSV": 1}, "licença-maternidade a partir da alta hospitalar"),
     ("PL 2534/2015", "Câmara"): ({"FMCSV": 1}, "licença-paternidade de quinze dias"),
     ("PL 7824/2017", "Câmara"): ({"FMCSV": 1}, "licença-paternidade de quinze dias"),
-    ("PDL 25/2025", "Câmara"): ({"Coletivo Feminista": -1, "Infinis": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
-    ("PDL 35/2025", "Senado"): ({"Coletivo Feminista": -1, "Infinis": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
+    ("PDL 25/2025", "Câmara"): ({"Coletivo Feminista": -1, "Infinis": -1, "UNFPA": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
+    ("PDL 35/2025", "Senado"): ({"Coletivo Feminista": -1, "Infinis": -1, "UNFPA": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
     ("PDL 138/2025", "Câmara"): ({"Infinis": -1}, "susta as diretrizes do Conanda de proteção a adolescentes no sistema socioeducativo"),
     ("PDL 384/2024", "Senado"): ({"Infinis": -1}, "susta as diretrizes do Conanda de proteção a adolescentes no sistema socioeducativo"),
     ("PLS 333/2003", "Senado"): ({"Vital Strategies": 1}, "proíbe patrocínio ao esporte e à cultura por fabricantes de fumígenos"),
@@ -277,8 +277,20 @@ DESCRICAO = {
     ("PL 4772/2023", "Senado"): ({"Infinis": 1, "Cactus": 1, "IEPS": 1}, "prevenção da automutilação e do suicídio no ECA"),
     ("PL 2628/2022", "Senado"): ({"Infinis": 1}, "ECA Digital"),
     ("PL 4670/2025", "Câmara"): ({"Infinis": 1, "Cactus": 1, "IEPS": 1}, "núcleo psicossocial nas escolas públicas"),
-    ("PDL 74/2025", "Senado"): ({"Infinis": -1, "Coletivo Feminista": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
-    ("PDL 53/2025", "Câmara"): ({"Infinis": -1, "Coletivo Feminista": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
+    ("PDL 74/2025", "Senado"): ({"Infinis": -1, "Coletivo Feminista": -1, "UNFPA": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
+    ("PDL 53/2025", "Câmara"): ({"Infinis": -1, "Coletivo Feminista": -1, "UNFPA": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
+    # 19/11/2026: o PDL 3/2025 e os PDLs que sustam a resolução 258 do Conanda contam contra o UNFPA (Eduarda: "o pdl é um projeto
+    # contrario a unfpa e coletivo"). A resolução trata do atendimento de crianças e adolescentes vítimas de violência sexual,
+    # pauta do UNFPA; os projetos de aborto e nascituro seguem fora do UNFPA (04/11). Os PDLs da Câmara abaixo valem para
+    # quem assinou como deputado.
+    ("PDL 3/2025", "Câmara"): ({"UNFPA": -1}, "susta a resolução 258 do Conanda"),
+    ("PDL 6/2025", "Câmara"): ({"UNFPA": -1}, "susta a resolução 258 do Conanda"),
+    ("PDL 14/2025", "Câmara"): ({"UNFPA": -1}, "susta a resolução 258 do Conanda"),
+    ("PDL 19/2025", "Câmara"): ({"UNFPA": -1}, "susta a resolução 258 do Conanda"),
+    ("PDL 48/2025", "Câmara"): ({"UNFPA": -1}, "susta a resolução 258 do Conanda"),
+    ("PDL 65/2025", "Câmara"): ({"UNFPA": -1}, "susta a resolução 258 do Conanda"),
+    ("PDL 79/2025", "Câmara"): ({"UNFPA": -1}, "susta a resolução 258 do Conanda"),
+
     ("PL 1773/2022", "Senado"): ({"Cactus": 1}, "prevenção do suicídio de crianças e adolescentes"),
     ("PL 5705/2023", "Senado"): ({"Cactus": 1}, "apoio psicológico à mulher em situação de violência"),
     ("PL 715/2019", "Câmara"): ({"Cactus": 1}, "prioridade no atendimento psicológico pelo SUS"),
@@ -397,7 +409,7 @@ CLIENTES_ENCERRADOS = {"ASBAI"}
 # rótulo[, de onde vem o lado]). Sem o sexto campo, o lado vem da descrição do cliente e fica a confirmar. Votação de
 # emenda só entra aqui com o texto da emenda lido; essas contam mesmo com o projeto na base de pautas, que não conta emenda.
 DESCRICAO_VOTOS = [
-    ("PDL 3/2025", "Câmara", "Aprovado o Projeto de Decreto Legislativo", {"Coletivo Feminista": -1},
+    ("PDL 3/2025", "Câmara", "Aprovado o Projeto de Decreto Legislativo", {"Coletivo Feminista": -1, "UNFPA": -1},
      "no PDL 3/2025, que susta a resolução 258 do Conanda sobre o atendimento, inclusive o aborto legal, de meninas vítimas de violência sexual (Sim = sustar a resolução)"),
     ("PEC 164/2012", "Câmara", "Aprovado o Parecer", {"Coletivo Feminista": -1},
      "no parecer da PEC 164/2012, que põe na Constituição a inviolabilidade da vida desde a concepção (Sim = aprovar o parecer)"),
@@ -482,10 +494,13 @@ DESCRICAO_LOCAL = {
 
 # Posição pública do próprio cliente sobre o projeto (nota, carta, fala de dirigente): o lado vem dela e sai da checagem.
 _DOMICILIAR = "contra pela posição pública da FMCSV, contrária a regulamentar a educação domiciliar (Mariana Luz, Brasil de Fato, 15/12/2025)"
+_RES_258_UNFPA = "contra: a resolução 258 do Conanda trata do atendimento de crianças e adolescentes vítimas de violência sexual"
 _RES_258 = "contra pela posição pública das Católicas pelo Direito de Decidir, que pediram à ONU a volta da resolução 258 do Conanda (02/07/2026)"
 POSICAO_PUBLICA = {
     **{("FMCSV", k): _DOMICILIAR for k in ("PL 3179/2012", "PL 10185/2018", "PL 5168/2026", "PL 2577/2026", "PL 3/2021")},
     **{("Coletivo Feminista", k): _RES_258 for k in ("PDL 3/2025", "PDL 25/2025", "PDL 35/2025", "PDL 53/2025", "PDL 74/2025")},
+    **{("UNFPA", k): _RES_258_UNFPA for k in ("PDL 3/2025", "PDL 6/2025", "PDL 14/2025", "PDL 19/2025", "PDL 25/2025", "PDL 35/2025",
+                                           "PDL 48/2025", "PDL 53/2025", "PDL 65/2025", "PDL 74/2025", "PDL 79/2025")},
     ("IDEC", "PL 12/2021"): "a favor pela posição pública do Idec, que chamou a aprovação no Senado de vitória histórica (30/04/2021)",
 }
 
