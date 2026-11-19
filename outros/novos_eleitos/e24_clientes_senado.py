@@ -197,7 +197,7 @@ DESCRICAO = {
     ("PEC 4/2019", "Senado"): ({"UNFPA": -1, "Infinis": -1}, "reduz a maioridade penal"),
     ("PEC 15/2019", "Senado"): ({"UNFPA": -1, "Infinis": -1}, "reduz a maioridade penal"),
     ("PEC 32/2019", "Senado"): ({"UNFPA": -1, "Infinis": -1}, "reduz a maioridade penal para 16 anos"),
-    # 04/11/2026: UNFPA saiu de todos os projetos de aborto e nascituro. O programa do UNFPA no Brasil (DP/FPA/CPD/BRA/7,
+    # 04/11/2026: UNFPA saiu de todos os projetos de aborto e nascituro. O programa da UNFPA no Brasil (DP/FPA/CPD/BRA/7,
     # 2024-2028) não tem ação sobre aborto e a pauta dele com a Eixo é casamento infantil, maioridade penal e Código Civil
     ("PLS 46/2017", "Senado"): ({"Coletivo Feminista": -1}, "criminaliza o aborto em qualquer fase"),
     ("PEC 49/2023", "Senado"): ({"Coletivo Feminista": -1}, "direito à vida desde o nascituro"),
@@ -279,9 +279,9 @@ DESCRICAO = {
     ("PL 4670/2025", "Câmara"): ({"Infinis": 1, "Cactus": 1, "IEPS": 1}, "núcleo psicossocial nas escolas públicas"),
     ("PDL 74/2025", "Senado"): ({"Infinis": -1, "Coletivo Feminista": -1, "UNFPA": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
     ("PDL 53/2025", "Câmara"): ({"Infinis": -1, "Coletivo Feminista": -1, "UNFPA": -1}, "susta a resolução 258 do Conanda, a mesma do PDL 3/2025"),
-    # 19/11/2026: o PDL 3/2025 e os PDLs que sustam a resolução 258 do Conanda contam contra o UNFPA (Eduarda: "o pdl é um projeto
+    # 19/11/2026: o PDL 3/2025 e os PDLs que sustam a resolução 258 do Conanda contam contra a UNFPA (Eduarda: "o pdl é um projeto
     # contrario a unfpa e coletivo"). A resolução trata do atendimento de crianças e adolescentes vítimas de violência sexual,
-    # pauta do UNFPA; os projetos de aborto e nascituro seguem fora do UNFPA (04/11). Os PDLs da Câmara abaixo valem para
+    # pauta da UNFPA; os projetos de aborto e nascituro seguem fora da UNFPA (04/11). Os PDLs da Câmara abaixo valem para
     # quem assinou como deputado.
     ("PDL 3/2025", "Câmara"): ({"UNFPA": -1}, "susta a resolução 258 do Conanda"),
     ("PDL 6/2025", "Câmara"): ({"UNFPA": -1}, "susta a resolução 258 do Conanda"),
@@ -318,7 +318,7 @@ DESCRICAO = {
     ("PL 1904/2024", "Câmara"): ({"Coletivo Feminista": -1}, "equipara ao homicídio o aborto após 22 semanas, inclusive em caso de estupro"),
     ("PEC 29/2015", "Senado"): ({"Coletivo Feminista": -1}, "inviolabilidade do direito à vida desde a concepção"),
     # 04/11/2026: projetos que entraram nos subtemas reprodutivos e não tinham sentido para o cliente (PDLs lidos pelo
-    # texto; PL 848/2019 e PL 1125/2024 pelo parecer). Só o Coletivo: o foco do UNFPA é a infância (Eduarda, 04/11)
+    # texto; PL 848/2019 e PL 1125/2024 pelo parecer). Só o Coletivo: o foco da UNFPA é a infância (Eduarda, 04/11)
     ("PDL 24/2024", "Câmara"): ({"Coletivo Feminista": -1}, "susta a nota técnica do Ministério da Saúde que tirava o limite de idade gestacional do aborto legal"),
     ("PDL 46/2023", "Câmara"): ({"Coletivo Feminista": -1}, "susta a revogação da Portaria 2.561/2020 (justificação e notificação à polícia no aborto legal)"),
     ("PDL 19/2023", "Senado"): ({"Coletivo Feminista": -1}, "susta a revogação da Portaria 2.561/2020 (justificação e notificação à polícia no aborto legal)"),
@@ -327,7 +327,7 @@ DESCRICAO = {
     ("PL 2007/2022", "Senado"): ({"Coletivo Feminista": -1}, "obriga preservar a vida do feto viável no aborto legal"),
     ("PL 848/2019", "Senado"): ({"Coletivo Feminista": -1}, "campanha obrigatória sobre gravidez na adolescência e riscos do aborto"),
     ("PL 3233/2015", "Câmara"): ({"Coletivo Feminista": 1}, "esterilização voluntária a partir dos 18 anos, sem consentimento do cônjuge"),
-    # protocolos de acolhimento à vítima de violência sexual em lugares de lazer (inteiro teor lido): agenda do UNFPA;
+    # protocolos de acolhimento à vítima de violência sexual em lugares de lazer (inteiro teor lido): agenda da UNFPA;
     # o Coletivo fica de fora, a agenda declarada dele é aborto, contracepção e autodeterminação reprodutiva
     ("PL 999/2023", "Câmara"): ({"UNFPA": 1}, "protocolo de acolhimento às vítimas de violência sexual em lugares de lazer"),
     ("PL 544/2023", "Senado"): ({"UNFPA": 1}, "Protocolo Não Nos Calaremos contra a violência sexual e de gênero em lugares de lazer"),
@@ -509,7 +509,7 @@ POSICAO_PUBLICA = {
 # (temas_clientes/violencia_clientes_senado.csv, sentido +1, -1 ou 0; a coluna Clientes, quando preenchida, limita os clientes). Ficam fora (0) porte de arma ou de defesa pessoal
 # para a mulher, castração química, prisão perpétua, data comemorativa e nome de lei, pena maior para falsa
 # comunicação de crime sexual e notificação de aborto autoprovocado. O Coletivo segue só com aborto, contracepção e
-# autonomia reprodutiva; a gravidez na adolescência fica fora do UNFPA (foco na infância).
+# autonomia reprodutiva; a gravidez na adolescência fica fora da UNFPA (foco na infância).
 VIOLENCIA = "temas_clientes/violencia_clientes_senado.csv"
 CLIENTES_VIOLENCIA = {"VC": ("Cactus", "FMCSV", "Infinis", "UNFPA", "Vital Strategies"), "VM": ("Cactus", "UNFPA", "Vital Strategies"),
                       "CI": ("Infinis", "UNFPA"), "GI": ("UNFPA",)}  # 06/11: CI virou subtema do Infinis
