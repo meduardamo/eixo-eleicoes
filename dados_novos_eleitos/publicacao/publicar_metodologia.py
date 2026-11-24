@@ -15,7 +15,7 @@ LINHAS = [
     ['Perfil por tema', ['Uma linha por senador e tema', 'Atuação, subtemas, o que fez, o que defende e como votou', 'Pedidos de audiência e urgência, comissão e frentes do tema'], ''],
     ['Clientes', ['Uma linha por cliente e senador, com filtro em todas as colunas'], ''],
     ['Votações-chave', ['O voto de cada senador nas votações escolhidas', 'O cabeçalho diz o que o Sim fazia', 'Traço quando o senador não estava na Casa', '"Presidia a sessão": presidia a sessão e por isso não votou'], ''],
-    ['Cadeira', ['Mandato até 2031 (eleitos em 2022)', 'Reeleito em 2026', 'Eleito em 2026', 'A Câmara entra depois'], 'Congresso Eleito (2026), conferido com o TSE em 08/10/2026'],
+    ['Cadeira', ['Mandato até 2031 (eleitos em 2022)', 'Mandato até 2031 (suplente): primeiro suplente que assume em janeiro de 2027 a cadeira do titular eleito governador em 2026 (Omar Aziz, Cleitinho e Sergio Moro)', 'Reeleito em 2026', 'Eleito em 2026', 'A Câmara entra depois'], 'Congresso Eleito (2026), conferido com o TSE em 08/10/2026'],
     ['O QUE FOI PUXADO'],
     ['Projetos de autoria', ['Projetos, PECs, requerimentos e demais proposições de que o senador é primeiro autor ou coautor', 'Senado: cerca de 27 mil registros', 'Câmara, para quem foi deputado: cerca de 50 mil', 'Na classificação valem os de primeiro autor'], 'APIs do Senado e da Câmara'],
     ['Relatorias', ['Senado: cerca de 11.500; Câmara: cerca de 2.200', 'Conta só com parecer dado ou matéria ainda com o senador', 'Não contam redistribuição, troca na comissão, relator ad hoc e fim de legislatura', 'Na Câmara, a fonte só informa o relator do último andamento'], 'APIs do Senado e da Câmara'],
