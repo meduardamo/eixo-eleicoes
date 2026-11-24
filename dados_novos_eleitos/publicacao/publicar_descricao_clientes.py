@@ -124,7 +124,7 @@ for r in tab:
         fora_txt = re.sub(r':.*', '', fora)
         pautas += f'\n• {fora_txt} (posição informada fora da base de pautas)'
     subt = '\n'.join('• ' + s.strip() for s in subt.split(';') if s.strip())
-    desc = desc.replace(' — ', '; ').replace('—', ', ')  # 24/11: padrão de texto sem travessão
+    desc = desc.replace(' — ', '; ').replace('—', ', ').replace('discriminalização', 'descriminalização')  # 24/11: padrão de texto sem travessão; erro de digitação do PDF
     linhas.append([area, cliente, desc, pautas, subt])
 linhas.sort(key=lambda l: (AREA_ORDEM.index(l[0]) if l[0] in AREA_ORDEM else 9, l[1].lower()))
 
