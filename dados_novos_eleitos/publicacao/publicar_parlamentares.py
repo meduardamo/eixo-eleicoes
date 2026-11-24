@@ -1,6 +1,10 @@
 """Publica as abas Parlamentares e Votações-chave (etapa 23) na planilha da 58ª Legislatura, no padrão Eixo.
 Cabeçalho em duas linhas: faixa de grupo em cima, nome da coluna embaixo. Notas de 1 a 4 em escala de marinho,
 posição no Senado com cor de fundo, voto Sim e Não com cor e a orientação do partido como nota da célula."""
+import sys as _sys
+_sys.path.insert(0, 'dados_novos_eleitos/publicacao')
+import trava_2411
+trava_2411.checa(__file__)
 from ids import valor
 import json
 import re

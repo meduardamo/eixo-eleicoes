@@ -2,6 +2,10 @@
 Uma linha por senador e tema; a coluna Cadeira separa mandato em curso, reeleitos e novos.
 Leitura: cabeçalho e as duas primeiras colunas (senador e tema) congelados, filtro em todas as colunas,
 blocos de quatro linhas por senador com fundo alternado e linha divisória entre senadores."""
+import sys as _sys
+_sys.path.insert(0, 'dados_novos_eleitos/publicacao')
+import trava_2411
+trava_2411.checa(__file__)
 from ids import valor
 import re
 

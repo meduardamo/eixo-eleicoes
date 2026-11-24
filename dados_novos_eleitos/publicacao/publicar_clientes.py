@@ -3,6 +3,10 @@
   senadores com registro (fórmula FILTER sobre a aba Clientes), com a classificação colorida;
 - Clientes: uma linha por cliente e senador, sem célula mesclada, com filtro em todas as colunas.
 Substitui as abas antigas Clientes Educação, Clientes Saúde e Clientes Esporte."""
+import sys as _sys
+_sys.path.insert(0, 'dados_novos_eleitos/publicacao')
+import trava_2411
+trava_2411.checa(__file__)
 from ids import valor
 import gspread
 import pandas as pd

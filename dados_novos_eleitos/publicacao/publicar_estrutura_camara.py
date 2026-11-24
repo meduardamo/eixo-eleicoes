@@ -1,5 +1,9 @@
 """Cabeçalhos das abas de base da consulta da Câmara, iguais aos do Senado, com os 513 nomes para preencher.
 Não regrava aba que já tem conteúdo além do cabeçalho (o preenchimento fica), salvo com --forca."""
+import sys as _sys
+_sys.path.insert(0, 'dados_novos_eleitos/publicacao')
+import trava_2411
+trava_2411.checa(__file__)
 from ids import valor
 import sys
 
