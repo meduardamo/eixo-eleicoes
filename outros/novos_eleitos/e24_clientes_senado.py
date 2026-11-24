@@ -821,7 +821,7 @@ def main():
     for r in comp.itertuples():
         m = (base.Cliente == r.Cliente) & (base.Projeto == r.Projeto)
         base.loc[m, "Para o cliente"] = r._5
-        base.loc[m, "Fonte da posição"] = f"{r.Fonte}, {r.Situação.lower()}"
+        base.loc[m, "Fonte da posição"] = ", ".join(x for x in (r.Fonte, r.Situação.lower()) if x)
     senadores = pd.concat([c.ler_csv(f"temas_clientes/perfil_{g}.csv")[["Parlamentar", "Partido", "UF"]] for g in GRUPOS]).drop_duplicates()
     ficha = c.ler_csv("temas_clientes/parlamentares.csv").set_index("Senador")
 

@@ -16,7 +16,7 @@ from ids import valor
 CASA = sys.argv[1]
 ID = valor({'camara': 'SPREADSHEET_ID_58_CAMARA', 'senado': 'SPREADSHEET_ID_58_SENADO'}[CASA])
 TITULO = 'Descrição dos clientes'
-PDF = '/Users/eduardamarques/Downloads/Monitor Legislativo e DOU - Segunda Etapa.pdf'
+PDF = '/Users/eduardamarques/Downloads/clientes/iu/Monitor Legislativo e DOU - Segunda Etapa.pdf'
 MARINHO, GELO, BORDA = '#192D4E', '#F4F3EF', '#DADAD4'
 cor = lambda h: {'red': int(h[1:3], 16) / 255, 'green': int(h[3:5], 16) / 255, 'blue': int(h[5:7], 16) / 255}
 AREA_ORDEM = ['Educação', 'Saúde', 'Esporte']
@@ -124,6 +124,7 @@ for r in tab:
         fora_txt = re.sub(r':.*', '', fora)
         pautas += f'\n• {fora_txt} (posição informada fora da base de pautas)'
     subt = '\n'.join('• ' + s.strip() for s in subt.split(';') if s.strip())
+    desc = desc.replace(' — ', '; ').replace('—', ', ')  # 24/11: padrão de texto sem travessão
     linhas.append([area, cliente, desc, pautas, subt])
 linhas.sort(key=lambda l: (AREA_ORDEM.index(l[0]) if l[0] in AREA_ORDEM else 9, l[1].lower()))
 

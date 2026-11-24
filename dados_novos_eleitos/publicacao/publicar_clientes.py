@@ -119,7 +119,7 @@ apoio = [['Cliente', 'Área', 'Pautas', 'Projetos', 'Posição fora', 'Subtemas'
 for r in res.itertuples():
     pl = lambda q, um, varios: f"{q} {um if q == '1' else varios}"
     proj = (f"Projetos na base de pautas: {pl(r.Promotores, 'promotor', 'promotores')} e {pl(r.Detratores, 'detrator', 'detratores')}"
-            + (f"; {pl(r.Aguardando, 'precisa', 'precisam')} de checagem dos coordenadores" if r.Aguardando != '0' else ''))
+            + (f"; {r.Aguardando} em dúvida, {'que conta' if r.Aguardando == '1' else 'que contam'} no sentido da posição do cliente na pauta" if r.Aguardando != '0' else ''))
     apoio.append([r.Cliente, r.Área, r.Pautas, proj, r._8, r.Subtemas])
 wp.resize(rows=max(NL, len(apoio)), cols=m + 7)
 L = "'Clientes'"
