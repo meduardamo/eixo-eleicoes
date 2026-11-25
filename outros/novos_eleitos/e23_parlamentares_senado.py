@@ -11,11 +11,9 @@ Regras (as mesmas da aba Metodologia):
   consensuais (mais de 90% dos votos iguais); votos iguais à orientação sobre votos dados (Sim, Não, abstenção e
   obstrução), ausência não conta. Base a partir de 85%, Oposição até 65%, Independente entre os dois (percentual
   arredondado). Menos de 20 votações (ministro no período, por exemplo) fica sem posição. Mesma regra da Câmara.
-- Relevância: 4 = foi ou é governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da República,
-  ou é hoje líder do governo, da oposição, da maioria ou da minoria; 3 = prefeito, vice-governador, secretário de
-  estado, presidente de Assembleia, Mesa do Senado, líder de partido ou bloco hoje ou presidente de comissão
-  permanente hoje; 2 = outro mandato eletivo ou cargo anterior; 1 = primeiro mandato. Lideranças pela API do Senado
-  (composicao/lideranca), vigentes na data da rodada.
+- Relevância (1 a 5, desde 25/11/2026; ver a docstring de relevancia): cargo mais alto exercido em 2019 ou depois.
+  Lideranças pela API do Senado (composicao/lideranca), vigentes na data da rodada; o histórico de liderança desde
+  2019 (biografia da Câmara e /senador/{cod}/liderancas) entrou à mão na auditoria de 25/11/2026.
 - Proximidade no tema: pontos por comissão do tema (titular ou suplente 1, presidente 2), projetos como primeiro autor
   (5 ou mais 1, 15 ou mais 2), relatorias com parecer (2 ou mais 1) e lei aprovada (1); 0 ponto = 1, 1 a 2 = 2,
   3 a 4 = 3, 5 ou mais = 4.
@@ -215,8 +213,9 @@ def _no_periodo(per) -> bool:
 def relevancia(cargos, presidencias, liderancas, cadeira=""):
     """Escala de 1 a 5 desde 25/11/2026 (antes 1 a 4, com os níveis 4 e 3 de hoje num só 3).
     5 = poder de agenda nacional (governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da
-    República, líder hoje do governo, da oposição, da maioria ou da minoria); 4 = posto no Congresso (Mesa da Câmara ou
-    do Senado, líder de partido ou bloco hoje, presidente de comissão permanente hoje); 3 = cargo fora do Congresso
+    República, líder titular do governo, da oposição, da maioria ou da minoria); 4 = posto no Congresso (Mesa da Câmara
+    ou do Senado, líder titular de partido ou bloco por 30 dias ou mais, presidente de comissão permanente ou da CMO,
+    tudo em 2019 ou depois; esta função só lê a liderança de hoje); 3 = cargo fora do Congresso
     (prefeito, vice-governador, secretário de estado, presidente de Assembleia); 2 = outro mandato eletivo ou cargo
     anterior; 1 = primeiro mandato eletivo.
     Na main, Cabeça do Congresso no DIAP 2026, presidência de comissão desde 2019 e mais votado da UF dão no mínimo 4.
