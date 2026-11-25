@@ -109,6 +109,8 @@ for i in BLOCOS:
 tmp = gc.open_by_key(LOGO_DE[0]).worksheet(LOGO_DE[1]).copy_to(ID)['sheetId']
 sh.batch_update({'requests': [{'copyPaste': {'source': {**rg(0, 1, 0, 1), 'sheetId': tmp}, 'destination': rg(0, 1, 0, 1), 'pasteType': 'PASTE_VALUES'}},
                               {'deleteSheet': {'sheetId': tmp}}]})
+import formata_metodologia  # 25/11/2026: Metodologia legível (seções, tópicos, fios); mantém a faixa com o logo
+formata_metodologia.aplica(sh)
 from ordem_abas import ordenar
 ordenar(sh)
 print([w.title for w in sh.worksheets()][:4])
