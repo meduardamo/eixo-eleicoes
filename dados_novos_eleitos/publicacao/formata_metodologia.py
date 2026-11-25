@@ -31,10 +31,11 @@ def faixa_com_logo(sh, ws, logo_de):
                                   {'deleteSheet': {'sheetId': tmp}}]})
 
 
-def aplica(sh, titulo='Metodologia', logo_de=None):
+def aplica(sh, titulo='Metodologia', logo_de=None, cabeca='Metodologia'):
+    """cabeca: texto de B1 que marca a linha de título (Metodologia ou Leia-me)."""
     ws = sh.worksheet(titulo); g = ws.id
     v = ws.get_all_values()
-    if logo_de and v and v[0][1:2] == ['Metodologia']:
+    if logo_de and v and v[0][:2] == ['', cabeca]:
         faixa_com_logo(sh, ws, logo_de)
     n = len(v)
     # faixa do Leia-me com o logo (58ª): A1 com fundo escuro. Nesse caso a linha 1 e a largura da coluna A ficam como estão
@@ -56,7 +57,7 @@ def aplica(sh, titulo='Metodologia', logo_de=None):
     for i, r in enumerate(v):
         if i < r0: continue
         a, b = (r + ['', ''])[:2]
-        if not a and b == 'Metodologia' and not faixa:      # título sem faixa
+        if not a and b == cabeca and not faixa:      # título sem faixa
             R += [fmt(rng(i, i + 1), 'userEnteredFormat(backgroundColor,textFormat)', backgroundColor=BRANCO, textFormat=F(bold=True, fontSize=14, foregroundColor=MAR)),
                   altura(i, 48)]
         elif a and not b:                                   # seção
@@ -69,7 +70,7 @@ def aplica(sh, titulo='Metodologia', logo_de=None):
                   {'updateBorders': {'range': rng(i, i + 1), 'bottom': fio}}]
     R += [{'updateDimensionProperties': {'range': {'sheetId': g, 'dimension': 'COLUMNS', 'startIndex': i, 'endIndex': i + 1}, 'properties': {'pixelSize': px}, 'fields': 'pixelSize'}}
           for i, px in enumerate([240, 780]) if not (faixa and i == 0)]
-    R.append({'updateSheetProperties': {'properties': {'sheetId': g, 'gridProperties': {'hideGridlines': True, 'frozenRowCount': 1 if faixa or (v and v[0][1:2] == ['Metodologia']) else 0}},
+    R.append({'updateSheetProperties': {'properties': {'sheetId': g, 'gridProperties': {'hideGridlines': True, 'frozenRowCount': 1 if faixa or (v and v[0][:2] == ['', cabeca]) else 0}},
               'fields': 'gridProperties(hideGridlines,frozenRowCount)'}})
     sh.batch_update({'requests': R})
     return n
