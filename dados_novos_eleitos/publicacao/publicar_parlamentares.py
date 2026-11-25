@@ -178,15 +178,7 @@ def pinta_p(df, R, fmt):
     return reqs
 
 
-NOTA_REL = ("Relevância política, de 1 a 5, pelo cargo mais alto que já ocupou ou ocupa hoje:\n"
-            "5 = governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da República, ou líder hoje "
-            "do governo, da oposição, da maioria ou da minoria;\n"
-            "4 = posto no Congresso: Mesa da Câmara ou do Senado, líder hoje de partido ou bloco, presidente de comissão "
-            "permanente hoje ou desde 2019; também Cabeça do Congresso no DIAP 2026 e deputado mais votado da UF em 2026;\n"
-            "3 = cargo fora do Congresso: prefeito, vice-governador, secretário de estado ou presidente de Assembleia;\n"
-            "2 = outro mandato eletivo ou cargo anterior;\n"
-            "1 = primeiro mandato eletivo.\n"
-            "A coluna ao lado diz o cargo que define a nota.")
+NOTA_REL = 'Relevância política, de 1 a 5, pelo cargo mais alto exercido em 2019 ou depois:\n5 = governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da República, ou líder do governo, da oposição, da maioria ou da minoria;\n4 = posto no Congresso: Mesa da Câmara ou do Senado, líder hoje de partido ou bloco, presidente de comissão permanente; também Cabeça do Congresso no DIAP 2026 e deputado mais votado da UF em 2026;\n3 = cargo fora do Congresso: prefeito, vice-governador, secretário de estado ou presidente de Assembleia;\n2 = outro mandato eletivo ou cargo anterior, incluindo os acima que terminaram antes de 2019;\n1 = primeiro mandato eletivo.\nA coluna ao lado diz o cargo que define a nota.'
 NOTA_PROX = ("Quanto o senador trabalha neste tema no Congresso, olhando quatro coisas: se está hoje na comissão do tema, "
              "quantos projetos do tema escreveu, quantos relatou com parecer e quantos viraram lei.\n"
              "Referência: faz quase tudo isso, e muito. Atua: faz parte. Pouco: um sinal só. Não atua: nenhum.\n"

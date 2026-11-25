@@ -200,6 +200,18 @@ def mandato_senado(cargos, cadeira):
     return f"{n}º mandato no Senado (desde {ini})", n == 1
 
 
+JANELA = 2019
+
+
+def _no_periodo(per) -> bool:
+    """O cargo foi exercido em JANELA ou depois? "atual", "desde ..." e "hoje" contam; senão, o maior ano do período."""
+    per = str(per)
+    if re.search(r"(?i)atual|desde|hoje|a partir de|–\s*$|-\s*$", per):
+        return True
+    anos = [int(a) for a in re.findall(r"\b(19\d{2}|20\d{2})\b", per)]
+    return bool(anos) and max(anos) >= JANELA
+
+
 def relevancia(cargos, presidencias, liderancas, cadeira=""):
     """Escala de 1 a 5 desde 25/11/2026 (antes 1 a 4, com os níveis 4 e 3 de hoje num só 3).
     5 = poder de agenda nacional (governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da
@@ -207,7 +219,9 @@ def relevancia(cargos, presidencias, liderancas, cadeira=""):
     do Senado, líder de partido ou bloco hoje, presidente de comissão permanente hoje); 3 = cargo fora do Congresso
     (prefeito, vice-governador, secretário de estado, presidente de Assembleia); 2 = outro mandato eletivo ou cargo
     anterior; 1 = primeiro mandato eletivo.
-    Na main, Cabeça do Congresso no DIAP 2026, presidência de comissão desde 2019 e mais votado da UF dão no mínimo 4."""
+    Na main, Cabeça do Congresso no DIAP 2026, presidência de comissão desde 2019 e mais votado da UF dão no mínimo 4.
+    Janela (25/11/2026): cargo dos níveis 3 a 5 só conta se foi exercido em 2019 ou depois (JANELA, a mesma da
+    presidência de comissão); o que terminou antes vale como cargo anterior (2). Cargo sem ano também fica em 2."""
     cargos = [(re.sub(r"Senador(a)? da República", r"Senador\1", limpa_cargo(x)), per) for x, per in cargos if str(x).strip()]
     # ser senador hoje não define relevância (todos são); o mandato em curso aparece só como "Nº mandato no Senado"
     no_senado, primeiro = mandato_senado(cargos, cadeira)
@@ -217,7 +231,7 @@ def relevancia(cargos, presidencias, liderancas, cadeira=""):
               (3, r"(?i)Vice-governador|(?<!vice-)Prefeit|Secretári[oa] (de Estado|Estadual|.*d[eoa] (Estado|Bahia|Ceará|Piauí|Pernambuco|Paraíba|Goiás|Maranhão))|Presidente da Assembleia")]
     for nivel, rx in regras:
         lid = [t for n, t in liderancas if n == nivel]
-        achou = [(x, per) for x, per in cargos if re.search(rx, x)]
+        achou = [(x, per) for x, per in cargos if re.search(rx, x) and _no_periodo(per)]
         if any(t.startswith("Líder hoje: governo") for n, t in liderancas):
             # a liderança do governo hoje já aparece como "Líder hoje"; não repetir pelo cargo
             achou = [(x, per) for x, per in achou if not (re.search(r"(?i)Líder do governo", x) and "atual" in str(per))]
