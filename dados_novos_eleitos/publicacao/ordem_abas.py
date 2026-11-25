@@ -11,7 +11,7 @@ por último."""
 REVISAO_MANUAL = ['Revisão: lista prioritária', 'Revisão: andamento']
 EM_REVISAO = REVISAO_MANUAL  # 16/11: Leka respondeu tudo, Lado da Câmara vazio e oculto
 CONSULTA = ['Por parlamentar', 'Por cliente']
-BASE = ['Parlamentares', 'Perfil por tema', 'Votações-chave', 'Clientes']
+BASE = ['Parlamentares', 'Perfil por tema', 'Votações-chave', 'Ajuste fiscal', 'Clientes']
 # 16/11: Descrição dos clientes junto das referências de subtema (pedido dela)
 FIM = ['Definição dos subtemas', 'Subtemas por cliente', 'Descrição dos clientes', 'Lado dos projetos', 'Metodologia']
 # ocultas: o conteúdo já aparece em Por cliente e Por parlamentar, que leem delas por fórmula
