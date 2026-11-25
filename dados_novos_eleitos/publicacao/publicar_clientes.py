@@ -175,7 +175,7 @@ reqs.append({'updateDimensionProperties': {'range': {'sheetId': wp.id, 'dimensio
                                            'properties': {'pixelSize': 170}, 'fields': 'pixelSize'}})
 for lote in range(0, len(reqs), 300):
     sh.batch_update({'requests': reqs[lote:lote + 300]})
-import ux_por_parlamentar  # 25/11/2026: acabamento no padrão das planilhas UNFPA/ACT (nome, cor da área, linhas no alto)
+import ux_por_parlamentar  # 25/11/2026: acabamento no padrão das planilhas UNFPA/ACT (nome e cor da área)
 ux_por_parlamentar.aplica_cliente(sh)
 print('Por cliente', NL)
 

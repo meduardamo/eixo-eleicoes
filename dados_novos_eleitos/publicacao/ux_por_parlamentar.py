@@ -3,7 +3,7 @@
 revisão em andamento. publicar_por_parlamentar.py chama aplica(sh) no fim; rodar sozinho: python3 ux_por_parlamentar.py camara|senado
 (faz as duas abas: Por parlamentar e Por cliente; publicar_clientes.py chama aplica_cliente(sh) no fim)
 - títulos de bloco em faixa marinho e cabeçalho das tabelas em cinza claro (hierarquia: faixa > cabeçalho > rótulo > texto);
-- linhas de tema e de cliente alinhadas no alto (o nome do tema fica à vista quando o texto é longo);
+- alinhamento vertical no meio em tudo (regra dela de 20/10/2026; a versão de 25/11 com o alto foi desfeita no mesmo dia);
 - cor por tema (Saúde, Educação, Esporte, Primeira infância) e o cliente na cor da área dele (aba Descrição dos clientes);
 - nome em branco com fonte 14. As cores de Atuação no tema e de Classificação continuam as do publicar_por_parlamentar.
 """
@@ -44,8 +44,8 @@ def aplica(sh):
         R.append({'updateDimensionProperties': {'range': {'sheetId': g, 'dimension': 'ROWS', 'startIndex': r, 'endIndex': r + 1}, 'properties': {'pixelSize': 32}, 'fields': 'pixelSize'}})
     for r, c1 in ((t0, m), (c0, 6)):
         R.append(fmt(rng(r, r + 1, 0, c1), 'userEnteredFormat(backgroundColor,textFormat)', backgroundColor=CINZA_CL, textFormat=F(bold=True, foregroundColor=MAR)))
-    R.append(fmt(rng(t0 + 1, C1), 'userEnteredFormat.verticalAlignment', verticalAlignment='TOP'))
-    R.append(fmt(rng(c0 + 1, nl), 'userEnteredFormat.verticalAlignment', verticalAlignment='TOP'))
+    R.append(fmt(rng(t0 + 1, C1), 'userEnteredFormat.verticalAlignment', verticalAlignment='MIDDLE'))
+    R.append(fmt(rng(c0 + 1, nl), 'userEnteredFormat.verticalAlignment', verticalAlignment='MIDDLE'))
     R += [regra(rng(t0 + 1, C1, 0, 1), t, c) for t, c in TEMA_COR.items()]
     R += [regra(rng(c0 + 1, nl, 0, 1), cli, TEMA_COR[ar]) for cli, ar in area.items() if ar in TEMA_COR]
     sh.batch_update({'requests': R})
@@ -54,7 +54,7 @@ def aplica(sh):
 
 def aplica_cliente(sh):
     """Por cliente (25/11/2026, ela: "pode ser por cliente tbm"): nome em branco com fonte 14, a rótulo Área (A2) na cor da área,
-    linhas de parlamentar alinhadas no alto. Classificação, cabeçalho e coluna de apoio I:N ficam como o publicar_clientes deixa."""
+    linhas de parlamentar com alinhamento no meio. Classificação, cabeçalho e coluna de apoio I:N ficam como o publicar_clientes deixa."""
     ws = sh.worksheet('Por cliente'); g = ws.id
     a = ws.col_values(1)[:12]
     cab = next(i for i, x in enumerate(a) if x in ('Senador', 'Deputado'))
@@ -71,7 +71,7 @@ def aplica_cliente(sh):
     a2 = rng(area_lin, area_lin + 1, 0, 1)  # só o rótulo Área ganha a cor (a linha inteira pintada disputava com o cabeçalho)
     R += [{'addConditionalFormatRule': {'index': 0, 'rule': {'ranges': [a2], 'booleanRule': {
         'condition': {'type': 'CUSTOM_FORMULA', 'values': [{'userEnteredValue': f'=$B${area_lin + 1}="{ar}"'}]}, 'format': {'backgroundColor': TEMA_COR[ar]}}}}} for ar in ('Saúde', 'Educação', 'Esporte')]
-    R.append({'repeatCell': {'range': rng(cab + 1, ws.row_count, 0, 7), 'cell': {'userEnteredFormat': {'verticalAlignment': 'TOP'}},
+    R.append({'repeatCell': {'range': rng(cab + 1, ws.row_count, 0, 7), 'cell': {'userEnteredFormat': {'verticalAlignment': 'MIDDLE'}},
                              'fields': 'userEnteredFormat.verticalAlignment'}})
     sh.batch_update({'requests': R})
     return cab + 1
