@@ -133,5 +133,8 @@ reqs += [{'updateDimensionProperties': {'range': {'sheetId': ws.id, 'dimension':
                                         'properties': {'pixelSize': w}, 'fields': 'pixelSize'}} for i, w in enumerate(LARG)]
 sh.batch_update({'requests': reqs})
 
+import ux_por_parlamentar  # 25/11/2026: acabamento no padrão das planilhas UNFPA/ACT (faixas, cor por tema e por área do cliente, alinhamento no alto)
+ux_por_parlamentar.aplica(sh)
+
 from ordem_abas import ordenar
 print(TITULO, NL, ordenar(sh))
