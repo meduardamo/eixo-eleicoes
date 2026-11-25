@@ -101,7 +101,7 @@ if '--previa' in sys.argv:
     for a, c, n, cnt in resumo: print(f'{a:9} {c[:28]:28} {n:3}', dict(cnt))
     print('total', len(linhas)); sys.exit()
 
-CAB = ['Área', 'Cliente', QUEM, 'Partido/UF', 'Relevância política (1 a 4)', 'O que define a relevância', 'Classificação', 'Sinais', 'Por que está na lista', 'Conferido',
+CAB = ['Área', 'Cliente', QUEM, 'Partido/UF', 'Relevância política (1 a 5)', 'O que define a relevância', 'Classificação', 'Sinais', 'Por que está na lista', 'Conferido',
        'O que está errado', 'Como deveria ficar', 'O que você sabe e de onde vem', 'Quem revisou', 'Situação']
 fina = {'style': 'SOLID', 'color': cor(BORDA)}
 grossa = {'style': 'SOLID_MEDIUM', 'color': cor(MARINHO)}

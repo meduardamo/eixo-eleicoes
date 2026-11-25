@@ -1,5 +1,5 @@
 """Publica as abas Parlamentares e Votações-chave (etapa 23) na planilha da 58ª Legislatura, no padrão Eixo.
-Cabeçalho em duas linhas: faixa de grupo em cima, nome da coluna embaixo. Notas de 1 a 4 em escala de marinho,
+Cabeçalho em duas linhas: faixa de grupo em cima, nome da coluna embaixo. Notas de 1 a 5 em escala de marinho,
 posição no Senado com cor de fundo, voto Sim e Não com cor e a orientação do partido como nota da célula."""
 import sys as _sys
 _sys.path.insert(0, 'dados_novos_eleitos/publicacao')
@@ -17,9 +17,9 @@ ID = valor('SPREADSHEET_ID_58_SENADO')
 cor = lambda h: {'red': int(h[1:3], 16) / 255, 'green': int(h[3:5], 16) / 255, 'blue': int(h[5:7], 16) / 255}
 MARINHO, GELO, BORDA = '#192D4E', '#F4F3EF', '#DADAD4'
 # relevância em marinho e atuação em verde (paleta de gráficos da Eixo), para não parecerem a mesma medida
-ESCALA = {'1': '#F4F3EF', '2': '#D9DEE7', '3': '#9AA8C0', '4': '#192D4E',
+ESCALA = {'1': '#F4F3EF', '2': '#D9DEE7', '3': '#9AA8C0', '4': '#4A5F82', '5': '#192D4E',
           'Não atua': '#F4F3EF', 'Pouco': '#DCEFE4', 'Atua': '#9BD0B7', 'Referência': '#2A412D'}
-TEXTO_BRANCO = ('3', '4', 'Referência')
+TEXTO_BRANCO = ('3', '4', '5', 'Referência')
 POSICAO = {'Base': '#D6E4F0', 'Oposição': '#F6D5C8', 'Independente': '#EDE6C8'}
 VOTO = {'Sim': '#D6E4F0', 'Não': '#F6D5C8'}
 
@@ -109,7 +109,7 @@ def publicar(titulo, df, grupos, largura, congela_col, pinta, notas=None, recolh
 import cadeira_genero
 f = cadeira_genero.ajusta(pd.read_csv(D + 'parlamentares.csv', dtype=str).fillna(''))
 f = f.rename(columns={c: c.replace('Atuação: ', '') for c in f.columns if c.startswith('Atuação: ')})
-f = f.rename(columns={'Relevância política (1 a 4)': 'Relevância política (1 a 4)', 'Por quê': 'O que define a relevância'})
+f = f.rename(columns={'Relevância política (1 a 5)': 'Relevância política (1 a 5)', 'Por quê': 'O que define a relevância'})
 # subtemas (etapa 25), depois dos quatro grandes temas; textos longos num bloco de ficha no fim
 from subtemas_texto import SUB, TEMAS, destaques
 st = pd.read_csv(D + 'subtemas.csv', dtype=str).fillna('')
@@ -128,7 +128,7 @@ for n, r in dp.iterrows():
         partes.append("DIAP 2026: fora da lista.")
     partes.append(f"DIAP 2025: {r['2025'].lower() + ', avaliado como ' + r['Cargo na lista 2025'].lower() if r['2025'] else 'fora da lista'}.")
     NOTA_DIAP_CEL[n] = "\n".join(partes)
-ID_COLS = ['Partido/UF', 'Cadeira', 'Posição no Senado', 'Relevância política (1 a 4)']
+ID_COLS = ['Partido/UF', 'Cadeira', 'Posição no Senado', 'Relevância política (1 a 5)']
 TEMA_COLS = TEMAS + ['Destaques nos subtemas']
 FICHA = ['De onde vem', 'Profissão declarada (TSE)', 'Governismo', 'O que define a relevância',
          'Comissões permanentes (titular)', 'Preside hoje']
@@ -144,7 +144,7 @@ ordem += FICHA
 GR_P.append(('Ficha', len(FICHA)))
 f = f[ordem]
 ATU = TEMAS + [s for t in TEMAS for s in SUB[t]]
-LARG_P = {'Senador': 165, 'Partido/UF': 125, 'Cadeira': 112, 'Posição no Senado': 110, 'Relevância política (1 a 4)': 112,
+LARG_P = {'Senador': 165, 'Partido/UF': 125, 'Cadeira': 112, 'Posição no Senado': 110, 'Relevância política (1 a 5)': 112,
           'Saúde': 96, 'Educação': 96, 'Esporte': 96, 'Primeira infância': 96, 'Destaques nos subtemas': 380,
           'De onde vem': 230, 'Profissão declarada (TSE)': 170, 'Governismo': 165, 'O que define a relevância': 300,
           'Comissões permanentes (titular)': 170, 'Preside hoje': 80, **{s: 150 for t in TEMAS for s in SUB[t]}}
@@ -153,12 +153,12 @@ LARG_P = {'Senador': 165, 'Partido/UF': 125, 'Cadeira': 112, 'Posição no Senad
 def pinta_p(df, R, fmt):
     reqs = []
     cols = list(df.columns)
-    for c in ['Cadeira', 'Posição no Senado', 'Governismo', 'Relevância política (1 a 4)', 'Preside hoje'] + ATU:
+    for c in ['Cadeira', 'Posição no Senado', 'Governismo', 'Relevância política (1 a 5)', 'Preside hoje'] + ATU:
         j = cols.index(c)
         reqs.append({'repeatCell': {'range': R(2, len(df) + 2, j, j + 1), 'cell': {'userEnteredFormat': {'horizontalAlignment': 'CENTER'}},
                                     'fields': 'userEnteredFormat.horizontalAlignment'}})
     for i, r in enumerate(df.itertuples(index=False), start=2):
-        for c in ['Relevância política (1 a 4)'] + ATU:
+        for c in ['Relevância política (1 a 5)'] + ATU:
             v = str(getattr(r, '_' + str(cols.index(c))) if False else r[cols.index(c)])
             if v in ESCALA:
                 j = cols.index(c)
@@ -178,15 +178,15 @@ def pinta_p(df, R, fmt):
     return reqs
 
 
-NOTA_REL = ("Relevância política, de 1 a 4, pelo cargo mais alto que já ocupou ou ocupa hoje:\n"
-            "4 = governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da República, ou líder hoje "
+NOTA_REL = ("Relevância política, de 1 a 5, pelo cargo mais alto que já ocupou ou ocupa hoje:\n"
+            "5 = governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da República, ou líder hoje "
             "do governo, da oposição, da maioria ou da minoria;\n"
-            "3 = prefeito, vice-governador, secretário de estado, presidente de Assembleia, Mesa do Senado, líder hoje de "
-            "partido ou bloco, ou presidente hoje de comissão permanente;\n"
-            "2 = outro mandato eletivo ou cargo anterior (deputado, vereador, vice-prefeito, senador);\n"
+            "4 = posto no Congresso: Mesa da Câmara ou do Senado, líder hoje de partido ou bloco, presidente de comissão "
+            "permanente hoje ou desde 2019; também Cabeça do Congresso no DIAP 2026 e deputado mais votado da UF em 2026;\n"
+            "3 = cargo fora do Congresso: prefeito, vice-governador, secretário de estado ou presidente de Assembleia;\n"
+            "2 = outro mandato eletivo ou cargo anterior;\n"
             "1 = primeiro mandato eletivo.\n"
-            "Quem está entre os Cabeças do Congresso do DIAP 2026 (os 100 mais influentes) tem no mínimo 3.\n"
-            "A coluna ao lado diz o cargo que define a nota. Lideranças vigentes na data da atualização (API do Senado).")
+            "A coluna ao lado diz o cargo que define a nota.")
 NOTA_PROX = ("Quanto o senador trabalha neste tema no Congresso, olhando quatro coisas: se está hoje na comissão do tema, "
              "quantos projetos do tema escreveu, quantos relatou com parecer e quantos viraram lei.\n"
              "Referência: faz quase tudo isso, e muito. Atua: faz parte. Pouco: um sinal só. Não atua: nenhum.\n"
@@ -221,7 +221,7 @@ def notas_parl(df, ws):
     nota = lambda i, j, t: {'updateCells': {'range': {'sheetId': ws.id, 'startRowIndex': i, 'endRowIndex': i + 1,
                                                       'startColumnIndex': j, 'endColumnIndex': j + 1},
                                             'rows': [{'values': [{'note': t}]}], 'fields': 'note'}}
-    reqs = [nota(1, cols.index('Relevância política (1 a 4)'), NOTA_REL),
+    reqs = [nota(1, cols.index('Relevância política (1 a 5)'), NOTA_REL),
             nota(1, cols.index('Destaques nos subtemas'), NOTA_DEST),
             nota(1, cols.index('Comissões permanentes (titular)'), SIGLAS_COM),
             nota(1, cols.index('Preside hoje'), SIGLAS_COM),

@@ -2,7 +2,7 @@
 
 Parlamentares, uma linha por senador, em três blocos:
 - Identidade: partido, UF, cadeira, de onde vem, profissão declarada ao TSE, trajetória (cargos com fonte);
-- Força política: posição no Senado pelo governismo, relevância política de 1 a 4 e o cargo que a define,
+- Força política: posição no Senado pelo governismo, relevância política de 1 a 5 e o cargo que a define,
   comissões de que é titular hoje e presidências vigentes;
 - Atuação em cada tema dos clientes (Não atua, Pouco, Atua, Referência), pelos números da etapa 22.
 
@@ -124,7 +124,7 @@ def liderancas_atuais():
             alvo = alvo.lower()
         else:
             alvo = alvo.lower()
-        nivel = 4 if re.match(r"(?i)(governo|oposição|maioria|minoria)", alvo) else 3
+        nivel = 5 if re.match(r"(?i)(governo|oposição|maioria|minoria)", alvo) else 4
         out.setdefault(d["nomeParlamentar"], []).append((nivel, f"Líder hoje: {alvo} no {casa}" if casa != "Câmara" else f"Líder hoje: {alvo} na Câmara"))
     return out
 
@@ -201,17 +201,20 @@ def mandato_senado(cargos, cadeira):
 
 
 def relevancia(cargos, presidencias, liderancas, cadeira=""):
-    """4 = poder de agenda nacional (governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da
-    República, líder hoje do governo, da oposição, da maioria ou da minoria); 3 = prefeito, vice-governador, secretário
-    de estado, presidente de Assembleia, Mesa do Senado, líder de partido ou bloco hoje, presidente de comissão
-    permanente hoje; 2 = outro mandato eletivo ou cargo anterior; 1 = primeiro mandato eletivo.
-    Na main, quem está entre os Cabeças do Congresso do DIAP 2026 sobe para no mínimo 3."""
+    """Escala de 1 a 5 desde 25/11/2026 (antes 1 a 4, com os níveis 4 e 3 de hoje num só 3).
+    5 = poder de agenda nacional (governador, ministro, presidente do Senado ou da Câmara, presidente ou vice da
+    República, líder hoje do governo, da oposição, da maioria ou da minoria); 4 = posto no Congresso (Mesa da Câmara ou
+    do Senado, líder de partido ou bloco hoje, presidente de comissão permanente hoje); 3 = cargo fora do Congresso
+    (prefeito, vice-governador, secretário de estado, presidente de Assembleia); 2 = outro mandato eletivo ou cargo
+    anterior; 1 = primeiro mandato eletivo.
+    Na main, Cabeça do Congresso no DIAP 2026, presidência de comissão desde 2019 e mais votado da UF dão no mínimo 4."""
     cargos = [(re.sub(r"Senador(a)? da República", r"Senador\1", limpa_cargo(x)), per) for x, per in cargos if str(x).strip()]
     # ser senador hoje não define relevância (todos são); o mandato em curso aparece só como "Nº mandato no Senado"
     no_senado, primeiro = mandato_senado(cargos, cadeira)
     cargos = [(x, per) for x, per in cargos if not (re.search(r"(?i)^Senador", x) and "atual" in str(per))]
-    regras = [(4, r"(?i)^Governador(a)? (do|da|de)\b|Ministr|(?<!vice-)presidente d[ao] (Senado|Câmara dos Deputados)|Líder do governo|Presidente da República|^Vice-presidente(?! d[oa] (Senado|Câmara|Clube|Conselho|Comissão))( d[oa] (Brasil|República))?$"),
-              (3, r"(?i)Vice-governador|(?<!vice-)Prefeit|Secretári[oa] (de Estado|Estadual|.*d[eoa] (Estado|Bahia|Ceará|Piauí|Pernambuco|Paraíba|Goiás|Maranhão))|Presidente da Assembleia|Vice-presidente d[oa] Senado|Secretári[oa] da Mesa")]
+    regras = [(5, r"(?i)^Governador(a)? (do|da|de)\b|Ministr|(?<!vice-)presidente d[ao] (Senado|Câmara dos Deputados)|Líder do governo|Presidente da República|^Vice-presidente(?! d[oa] (Senado|Câmara|Clube|Conselho|Comissão))( d[oa] (Brasil|República))?$"),
+              (4, r"(?i)Vice-presidente d[oa] (Senado|Câmara)|Secretári[oa] da Mesa"),
+              (3, r"(?i)Vice-governador|(?<!vice-)Prefeit|Secretári[oa] (de Estado|Estadual|.*d[eoa] (Estado|Bahia|Ceará|Piauí|Pernambuco|Paraíba|Goiás|Maranhão))|Presidente da Assembleia")]
     for nivel, rx in regras:
         lid = [t for n, t in liderancas if n == nivel]
         achou = [(x, per) for x, per in cargos if re.search(rx, x)]
@@ -219,7 +222,7 @@ def relevancia(cargos, presidencias, liderancas, cadeira=""):
             # a liderança do governo hoje já aparece como "Líder hoje"; não repetir pelo cargo
             achou = [(x, per) for x, per in achou if not (re.search(r"(?i)Líder do governo", x) and "atual" in str(per))]
         achou = junta_cargos(achou)
-        if nivel == 3 and presidencias:
+        if nivel == 4 and presidencias:
             lid.append("Preside hoje: " + ", ".join(presidencias))
         if achou or lid:
             return nivel, "; ".join(dict.fromkeys(lid + achou[:3]))
@@ -297,7 +300,7 @@ def main():
         PROJECAO = {r.Parlamentar: r.Motivo for r in c.ler_csv("temas_clientes/influencia_projecao.csv").itertuples() if r.Casa == "Senado"}
     except FileNotFoundError:
         PROJECAO = {}
-    # Cabeças do Congresso do DIAP (etapa 26): Cabeça em 2026 garante nível 3; em ascensão só aparece no texto
+    # Cabeças do Congresso do DIAP (etapa 26): Cabeça em 2026 garante nível 4; em ascensão só aparece no texto
     try:
         diap = c.ler_csv("temas_clientes/diap_cabecas.csv").set_index("Senador")["2026"].to_dict()
     except FileNotFoundError:
@@ -314,14 +317,14 @@ def main():
         if d.startswith("Cabeça"):
             perfil = d.split(": ", 1)[1].split(" (")[0] if ": " in d else ""
             texto = f"Cabeça do Congresso, DIAP 2026{' (' + perfil + ')' if perfil else ''}"
-            porque = f"{texto}; {porque}" if nivel < 3 else f"{porque}; {texto}"
-            nivel = max(nivel, 3)
+            porque = f"{texto}; {porque}" if nivel < 4 else f"{porque}; {texto}"
+            nivel = max(nivel, 4)
         elif d.startswith("Em ascensão"):
             porque = f"{porque}; em ascensão no DIAP 2026"
         # 12/11/2026: presidiu comissão permanente (Câmara ou Senado) desde 2019, ou foi o deputado mais votado da UF
-        # em 2026, garante 3. Lista em temas_clientes/influencia_projecao.csv (Agência Câmara, API da Câmara e do Senado, TSE)
-        if nome in PROJECAO and nivel < 3:
-            nivel, porque = 3, f"{porque}; {PROJECAO[nome]}"
+        # em 2026, garante 4 (escala de 1 a 5 desde 25/11/2026). Lista em temas_clientes/influencia_projecao.csv (Agência Câmara, API da Câmara e do Senado, TSE)
+        if nome in PROJECAO and nivel < 4:
+            nivel, porque = 4, f"{porque}; {PROJECAO[nome]}"
         k = chave(nome)
         k = k if k in tot else next((x for x in tot if k in x or x in k), k)
         n = tot.get(k, 0)
@@ -340,7 +343,7 @@ def main():
         linhas.append({
             "Senador": nome, "Partido": l0["Partido"], "UF": l0["UF"], "Cadeira": l0["Cadeira"],
             "De onde vem": info.get("De onde vem", ""), "Profissão declarada (TSE)": profissao_recente(info.get("Profissão declarada (TSE)", "")),
-            "Posição no Senado": posicao, "Governismo": gov, "Relevância política (1 a 4)": nivel, "Por quê": porque,
+            "Posição no Senado": posicao, "Governismo": gov, "Relevância política (1 a 5)": nivel, "Por quê": porque,
             "Comissões permanentes (titular)": ", ".join(titular), "Preside hoje": ", ".join(pres),
             **{f"Atuação: {t}": prox[t][0] for t in TEMAS},
         })
@@ -419,7 +422,7 @@ def main():
     c.caminho("temas_clientes/votacoes_chave_notas.json").write_text(
         json.dumps({"cabecalho": notas, "celulas": nota_cel}, ensure_ascii=False, indent=1))
     print(ficha["Posição no Senado"].value_counts().to_string())
-    print(ficha["Relevância política (1 a 4)"].value_counts().sort_index().to_string())
+    print(ficha["Relevância política (1 a 5)"].value_counts().sort_index().to_string())
 
 
 if __name__ == "__main__":

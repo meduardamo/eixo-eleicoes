@@ -19,7 +19,7 @@ FORTES = ('Promotor', 'Neutro', 'Detrator')
 # ficha: (rótulo, colunas da aba Parlamentares juntas na mesma célula)
 FICHA = [('Partido/UF', ['Partido/UF']), ('Cadeira', ['Cadeira']),
          ('Posição no Senado', ['Posição no Senado', 'Governismo']),
-         ('Relevância política (1 a 4)', ['Relevância política (1 a 4)', 'O que define a relevância']),
+         ('Relevância política (1 a 5)', ['Relevância política (1 a 5)', 'O que define a relevância']),
          ('De onde vem', ['De onde vem']), ('Profissão declarada (TSE)', ['Profissão declarada (TSE)']),
          ('Comissões permanentes (titular)', ['Comissões permanentes (titular)']), ('Preside hoje', ['Preside hoje']),
          ('Destaques nos subtemas', ['Destaques nos subtemas'])]
