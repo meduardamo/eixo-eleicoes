@@ -205,7 +205,7 @@ def nomes_da_transicao(planilha) -> list:
         nome = _campo(d, "nome do integrante")[0]
         if not uf or not nome:
             continue
-        ato, link = _campo(d, "ato de nomeacao")
+        ato, link = _campo(d, "ato de nomeacao", "noticia ou ato")
         saida.append([uf, _campo(d, "governador eleito")[0], nome,
                       _campo(d, "tematica")[0], _campo(d, "representa")[0],
                       # tipo em branco: a aba é de integrantes de transição (Leia-me)
