@@ -73,35 +73,38 @@ RE_CONTEXTO_ESTADUAL = re.compile(
 
 _RE_UF_MANCHETE = {
     uf: re.compile(pat) for uf, pat in {
-        "AC": r"\b(?:acre|ac|acrean[oa]s?)\b",
-        "AL": r"\b(?:alagoas|al|alagoan[oa]s?)\b",
-        "AP": r"\b(?:amapa|ap|amapaenses?)\b",
-        "AM": r"\b(?:amazonas|am|amazonenses?)\b",
-        "BA": r"\b(?:bahia|ba|baian[oa]s?)\b",
-        "CE": r"\b(?:ceara|ce|cearenses?)\b",
-        "DF": r"\b(?:distrito federal|df|brasilienses?)\b",
-        "ES": r"\b(?:espirito santo|es|capixabas?)\b",
-        "GO": r"\b(?:goias|go|goian[oa]s?)\b",
-        "MA": r"\b(?:maranhao|ma|maranhenses?)\b",
-        "MT": r"\b(?:mato grosso|mt)\b",
-        "MS": r"\b(?:mato grosso do sul|ms|sul-mato-grossenses?)\b",
-        "MG": r"\b(?:minas gerais|minas|mg|mineir[oa]s?)\b",
-        "PA": r"\b(?:para|pa|paraenses?)\b",
-        "PB": r"\b(?:paraiba|pb|paraiban[oa]s?)\b",
-        "PR": r"\b(?:parana|pr|paranaenses?)\b",
-        "PE": r"\b(?:pernambuco|pe|pernambucan[oa]s?)\b",
-        "PI": r"\b(?:piaui|pi|piauienses?)\b",
-        "RJ": r"\b(?:rio de janeiro|rio|rj|fluminenses?|cariocas?)\b",
-        "RN": r"\b(?:rio grande do norte|rn|potiguares?)\b",
-        "RS": r"\b(?:rio grande do sul|rs|gauchos?|gauchas?)\b",
-        "RO": r"\b(?:rondonia|ro|rondonienses?)\b",
-        "RR": r"\b(?:roraima|rr|roraimenses?)\b",
-        "SC": r"\b(?:santa catarina|sc|catarinenses?)\b",
-        "SP": r"\b(?:sao paulo|sp|paulistas?|paulistan[oa]s?)\b",
-        "SE": r"\b(?:sergipe|se|sergipan[oa]s?)\b",
-        "TO": r"\b(?:tocantins|to|tocantinenses?)\b",
+        "AC": r"\b(?:acre|acrean[oa]s?)\b",
+        "AL": r"\b(?:alagoas|alagoan[oa]s?)\b",
+        "AP": r"\b(?:amapa|amapaenses?)\b",
+        "AM": r"\b(?:amazonas|amazonenses?)\b",
+        "BA": r"\b(?:bahia|baian[oa]s?)\b",
+        "CE": r"\b(?:ceara|cearenses?)\b",
+        "DF": r"\b(?:distrito federal|brasilienses?)\b",
+        "ES": r"\b(?:espirito santo|capixabas?)\b",
+        "GO": r"\b(?:goias|goian[oa]s?)\b",
+        "MA": r"\b(?:maranhao|maranhenses?)\b",
+        "MT": r"\bmato grosso\b",
+        "MS": r"\b(?:mato grosso do sul|sul-mato-grossenses?)\b",
+        "MG": r"\b(?:minas gerais|minas|mineir[oa]s?)\b",
+        "PA": r"\b(?:no|do|em)\s+para\b|\bparaenses?\b",
+        "PB": r"\b(?:paraiba|paraiban[oa]s?)\b",
+        "PR": r"\b(?:parana|paranaenses?)\b",
+        "PE": r"\b(?:pernambuco|pernambucan[oa]s?)\b",
+        "PI": r"\b(?:piaui|piauienses?)\b",
+        "RJ": r"\b(?:rio de janeiro|rio|fluminenses?|cariocas?)\b",
+        "RN": r"\b(?:rio grande do norte|potiguares?)\b",
+        "RS": r"\b(?:rio grande do sul|gauchos?|gauchas?)\b",
+        "RO": r"\b(?:rondonia|rondonienses?)\b",
+        "RR": r"\b(?:roraima|roraimenses?)\b",
+        "SC": r"\b(?:santa catarina|catarinenses?)\b",
+        "SP": r"\b(?:sao paulo|paulistas?|paulistan[oa]s?)\b",
+        "SE": r"\b(?:sergipe|sergipan[oa]s?)\b",
+        "TO": r"\b(?:tocantins|tocantinenses?)\b",
     }.items()
 }
+_RE_SIGLA_EXATA = re.compile(
+    r"\b(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b"
+)
 
 _RE_GOV_UF = [
     (re.compile(pat), uf) for pat, uf in {
@@ -349,7 +352,7 @@ def _uf_da_busca(busca: str) -> str:
     return UF_POR_NOME.get(sem_acento(busca.split(' ("equipe de transição"')[0]), "")
 
 
-def _resolver_uf_noticia(uf: str, manchete_norm: str, candidato: str, busca: str) -> str:
+def _resolver_uf_noticia(uf: str, manchete_raw: str, manchete_norm: str, candidato: str, busca: str) -> str:
     """Corrige UF de notícia de transição que vazou por veículo regional:
     puxa matéria federal/mercado para BR e matéria exclusiva de governador de
     outro estado para a UF correta."""
@@ -359,7 +362,8 @@ def _resolver_uf_noticia(uf: str, manchete_norm: str, candidato: str, busca: str
         uf = _uf_da_busca(busca) or "BR"
     if uf == "BR":
         return "BR"
-    has_local_uf = bool(_RE_UF_MANCHETE.get(uf) and _RE_UF_MANCHETE[uf].search(manchete_norm))
+    siglas = set(_RE_SIGLA_EXATA.findall(manchete_raw or ""))
+    has_local_uf = (uf in siglas) or bool(_RE_UF_MANCHETE.get(uf) and _RE_UF_MANCHETE[uf].search(manchete_norm))
     has_local_gov = any(rx.search(manchete_norm) for rx, guf in _RE_GOV_UF if guf == uf)
     if RE_TITULO_FEDERAL.search(manchete_norm) and not RE_CONTEXTO_ESTADUAL.search(manchete_norm) and not has_local_gov:
         return "BR"
@@ -400,7 +404,7 @@ def noticias(planilha) -> list:
             continue
         vistas.add(chave)
         candidato = v("candidato", i)
-        uf = _resolver_uf_noticia(v("uf", i).upper(), sem_acento(manchete), candidato, v("busca", i))
+        uf = _resolver_uf_noticia(v("uf", i).upper(), manchete, sem_acento(manchete), candidato, v("busca", i))
         saida.append([v("data", i)[:10], uf, "Gov. Federal" if uf == "BR" else "Subnacional",
                       candidato, manchete, veiculo, v("link_real", i) or v("link", i)])
 
