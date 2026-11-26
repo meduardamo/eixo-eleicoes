@@ -47,12 +47,23 @@ UF_POR_NOME = {
 # Espelha _RE_TITULO_FEDERAL de noticias_eleicoes_scraper.py: transição com
 # ministério no título é do governo federal, mesmo que o modelo tenha dado a UF
 # de quem é cotado.
+_TERMOS_LULA_FEDERAL = (
+    r"(?:(?:formacao|montagem|composicao)\s+d[eo]\s+(?:novo\s+|proximo\s+)?governo"
+    r"|proximo governo|novo governo|quarto governo|lotear|stf|centrao|casa civil"
+    r"|ajuste fiscal|pacote fiscal|posse presidencial|posse de lula|sobreaviso"
+    r"|equipe economica|haddad|durigan|moretti|dino|alckmin|janja)"
+)
 RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
-    r"|reforma ministerial|\blula 4\b"
+    r"|reforma ministerial|\blula\s+(?:4|iv)\b|\balcolumbre\b"
+    r"|(?<!cadu de )\blula\b.*?\b" + _TERMOS_LULA_FEDERAL + r"\b"
+    r"|\b" + _TERMOS_LULA_FEDERAL + r"\b.*?(?<!cadu de )\blula\b"
     r"|(?<!secretaria da )(?<!secretario da )(?<!secretaria de )(?<!secretario de )(?<!de estado da )"
     r"\bfazenda\b(?!\s+(?:estadual\b|(?:do|de|da)\s+(?:estado|estadual|rio|sao paulo|minas|bahia|parana|goias|pernambuco|ceara|para|piaui|maranhao|alagoas|sergipe|paraiba|amazonas|acre|amapa|roraima|rondonia|tocantins|mato grosso|espirito santo|santa catarina|distrito federal|df|rs|sp|rj|mg|ba|pe|ce|go|pr|sc|es|ma|pa|pi|al|se|pb|am|ac|ap|rr|ro|to|mt|ms|rn)\b))")
 RE_TITULO_FEDERAL_FRACO = re.compile(r"\bquarto mandato\b|governo lula")
+RE_CONTEXTO_ESTADUAL = re.compile(
+    r"\b(?:no|do|da|em|para o|pelo)\s+(?:rn|rs|mg|sp|rj|pr|pe|ba|ce|pa|ma|to|ro|rr|ap|am|ac|al|se|pb|pi|go|mt|ms|df|es|sc)\b"
+)
 
 
 def sem_acento(texto) -> str:
@@ -307,8 +318,10 @@ def noticias(planilha) -> list:
             continue
         vistas.add(chave)
         uf = v("uf", i).upper()
-        if RE_TITULO_FEDERAL.search(sem_acento(manchete)) or (
-                not uf and RE_TITULO_FEDERAL_FRACO.search(sem_acento(manchete))):
+        manchete_norm = sem_acento(manchete)
+        if (RE_TITULO_FEDERAL.search(manchete_norm)
+                and not RE_CONTEXTO_ESTADUAL.search(manchete_norm)) or (
+                not uf and RE_TITULO_FEDERAL_FRACO.search(manchete_norm)):
             uf = "BR"
         elif not uf:
             uf = _uf_da_busca(v("busca", i)) or "BR"

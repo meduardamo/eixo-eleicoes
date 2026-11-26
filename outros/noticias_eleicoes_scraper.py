@@ -893,9 +893,17 @@ def _e_presidenciavel(candidato) -> bool:
 # Público), Esplanada, reforma ministerial, "Lula 4". Transição com esse título é
 # federal mesmo que o modelo dê a UF de quem é cotado: "Rafael Fonteles é cotado
 # para a Fazenda" saiu como PI em 26/10.
+_TERMOS_LULA_FEDERAL = (
+    r"(?:(?:formacao|montagem|composicao)\s+d[eo]\s+(?:novo\s+|proximo\s+)?governo"
+    r"|proximo governo|novo governo|quarto governo|lotear|stf|centrao|casa civil"
+    r"|ajuste fiscal|pacote fiscal|posse presidencial|posse de lula|sobreaviso"
+    r"|equipe economica|haddad|durigan|moretti|dino|alckmin|janja)"
+)
 _RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
-    r"|reforma ministerial|\blula 4\b"
+    r"|reforma ministerial|\blula\s+(?:4|iv)\b|\balcolumbre\b"
+    r"|(?<!cadu de )\blula\b.*?\b" + _TERMOS_LULA_FEDERAL + r"\b"
+    r"|\b" + _TERMOS_LULA_FEDERAL + r"\b.*?(?<!cadu de )\blula\b"
     # "Cotado para Fazenda" sem a palavra ministério; a secretaria estadual e a
     # "Fazenda do Rio" não contam.
     r"|(?<!secretaria da )(?<!secretario da )(?<!secretaria de )(?<!secretario de )(?<!de estado da )"
@@ -903,14 +911,18 @@ _RE_TITULO_FEDERAL = re.compile(
 # Sinal fraco: só faz a notícia federal quando ela não tem UF. "Eduardo Braide e
 # a relação com o governo Lula" é do MA.
 _RE_TITULO_FEDERAL_FRACO = re.compile(r"\bquarto mandato\b|governo lula")
+_RE_CONTEXTO_ESTADUAL = re.compile(
+    r"\b(?:no|do|da|em|para o|pelo)\s+(?:rn|rs|mg|sp|rj|pr|pe|ba|ce|pa|ma|to|ro|rr|ap|am|ac|al|se|pb|pi|go|mt|ms|df|es|sc)\b"
+)
 
 
 def _e_transicao_federal(n) -> bool:
     if "transição" not in (n.get("alerta_tema"), n.get("tipo")):
         return False
     titulo = _sem_acento(n.get("titulo") or "").lower()
-    return bool(_RE_TITULO_FEDERAL.search(titulo)
-                or (not str(n.get("uf") or "").strip() and _RE_TITULO_FEDERAL_FRACO.search(titulo)))
+    if _RE_TITULO_FEDERAL.search(titulo) and not _RE_CONTEXTO_ESTADUAL.search(titulo):
+        return True
+    return bool(not str(n.get("uf") or "").strip() and _RE_TITULO_FEDERAL_FRACO.search(titulo))
 
 
 def _uf_da_busca(busca) -> str:
