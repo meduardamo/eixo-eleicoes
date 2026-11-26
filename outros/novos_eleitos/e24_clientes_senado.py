@@ -17,7 +17,7 @@ Projeto Promotor dá sinal a favor do cliente; Detrator, contra.
 
 Régua (a mesma da Metodologia): Promotor ou Detrator com dois sinais fortes na mesma direção ou um forte e um médio;
 fortes nos dois sentidos: diferença de dois decide, de um decide com médio no mesmo sentido, senão Neutro;
-abaixo disso, Um sinal a favor, Um sinal contra, Sinais opostos ou Registro sem sinal (só evidência que não conta).
+abaixo disso, Um sinal a favor, Um sinal contra, Sinais opostos ou Sem lado identificado (só evidência que não conta).
 
 PEC tem numeração própria em cada Casa, e projeto de lei também até 2018: nesses casos a Casa da matéria tem de
 bater com a anotada na base de pautas.
@@ -807,7 +807,7 @@ def classifica(fp, fn, mp, mn):
         return "Um sinal a favor" if fp + mp == 1 else "Só coautorias a favor"
     if fn or mn:
         return "Um sinal contra" if fn + mn == 1 else "Só coautorias contra"
-    return "Registro sem sinal"
+    return "Sem lado identificado"
 
 
 def main():

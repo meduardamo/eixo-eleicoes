@@ -17,7 +17,7 @@ ANTIGAS = ['Clientes Educação', 'Clientes Saúde', 'Clientes Esporte']
 cor = lambda h: {'red': int(h[1:3], 16) / 255, 'green': int(h[3:5], 16) / 255, 'blue': int(h[5:7], 16) / 255}
 MARINHO, GELO, BORDA, CINZA = '#192D4E', '#F4F3EF', '#DADAD4', '#8A8A84'
 CLASSE = {'Promotor': '#B7E1CD', 'Neutro': '#FCE8B2', 'Detrator': '#F4C7C3', 'Um sinal a favor': '#E6F4EC', 'Só coautorias a favor': '#E6F4EC',
-          'Um sinal contra': '#FBEAE8', 'Só coautorias contra': '#FBEAE8', 'Sinais opostos': '#FDF6E3', 'Registro sem sinal': '#F4F3EF'}
+          'Um sinal contra': '#FBEAE8', 'Só coautorias contra': '#FBEAE8', 'Sinais opostos': '#FDF6E3', 'Sem lado identificado': '#F4F3EF'}
 FORTES = ('Promotor', 'Neutro', 'Detrator')
 ORDEM = {k: i for i, k in enumerate(CLASSE)}
 COLS = ['Cliente', 'Área', 'Senador', 'Partido/UF', 'Cadeira', 'Classificação', 'Sinais',
@@ -74,7 +74,7 @@ def cores_classe(ws, R):
     return [{'addConditionalFormatRule': {'index': 0, 'rule': {'ranges': [R], 'booleanRule': {
         'condition': {'type': 'TEXT_EQ', 'values': [{'userEnteredValue': k}]},
         'format': {'backgroundColor': cor(c), 'textFormat': {'bold': k in FORTES,
-                                                              'foregroundColor': cor(CINZA if k == 'Registro sem sinal' else '#000000')}}}}}}
+                                                              'foregroundColor': cor(CINZA if k == 'Sem lado identificado' else '#000000')}}}}}}
         for k, c in CLASSE.items()]
 
 
@@ -134,7 +134,7 @@ valores = [
     ['Subtemas', f'=IFERROR(VLOOKUP($B$1;$I:$N;6;0);"")'] + [''] * (m - 2),
     ['Pautas', f'=IFERROR(VLOOKUP($B$1;$I:$N;3;0);"")'] + [''] * (m - 2),
     ['Projetos', f'=IFERROR(VLOOKUP($B$1;$I:$N;4;0);"")'] + [''] * (m - 2),
-    ['Senadores', f'="Promotores: "&COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Promotor")&"   ·   Neutros: "&COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Neutro")&"   ·   Detratores: "&COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Detrator")&"   ·   Um sinal a favor: "&(COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Um sinal a favor")+COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Só coautorias a favor"))&"   ·   Um sinal contra: "&(COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Um sinal contra")+COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Só coautorias contra"))&IF(COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Sinais opostos")>0;"   ·   Sinais opostos: "&COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Sinais opostos");"")&"   ·   Registro sem sinal: "&COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Registro sem sinal")&"   ·   Sem registro: "&({N_SEN}-COUNTIF({F("Cliente")};$B$1))'] + [''] * (m - 2),
+    ['Senadores', f'="Promotores: "&COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Promotor")&"   ·   Neutros: "&COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Neutro")&"   ·   Detratores: "&COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Detrator")&"   ·   Um sinal a favor: "&(COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Um sinal a favor")+COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Só coautorias a favor"))&"   ·   Um sinal contra: "&(COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Um sinal contra")+COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Só coautorias contra"))&IF(COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Sinais opostos")>0;"   ·   Sinais opostos: "&COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Sinais opostos");"")&"   ·   Sem lado identificado: "&COUNTIFS({F("Cliente")};$B$1;{F("Classificação")};"Sem lado identificado")&"   ·   Sem registro: "&({N_SEN}-COUNTIF({F("Cliente")};$B$1))'] + [''] * (m - 2),
     [''] * m,
     VIS,
     [f'=IFERROR(CHOOSECOLS(FILTER({L}!$A$2:${chr(64 + len(COLS))};{F("Cliente")}=$B$1);{";".join(str(COLS.index(c) + 1) for c in VIS)});"Nenhum senador com registro para este cliente.")'] + [''] * (m - 1),

@@ -13,7 +13,7 @@ cor = lambda h: {'red': int(h[1:3], 16) / 255, 'green': int(h[3:5], 16) / 255, '
 MARINHO, GELO, BORDA, CINZA = '#192D4E', '#F4F3EF', '#DADAD4', '#8A8A84'
 ATUACAO = {'Não atua': '#F4F3EF', 'Pouco': '#DCEFE4', 'Atua': '#9BD0B7', 'Referência': '#2A412D'}
 CLASSE = {'Promotor': '#B7E1CD', 'Neutro': '#FCE8B2', 'Detrator': '#F4C7C3', 'Um sinal a favor': '#E6F4EC', 'Só coautorias a favor': '#E6F4EC',
-          'Um sinal contra': '#FBEAE8', 'Só coautorias contra': '#FBEAE8', 'Sinais opostos': '#FDF6E3', 'Registro sem sinal': '#F4F3EF'}
+          'Um sinal contra': '#FBEAE8', 'Só coautorias contra': '#FBEAE8', 'Sinais opostos': '#FDF6E3', 'Sem lado identificado': '#F4F3EF'}
 FORTES = ('Promotor', 'Neutro', 'Detrator')
 
 # ficha: (rótulo, colunas da aba Parlamentares juntas na mesma célula)
