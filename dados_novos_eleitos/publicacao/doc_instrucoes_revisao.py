@@ -50,7 +50,7 @@ cartoes([("Prazo da revisão", "24/11", "terça-feira, fim do dia", VINHO),
 
 # ---------------------------------------------------------------- o que é
 secao_titulo("O que é a revisão")
-paragrafo("A primeira fase classificou cada deputado e senador como Promotor, Neutro ou Detrator para cada cliente, "
+paragrafo("A primeira fase classificou cada deputado e senador como Promotor, Dividido ou Detrator para cada cliente, "
           "a partir de dados públicos: projetos lidos no texto, relatorias, votações nominais, discursos e falas em "
           "comissão. A revisão traz o que a régua não vê e o monitoramento de vocês sabe.", depois=6)
 paragrafo("Ninguém revisa a base inteira. Cada cliente tem uma lista de até 25 nomes por Casa: os de mais peso "
@@ -84,7 +84,7 @@ item("Está errado: ", "marque Conferido e preencha as colunas abaixo.", 5)
 tabela([("Coluna", 2300, None), ("O que escrever", LARGURA - 2300, None)], [
     ["O que está errado", "Classificação errada (deveria ser outra) ou Evidência errada ou faltando (a classificação "
                           "pode estar certa)."],
-    ["Como deveria ficar", "Promotor, Neutro, Detrator ou Sem posição clara. Em branco se só a evidência está errada."],
+    ["Como deveria ficar", "Promotor, Dividido, Detrator ou Sem lado identificado. Em branco se só a evidência está errada."],
     ["O que você sabe e de onde vem", "O fato e a fonte: projeto, fala, notícia, reunião, conversa com o cliente."],
     ["Quem revisou", "Seu nome, para a dúvida chegar a quem marcou."],
 ])
@@ -105,7 +105,7 @@ tabela([("Sinal", 1500, None), ("O que conta", LARGURA - 1500, None)], [
     ["Fraco", "Discurso, urgência, fala em comissão, imprensa. Sozinho, nunca classifica."],
 ])
 item("Promotor ou Detrator: ", "dois sinais fortes do mesmo lado, ou um forte e um médio.")
-item("Neutro: ", "sinais fortes dos dois lados, sem diferença que decida.")
+item("Dividido: ", "sinais fortes dos dois lados, sem diferença que decida.")
 item("Abaixo disso: ", "Um sinal a favor ou contra, Sinais opostos (pouco sinal, cada um num lado) e Registro sem "
      "sinal (atua no tema, mas nada dá lado para o cliente).")
 item("Partido não entra. ", "O lado de cada projeto vem da base de pautas, da posição pública do cliente ou da "

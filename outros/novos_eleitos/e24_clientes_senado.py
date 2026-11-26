@@ -16,7 +16,7 @@ Sinais do senador em cada projeto (Senado e, para quem foi deputado, Câmara):
 Projeto Promotor dá sinal a favor do cliente; Detrator, contra.
 
 Régua (a mesma da Metodologia): Promotor ou Detrator com dois sinais fortes na mesma direção ou um forte e um médio;
-fortes nos dois sentidos: diferença de dois decide, de um decide com médio no mesmo sentido, senão Neutro;
+fortes nos dois sentidos: diferença de dois decide, de um decide com médio no mesmo sentido, senão Dividido;
 abaixo disso, Um sinal a favor, Um sinal contra, Sinais opostos ou Sem lado identificado (só evidência que não conta).
 
 PEC tem numeração própria em cada Casa, e projeto de lei também até 2018: nesses casos a Casa da matéria tem de
@@ -795,7 +795,7 @@ def classifica(fp, fn, mp, mn):
             return "Promotor"
         if d == -1 and mn > mp:
             return "Detrator"
-        return "Neutro"
+        return "Dividido"
     if fp >= 2 or (fp == 1 and mp >= 1):
         return "Promotor"
     if fn >= 2 or (fn == 1 and mn >= 1):

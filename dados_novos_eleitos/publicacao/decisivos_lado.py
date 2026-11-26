@@ -16,11 +16,11 @@ for r in d.itertuples():
         peso = 'médio' if t.startswith('coautor') else 'forte'
         m = ID.search(t)
         itens.append((peso, bloco, t, m.group(1) if m else t[:60], 'checagem' in t))
-    # decisivo é o que muda Promotor, Neutro ou Detrator; as faixas abaixo do piso contam como uma só
+    # decisivo é o que muda Promotor, Dividido ou Detrator; as faixas abaixo do piso contam como uma só
     def cls(its, bruto=False):
         f = [x for k, x, *_ in its if k == 'forte']; m = [x for k, x, *_ in its if k == 'médio']
         c = classifica(f.count(1), f.count(-1), m.count(1), m.count(-1))
-        return c if bruto or c in ('Promotor', 'Neutro', 'Detrator') else 'abaixo do piso'
+        return c if bruto or c in ('Promotor', 'Dividido', 'Detrator') else 'abaixo do piso'
     assert cls(itens, True) == r.Classificação, (r.Senador, r.Cliente, cls(itens, True), r.Classificação)
     atual = cls(itens)
     for i, it in enumerate(itens):

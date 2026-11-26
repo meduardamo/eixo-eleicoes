@@ -95,7 +95,7 @@ for r in pd.read_csv(D + 'posicoes_clientes_complemento.csv', dtype=str).itertup
         linhas.append([r.Cliente, r.Projeto, r.Pauta, LADO[1 if r._5 == 'Promotor' else -1], 'Posição informada fora da base de pautas', sen, ''])
 
 df = pd.DataFrame(linhas, columns=['Cliente', 'Projeto', 'O que o projeto faz', 'Lado assumido', 'De onde veio o lado', 'sen', 'Ementa'])
-# só os itens decisivos (27/10/2026): o que muda Promotor, Neutro ou Detrator se o coordenador disser que não conta ou
+# só os itens decisivos (27/10/2026): o que muda Promotor, Dividido ou Detrator se o coordenador disser que não conta ou
 # que o lado é o contrário (regra em decisivos_lado.py, que tem de rodar antes). A coluna mostra só os senadores afetados.
 dec = pd.read_csv('dados_novos_eleitos/publicacao/decisivos_lado.csv', dtype=str).fillna('')
 dec = dec[dec.decisivo == 'True']

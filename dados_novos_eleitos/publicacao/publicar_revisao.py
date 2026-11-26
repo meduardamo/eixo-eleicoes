@@ -22,14 +22,14 @@ QUEM = {'camara': 'Deputado', 'senado': 'Senador'}[CASA]
 LISTA, ANDAMENTO = 'Revisão: lista prioritária', 'Revisão: andamento'
 OUTROS = 'Revisão: outros nomes'  # 16/11: tirada a pedido dela; se existir, o --forca apaga
 LIMITE = 25
-COTA = [('Promotor', 12), ('Detrator', 8), ('Neutro', 3), ('Sinais opostos', 2)]
-RESTO = ['Promotor', 'Detrator', 'Neutro', 'Sinais opostos', 'Um sinal contra', 'Só coautorias contra', 'Um sinal a favor', 'Só coautorias a favor']
-ORDEM_CLASSE = ['Promotor', 'Detrator', 'Neutro', 'Sinais opostos', 'Um sinal a favor', 'Só coautorias a favor', 'Um sinal contra', 'Só coautorias contra']
+COTA = [('Promotor', 12), ('Detrator', 8), ('Dividido', 3), ('Sinais opostos', 2)]
+RESTO = ['Promotor', 'Detrator', 'Dividido', 'Sinais opostos', 'Um sinal contra', 'Só coautorias contra', 'Um sinal a favor', 'Só coautorias a favor']
+ORDEM_CLASSE = ['Promotor', 'Detrator', 'Dividido', 'Sinais opostos', 'Um sinal a favor', 'Só coautorias a favor', 'Um sinal contra', 'Só coautorias contra']
 AREA_ORDEM = ['Educação', 'Saúde', 'Esporte']
 # revisão por exceção: só se marca o que está errado; linha em branco = de acordo, e o cliente é dado por conferido na aba de andamento
 REVISAO = ['Classificação errada', 'Evidência errada ou faltando']
 MUDA = ['Classificação errada', 'Evidência errada ou faltando', 'Atua na pauta e não aparece']
-FICA = ['Promotor', 'Neutro', 'Detrator', 'Sem posição clara']
+FICA = ['Promotor', 'Dividido', 'Detrator', 'Sem lado identificado']
 # retorno da aplicação, preenchido por Dados no lote de 19/11 e no de 24/11; o motivo vai em nota na célula
 SITUACAO = ['Aplicado', 'Precisa de fonte', 'Não aplicado']
 MARINHO, GELO, BORDA = '#192D4E', '#F4F3EF', '#DADAD4'
@@ -89,7 +89,7 @@ for (area, cliente) in sorted(por_cliente, key=lambda k: (AREA_ORDEM.index(k[0])
     for x in esc:
         motivo = ['Peso político'] if x['rel'] >= 3 else []
         if x['fragil']: motivo.append('Classificação depende de um sinal')
-        if x['classe'] in ('Neutro', 'Sinais opostos'): motivo.append('Sinais dos dois lados')
+        if x['classe'] in ('Dividido', 'Sinais opostos'): motivo.append('Sinais dos dois lados')
         if x['classe'].startswith(('Um sinal', 'Só coautorias')): motivo.append('Um sinal só')
         linhas.append([area, cliente, x['nome'], x['partido'], x['rel'] or '', motivo_curto(x['nome'], x['rel']), x['classe'], x['sinais'],
                        '; '.join(motivo), False, '', '', '', '', ''])
