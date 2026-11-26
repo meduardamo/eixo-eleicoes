@@ -901,14 +901,14 @@ _TERMOS_LULA_FEDERAL = (
 )
 _RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
-    r"|reforma ministerial|\blula\s+(?:3|4|iii|iv)\b|\balcolumbre\b|^governo lula\b"
-    r"|\b(?:mcti|mdic|mds|midr|mjsp)\b"
+    r"|reforma ministerial|\blula\s+(?:3|4|iii|iv)\b|\b(?:4o|quarto)\s+mandato\s+de\s+lula\b"
+    r"|\balcolumbre\b|^governo lula\b|\b(?:mcti|mdic|mds|midr|mjsp)\b"
     r"|\b(?:ibovespa|juros futuros|ativos brasileiros|incerteza fiscal|agenda fiscal"
-    r"|taxa de juros|banco central|dolar\b.*(?:real|r\$|queda|sobe|fecha|bate|alta)"
+    r"|taxa de juros|selic|banco central|alta do dolar|dolar\b.*(?:real|r\$|queda|sobe|fecha|bate|alta)"
     r"|pec da seguranca|nova pasta da seguranca publica|desenvolvimento regional"
     r"|sucessao de mucio|mucio na defesa|tarciana medeiros|presidencia do bb"
     r"|comando da pf|chefe da pf|andrei na pf|lara resende|plano moretti"
-    r"|equipe ministerial|gakiya)\b"
+    r"|equipe ministerial|gakiya)\b|\bcamilo\b.*\bcasa civil\b|^r70:.*flavio bolsonaro\b"
     r"|(?<!cadu de )\blula\b.*?\b" + _TERMOS_LULA_FEDERAL + r"\b"
     r"|\b" + _TERMOS_LULA_FEDERAL + r"\b.*?(?<!cadu de )\blula\b"
     # "Cotado para Fazenda" sem a palavra ministério; a secretaria estadual e a

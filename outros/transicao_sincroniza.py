@@ -55,18 +55,25 @@ _TERMOS_LULA_FEDERAL = (
 )
 RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
-    r"|reforma ministerial|\blula\s+(?:3|4|iii|iv)\b|\balcolumbre\b|^governo lula\b"
-    r"|\b(?:mcti|mdic|mds|midr|mjsp)\b"
+    r"|reforma ministerial|\blula\s+(?:3|4|iii|iv)\b|\b(?:4o|quarto)\s+mandato\s+de\s+lula\b"
+    r"|\balcolumbre\b|^governo lula\b|\b(?:mcti|mdic|mds|midr|mjsp)\b"
     r"|\b(?:ibovespa|juros futuros|ativos brasileiros|incerteza fiscal|agenda fiscal"
-    r"|taxa de juros|banco central|dolar\b.*(?:real|r\$|queda|sobe|fecha|bate|alta)"
+    r"|taxa de juros|selic|banco central|alta do dolar|dolar\b.*(?:real|r\$|queda|sobe|fecha|bate|alta)"
     r"|pec da seguranca|nova pasta da seguranca publica|desenvolvimento regional"
     r"|sucessao de mucio|mucio na defesa|tarciana medeiros|presidencia do bb"
     r"|comando da pf|chefe da pf|andrei na pf|lara resende|plano moretti"
-    r"|equipe ministerial|gakiya)\b"
+    r"|equipe ministerial|gakiya)\b|\bcamilo\b.*\bcasa civil\b|^r70:.*flavio bolsonaro\b"
     r"|(?<!cadu de )\blula\b.*?\b" + _TERMOS_LULA_FEDERAL + r"\b"
     r"|\b" + _TERMOS_LULA_FEDERAL + r"\b.*?(?<!cadu de )\blula\b"
     r"|(?<!secretaria da )(?<!secretario da )(?<!secretaria de )(?<!secretario de )(?<!de estado da )"
     r"\bfazenda\b(?!\s+(?:estadual\b|(?:do|de|da)\s+(?:estado|estadual|rio|sao paulo|minas|bahia|parana|goias|pernambuco|ceara|para|piaui|maranhao|alagoas|sergipe|paraiba|amazonas|acre|amapa|roraima|rondonia|tocantins|mato grosso|espirito santo|santa catarina|distrito federal|df|rs|sp|rj|mg|ba|pe|ce|go|pr|sc|es|ma|pa|pi|al|se|pb|am|ac|ap|rr|ro|to|mt|ms|rn)\b))")
+RE_FEDERAL_MIN = re.compile(
+    r"\b(?:ministerio da fazenda|ministro da fazenda|fora da esplanada|no lula 4"
+    r"|equipe economica do proximo governo|nunca tratei com lula|tratado sobre cargos"
+    r"|convite de lula|aceitara ministerio|ida de .* a ministerio|assumir ministerio"
+    r"|assumir o ministerio|cotado para ser ministro de lula|cotado para a fazenda"
+    r"|ministerio no governo lula|ministerio do governo lula|trajetoria de rafael fonteles)\b"
+)
 RE_TITULO_FEDERAL_FRACO = re.compile(r"\bquarto mandato\b|governo lula")
 RE_CONTEXTO_ESTADUAL = re.compile(
     r"\b(?:no|do|da|em|para o|pelo|na|dos|das)\s+(?:rn|rs|mg|sp|rj|pr|pe|ba|ce|pa|ma|to|ro|rr|ap|am|ac|al|se|pb|pi|go|mt|ms|df|es|sc|minas|rio|parana|pernambuco|bahia|ceara|paraiba|alagoas|sergipe|goias|maranhao|amazonas|amapa|rondonia|roraima|tocantins|santa catarina|sao paulo|espirito santo|natal|recife|salvador|fortaleza|curitiba|porto alegre|belo horizonte)\b"
@@ -366,6 +373,8 @@ def _resolver_uf_noticia(uf: str, manchete_raw: str, manchete_norm: str, candida
     siglas = set(_RE_SIGLA_EXATA.findall(manchete_raw or ""))
     has_local_uf = (uf in siglas) or bool(_RE_UF_MANCHETE.get(uf) and _RE_UF_MANCHETE[uf].search(manchete_norm))
     has_local_gov = any(rx.search(manchete_norm) for rx, guf in _RE_GOV_UF if guf == uf)
+    if RE_FEDERAL_MIN.search(manchete_norm) and not RE_CONTEXTO_ESTADUAL.search(manchete_norm):
+        return "BR"
     if RE_TITULO_FEDERAL.search(manchete_norm) and not RE_CONTEXTO_ESTADUAL.search(manchete_norm) and not has_local_gov:
         return "BR"
     if sem_acento(candidato) in _PESSOAS_FEDERAIS and not has_local_uf and not has_local_gov:
