@@ -55,7 +55,8 @@ _TERMOS_LULA_FEDERAL = (
 )
 RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
-    r"|reforma ministerial|\blula\s+(?:3|4|iii|iv)\b|\balcolumbre\b"
+    r"|reforma ministerial|\blula\s+(?:3|4|iii|iv)\b|\balcolumbre\b|^governo lula\b"
+    r"|\b(?:mcti|mdic|mds|midr|mjsp)\b"
     r"|\b(?:ibovespa|juros futuros|ativos brasileiros|incerteza fiscal|agenda fiscal"
     r"|taxa de juros|banco central|dolar\b.*(?:real|r\$|queda|sobe|fecha|bate|alta)"
     r"|pec da seguranca|nova pasta da seguranca publica|desenvolvimento regional"
@@ -112,7 +113,7 @@ _RE_GOV_UF = [
         r"\bcleitinho\b": "MG", r"\bdouglas ruas\b": "RJ", r"\braquel lyra\b": "PE",
         r"\bjeronimo(?: rodrigues)?\b": "BA", r"\beduardo braide\b": "MA", r"\bcadu(?: xavier)?\b": "RN",
         r"\bpazolini\b": "ES", r"\bomar aziz\b": "AM", r"\b(?:dr\.? )?furlan\b": "AP",
-        r"\bjhc\b": "AL", r"\bvicentinho(?: junior)?\b": "TO", r"\blucas ribeiro\b": "PB",
+        r"\bjhc\b": "AL", r"\bvicentinho(?: junior)?\b": "TO", r"\blucas ribeiro\b": "PB", r"\blucas para os novos secretarios\b": "PB",
         r"\brafael fonteles\b": "PI", r"\belmano\b": "CE", r"\bjorginho(?: mello)?\b": "SC",
         r"\bdaniel vilela\b": "GO", r"\botaviano pivetta\b": "MT", r"\beduardo riedel\b": "MS",
         r"\bfabio mitidieri\b": "SE", r"\bmailza\b": "AC", r"\bcelina leao\b": "DF",

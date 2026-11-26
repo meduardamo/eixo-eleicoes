@@ -901,7 +901,8 @@ _TERMOS_LULA_FEDERAL = (
 )
 _RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
-    r"|reforma ministerial|\blula\s+(?:3|4|iii|iv)\b|\balcolumbre\b"
+    r"|reforma ministerial|\blula\s+(?:3|4|iii|iv)\b|\balcolumbre\b|^governo lula\b"
+    r"|\b(?:mcti|mdic|mds|midr|mjsp)\b"
     r"|\b(?:ibovespa|juros futuros|ativos brasileiros|incerteza fiscal|agenda fiscal"
     r"|taxa de juros|banco central|dolar\b.*(?:real|r\$|queda|sobe|fecha|bate|alta)"
     r"|pec da seguranca|nova pasta da seguranca publica|desenvolvimento regional"
