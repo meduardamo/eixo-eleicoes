@@ -901,7 +901,13 @@ _TERMOS_LULA_FEDERAL = (
 )
 _RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
-    r"|reforma ministerial|\blula\s+(?:4|iv)\b|\balcolumbre\b"
+    r"|reforma ministerial|\blula\s+(?:3|4|iii|iv)\b|\balcolumbre\b"
+    r"|\b(?:ibovespa|juros futuros|ativos brasileiros|incerteza fiscal|agenda fiscal"
+    r"|taxa de juros|banco central|dolar\b.*(?:real|r\$|queda|sobe|fecha|bate|alta)"
+    r"|pec da seguranca|nova pasta da seguranca publica|desenvolvimento regional"
+    r"|sucessao de mucio|mucio na defesa|tarciana medeiros|presidencia do bb"
+    r"|comando da pf|chefe da pf|andrei na pf|lara resende|plano moretti"
+    r"|equipe ministerial|gakiya)\b"
     r"|(?<!cadu de )\blula\b.*?\b" + _TERMOS_LULA_FEDERAL + r"\b"
     r"|\b" + _TERMOS_LULA_FEDERAL + r"\b.*?(?<!cadu de )\blula\b"
     # "Cotado para Fazenda" sem a palavra ministério; a secretaria estadual e a
@@ -912,7 +918,7 @@ _RE_TITULO_FEDERAL = re.compile(
 # a relação com o governo Lula" é do MA.
 _RE_TITULO_FEDERAL_FRACO = re.compile(r"\bquarto mandato\b|governo lula")
 _RE_CONTEXTO_ESTADUAL = re.compile(
-    r"\b(?:no|do|da|em|para o|pelo)\s+(?:rn|rs|mg|sp|rj|pr|pe|ba|ce|pa|ma|to|ro|rr|ap|am|ac|al|se|pb|pi|go|mt|ms|df|es|sc)\b"
+    r"\b(?:no|do|da|em|para o|pelo|na|dos|das)\s+(?:rn|rs|mg|sp|rj|pr|pe|ba|ce|pa|ma|to|ro|rr|ap|am|ac|al|se|pb|pi|go|mt|ms|df|es|sc|minas|rio|parana|pernambuco|bahia|ceara|paraiba|alagoas|sergipe|goias|maranhao|amazonas|amapa|rondonia|roraima|tocantins|santa catarina|sao paulo|espirito santo|natal|recife|salvador|fortaleza|curitiba|porto alegre|belo horizonte)\b"
 )
 
 

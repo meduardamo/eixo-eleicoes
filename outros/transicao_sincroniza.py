@@ -55,15 +55,73 @@ _TERMOS_LULA_FEDERAL = (
 )
 RE_TITULO_FEDERAL = re.compile(
     r"(?<!ex-)\bministr[oa]s?\b|\bministerios?\b(?!\s+publico)|\besplanada\b"
-    r"|reforma ministerial|\blula\s+(?:4|iv)\b|\balcolumbre\b"
+    r"|reforma ministerial|\blula\s+(?:3|4|iii|iv)\b|\balcolumbre\b"
+    r"|\b(?:ibovespa|juros futuros|ativos brasileiros|incerteza fiscal|agenda fiscal"
+    r"|taxa de juros|banco central|dolar\b.*(?:real|r\$|queda|sobe|fecha|bate|alta)"
+    r"|pec da seguranca|nova pasta da seguranca publica|desenvolvimento regional"
+    r"|sucessao de mucio|mucio na defesa|tarciana medeiros|presidencia do bb"
+    r"|comando da pf|chefe da pf|andrei na pf|lara resende|plano moretti"
+    r"|equipe ministerial|gakiya)\b"
     r"|(?<!cadu de )\blula\b.*?\b" + _TERMOS_LULA_FEDERAL + r"\b"
     r"|\b" + _TERMOS_LULA_FEDERAL + r"\b.*?(?<!cadu de )\blula\b"
     r"|(?<!secretaria da )(?<!secretario da )(?<!secretaria de )(?<!secretario de )(?<!de estado da )"
     r"\bfazenda\b(?!\s+(?:estadual\b|(?:do|de|da)\s+(?:estado|estadual|rio|sao paulo|minas|bahia|parana|goias|pernambuco|ceara|para|piaui|maranhao|alagoas|sergipe|paraiba|amazonas|acre|amapa|roraima|rondonia|tocantins|mato grosso|espirito santo|santa catarina|distrito federal|df|rs|sp|rj|mg|ba|pe|ce|go|pr|sc|es|ma|pa|pi|al|se|pb|am|ac|ap|rr|ro|to|mt|ms|rn)\b))")
 RE_TITULO_FEDERAL_FRACO = re.compile(r"\bquarto mandato\b|governo lula")
 RE_CONTEXTO_ESTADUAL = re.compile(
-    r"\b(?:no|do|da|em|para o|pelo)\s+(?:rn|rs|mg|sp|rj|pr|pe|ba|ce|pa|ma|to|ro|rr|ap|am|ac|al|se|pb|pi|go|mt|ms|df|es|sc)\b"
+    r"\b(?:no|do|da|em|para o|pelo|na|dos|das)\s+(?:rn|rs|mg|sp|rj|pr|pe|ba|ce|pa|ma|to|ro|rr|ap|am|ac|al|se|pb|pi|go|mt|ms|df|es|sc|minas|rio|parana|pernambuco|bahia|ceara|paraiba|alagoas|sergipe|goias|maranhao|amazonas|amapa|rondonia|roraima|tocantins|santa catarina|sao paulo|espirito santo|natal|recife|salvador|fortaleza|curitiba|porto alegre|belo horizonte)\b"
 )
+
+_RE_UF_MANCHETE = {
+    uf: re.compile(pat) for uf, pat in {
+        "AC": r"\b(?:acre|ac|acrean[oa]s?)\b",
+        "AL": r"\b(?:alagoas|al|alagoan[oa]s?)\b",
+        "AP": r"\b(?:amapa|ap|amapaenses?)\b",
+        "AM": r"\b(?:amazonas|am|amazonenses?)\b",
+        "BA": r"\b(?:bahia|ba|baian[oa]s?)\b",
+        "CE": r"\b(?:ceara|ce|cearenses?)\b",
+        "DF": r"\b(?:distrito federal|df|brasilienses?)\b",
+        "ES": r"\b(?:espirito santo|es|capixabas?)\b",
+        "GO": r"\b(?:goias|go|goian[oa]s?)\b",
+        "MA": r"\b(?:maranhao|ma|maranhenses?)\b",
+        "MT": r"\b(?:mato grosso|mt)\b",
+        "MS": r"\b(?:mato grosso do sul|ms|sul-mato-grossenses?)\b",
+        "MG": r"\b(?:minas gerais|minas|mg|mineir[oa]s?)\b",
+        "PA": r"\b(?:para|pa|paraenses?)\b",
+        "PB": r"\b(?:paraiba|pb|paraiban[oa]s?)\b",
+        "PR": r"\b(?:parana|pr|paranaenses?)\b",
+        "PE": r"\b(?:pernambuco|pe|pernambucan[oa]s?)\b",
+        "PI": r"\b(?:piaui|pi|piauienses?)\b",
+        "RJ": r"\b(?:rio de janeiro|rio|rj|fluminenses?|cariocas?)\b",
+        "RN": r"\b(?:rio grande do norte|rn|potiguares?)\b",
+        "RS": r"\b(?:rio grande do sul|rs|gauchos?|gauchas?)\b",
+        "RO": r"\b(?:rondonia|ro|rondonienses?)\b",
+        "RR": r"\b(?:roraima|rr|roraimenses?)\b",
+        "SC": r"\b(?:santa catarina|sc|catarinenses?)\b",
+        "SP": r"\b(?:sao paulo|sp|paulistas?|paulistan[oa]s?)\b",
+        "SE": r"\b(?:sergipe|se|sergipan[oa]s?)\b",
+        "TO": r"\b(?:tocantins|to|tocantinenses?)\b",
+    }.items()
+}
+
+_RE_GOV_UF = [
+    (re.compile(pat), uf) for pat, uf in {
+        r"\b(?:luciano )?zucco\b": "RS", r"\b(?:sergio )?moro\b": "PR", r"\btarcisio\b": "SP",
+        r"\bcleitinho\b": "MG", r"\bdouglas ruas\b": "RJ", r"\braquel lyra\b": "PE",
+        r"\bjeronimo(?: rodrigues)?\b": "BA", r"\beduardo braide\b": "MA", r"\bcadu(?: xavier)?\b": "RN",
+        r"\bpazolini\b": "ES", r"\bomar aziz\b": "AM", r"\b(?:dr\.? )?furlan\b": "AP",
+        r"\bjhc\b": "AL", r"\bvicentinho(?: junior)?\b": "TO", r"\blucas ribeiro\b": "PB",
+        r"\brafael fonteles\b": "PI", r"\belmano\b": "CE", r"\bjorginho(?: mello)?\b": "SC",
+        r"\bdaniel vilela\b": "GO", r"\botaviano pivetta\b": "MT", r"\beduardo riedel\b": "MS",
+        r"\bfabio mitidieri\b": "SE", r"\bmailza\b": "AC", r"\bcelina leao\b": "DF",
+        r"\bsergio goncalves\b": "RO", r"\bdenarium\b": "RR",
+    }.items()
+]
+
+_PESSOAS_FEDERAIS = {
+    "lula", "luiz inacio lula da silva", "presidente lula",
+    "fernando haddad", "haddad", "luiz marinho", "jose mucio",
+    "moses rodrigues", "flavio bolsonaro",
+}
 
 
 def sem_acento(texto) -> str:
@@ -291,6 +349,30 @@ def _uf_da_busca(busca: str) -> str:
     return UF_POR_NOME.get(sem_acento(busca.split(' ("equipe de transição"')[0]), "")
 
 
+def _resolver_uf_noticia(uf: str, manchete_norm: str, candidato: str, busca: str) -> str:
+    """Corrige UF de notícia de transição que vazou por veículo regional:
+    puxa matéria federal/mercado para BR e matéria exclusiva de governador de
+    outro estado para a UF correta."""
+    if not uf:
+        if RE_TITULO_FEDERAL.search(manchete_norm) or RE_TITULO_FEDERAL_FRACO.search(manchete_norm):
+            return "BR"
+        uf = _uf_da_busca(busca) or "BR"
+    if uf == "BR":
+        return "BR"
+    has_local_uf = bool(_RE_UF_MANCHETE.get(uf) and _RE_UF_MANCHETE[uf].search(manchete_norm))
+    has_local_gov = any(rx.search(manchete_norm) for rx, guf in _RE_GOV_UF if guf == uf)
+    if RE_TITULO_FEDERAL.search(manchete_norm) and not RE_CONTEXTO_ESTADUAL.search(manchete_norm) and not has_local_gov:
+        return "BR"
+    if sem_acento(candidato) in _PESSOAS_FEDERAIS and not has_local_uf and not has_local_gov:
+        if not any(rx.search(manchete_norm) for rx, _ in _RE_GOV_UF):
+            return "BR"
+    if not has_local_uf and not has_local_gov:
+        outras = {guf for rx, guf in _RE_GOV_UF if rx.search(manchete_norm)}
+        if len(outras) == 1:
+            return next(iter(outras))
+    return uf
+
+
 def noticias(planilha) -> list:
     aba = planilha.worksheet("noticias")
     cab = aba.row_values(1)
@@ -317,16 +399,10 @@ def noticias(planilha) -> list:
         if not chave or chave in vistas:
             continue
         vistas.add(chave)
-        uf = v("uf", i).upper()
-        manchete_norm = sem_acento(manchete)
-        if (RE_TITULO_FEDERAL.search(manchete_norm)
-                and not RE_CONTEXTO_ESTADUAL.search(manchete_norm)) or (
-                not uf and RE_TITULO_FEDERAL_FRACO.search(manchete_norm)):
-            uf = "BR"
-        elif not uf:
-            uf = _uf_da_busca(v("busca", i)) or "BR"
+        candidato = v("candidato", i)
+        uf = _resolver_uf_noticia(v("uf", i).upper(), sem_acento(manchete), candidato, v("busca", i))
         saida.append([v("data", i)[:10], uf, "Gov. Federal" if uf == "BR" else "Subnacional",
-                      v("candidato", i), manchete, veiculo, v("link_real", i) or v("link", i)])
+                      candidato, manchete, veiculo, v("link_real", i) or v("link", i)])
 
     def quando(l):
         try:
